@@ -18,6 +18,8 @@ import {
   ArrowRight,
   Wallet,
   TrendingUp,
+  Hash,
+  Percent,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -58,7 +60,7 @@ export default function ModelsPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formCash, setFormCash] = useState("");
   const [allocations, setAllocations] = useState<
-    { symbol: string; companyName: string; percentage: number; customPrice?: number }[]
+    { symbol: string; companyName: string; percentage: number; customPrice?: number; inputShares?: number }[]
   >([{ symbol: "CASH", companyName: "Cash Reserve", percentage: 100 }]);
 
   // Stock search
@@ -68,6 +70,9 @@ export default function ModelsPage() {
 
   // Market prices for preview
   const [marketPrices, setMarketPrices] = useState<Record<string, number>>({});
+
+  // Allocation mode: percent or shares
+  const [allocMode, setAllocMode] = useState<"percent" | "shares">("percent");
 
   const [saving, setSaving] = useState(false);
 
@@ -133,14 +138,17 @@ export default function ModelsPage() {
           ? { ...a, percentage: Math.max(0, a.percentage - defaultPct) }
           : a
       );
-      return [
-        ...updated,
-        {
-          symbol: stock.symbol,
-          companyName: stock.company,
-          percentage: defaultPct,
-        },
-      ];
+      const newAlloc: typeof updated[0] = {
+        symbol: stock.symbol,
+        companyName: stock.company,
+        percentage: defaultPct,
+      };
+      // In shares mode, compute initial shares from the default percentage
+      if (allocMode === "shares" && cashAmount > 0 && stock.current > 0) {
+        const allocAmount = (defaultPct / 100) * cashAmount;
+        newAlloc.inputShares = Math.floor(allocAmount / stock.current);
+      }
+      return [...updated, newAlloc];
     });
 
     // Store market price
@@ -180,6 +188,54 @@ export default function ModelsPage() {
     );
   };
 
+  // In shares mode: update shares count and recalc only the changed stock's % + CASH
+  const handleSharesChange = (symbol: string, newShares: number) => {
+    setAllocations((prev) => {
+      if (cashAmount <= 0) {
+        return prev.map((a) =>
+          a.symbol === symbol ? { ...a, inputShares: newShares } : a
+        );
+      }
+
+      // Calculate new percentage for the changed stock
+      const alloc = prev.find((a) => a.symbol === symbol);
+      const price = alloc?.customPrice || marketPrices[symbol] || 0;
+      const newPct = price > 0 ? Math.round((newShares * price / cashAmount) * 1000) / 10 : 0;
+
+      // Adjust only this stock and CASH
+      const oldPct = alloc?.percentage ?? 0;
+      const diff = newPct - oldPct;
+
+      return prev.map((a) => {
+        if (a.symbol === symbol) return { ...a, inputShares: newShares, percentage: newPct };
+        if (a.symbol === "CASH") return { ...a, percentage: Math.max(0, Math.round((a.percentage - diff) * 10) / 10) };
+        return a;
+      });
+    });
+  };
+
+  // Recalc all percentages when cash amount changes in shares mode
+  useEffect(() => {
+    if (allocMode !== "shares" || cashAmount <= 0) return;
+    setAllocations((prev) => {
+      let usedPct = 0;
+      const recalced = prev.map((a) => {
+        if (a.symbol === "CASH") return a;
+        const price = a.customPrice || marketPrices[a.symbol] || 0;
+        const shares = a.inputShares ?? 0;
+        const cost = shares * price;
+        const pct = Math.round((cost / cashAmount) * 1000) / 10;
+        usedPct += pct;
+        return { ...a, percentage: pct };
+      });
+      return recalced.map((a) =>
+        a.symbol === "CASH" ? { ...a, percentage: Math.max(0, Math.round((100 - usedPct) * 10) / 10) } : a
+      );
+    });
+  // Only recalc when cash amount changes — individual stock changes handled by handleSharesChange
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cashAmount, allocMode]);
+
   const openCreateEditor = () => {
     setFormName("");
     setFormDescription("");
@@ -190,6 +246,7 @@ export default function ModelsPage() {
     setStockQuery("");
     setStockResults([]);
     setMarketPrices({});
+    setAllocMode("percent");
     setShowEditor(true);
   };
 
@@ -215,6 +272,7 @@ export default function ModelsPage() {
             companyName: a.companyName,
             percentage: a.percentage,
             customPrice: a.customPrice,
+            ...(allocMode === "shares" && a.inputShares != null ? { exactShares: a.inputShares } : {}),
           })),
         }),
       });
@@ -512,7 +570,49 @@ export default function ModelsPage() {
             {/* Allocations */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold">Allocations</Label>
+                <div className="flex items-center gap-3">
+                  <Label className="text-xs font-semibold">Allocations</Label>
+                  <div className="flex items-center bg-muted rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setAllocMode("percent")}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                        allocMode === "percent"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Percent className="h-3 w-3" />
+                      Percent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAllocMode("shares");
+                        // Initialize inputShares from current percentage estimates
+                        if (cashAmount > 0) {
+                          setAllocations((prev) =>
+                            prev.map((a) => {
+                              if (a.symbol === "CASH") return a;
+                              const price = a.customPrice || marketPrices[a.symbol] || 0;
+                              const allocAmount = (a.percentage / 100) * cashAmount;
+                              const estShares = price > 0 ? Math.floor(allocAmount / price) : 0;
+                              return { ...a, inputShares: estShares };
+                            })
+                          );
+                        }
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                        allocMode === "shares"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Hash className="h-3 w-3" />
+                      Shares
+                    </button>
+                  </div>
+                </div>
                 <span
                   className={`text-xs font-bold font-tabular ${
                     Math.abs(totalPct - 100) < 0.01
@@ -574,23 +674,50 @@ export default function ModelsPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.5"
-                            value={alloc.percentage}
-                            onChange={(e) =>
-                              handlePctChange(
-                                alloc.symbol,
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
-                          />
-                          <span className="text-xs text-muted-foreground font-semibold">
-                            %
-                          </span>
+                          {allocMode === "percent" || alloc.symbol === "CASH" ? (
+                            <>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.5"
+                                value={alloc.percentage}
+                                onChange={(e) =>
+                                  handlePctChange(
+                                    alloc.symbol,
+                                    parseFloat(e.target.value) || 0
+                                  )
+                                }
+                                className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                                disabled={allocMode === "shares" && alloc.symbol === "CASH"}
+                              />
+                              <span className="text-xs text-muted-foreground font-semibold">
+                                %
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={alloc.inputShares ?? 0}
+                                onChange={(e) =>
+                                  handleSharesChange(
+                                    alloc.symbol,
+                                    parseInt(e.target.value) || 0
+                                  )
+                                }
+                                className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                              />
+                              <span className="text-xs text-muted-foreground font-semibold">
+                                shares
+                              </span>
+                              <span className="text-[11px] text-muted-foreground font-tabular">
+                                ({alloc.percentage.toFixed(1)}%)
+                              </span>
+                            </>
+                          )}
                           {alloc.symbol !== "CASH" && (
                             <Button
                               size="sm"
@@ -625,6 +752,21 @@ export default function ModelsPage() {
                                       : a
                                   )
                                 );
+                                // Recalc percentage for this stock + CASH in shares mode
+                                if (allocMode === "shares" && cashAmount > 0) {
+                                  setAllocations((prev2) => {
+                                    const thisAlloc = prev2.find((a2) => a2.symbol === alloc.symbol);
+                                    const shares = thisAlloc?.inputShares ?? 0;
+                                    const newPct = val > 0 ? Math.round((shares * val / cashAmount) * 1000) / 10 : 0;
+                                    const oldPct = thisAlloc?.percentage ?? 0;
+                                    const diff = newPct - oldPct;
+                                    return prev2.map((a2) => {
+                                      if (a2.symbol === alloc.symbol) return { ...a2, percentage: newPct };
+                                      if (a2.symbol === "CASH") return { ...a2, percentage: Math.max(0, Math.round((a2.percentage - diff) * 10) / 10) };
+                                      return a2;
+                                    });
+                                  });
+                                }
                               }}
                               className="w-24 h-7 rounded-lg font-tabular text-center text-xs"
                             />
@@ -634,13 +776,24 @@ export default function ModelsPage() {
                               Mkt: {formatPKR(mktPrice)}
                             </span>
                           )}
-                          {usePrice > 0 && cashAmount > 0 && (
-                            <span className="text-[11px] text-muted-foreground ml-auto">
-                              <span className="font-semibold text-foreground">
-                                {estShares} shares
-                              </span>{" "}
-                              = PKR {formatPKR(estCost, { decimals: 0 })}
-                            </span>
+                          {allocMode === "shares" ? (
+                            usePrice > 0 && (alloc.inputShares ?? 0) > 0 && (
+                              <span className="text-[11px] text-muted-foreground ml-auto">
+                                = PKR{" "}
+                                <span className="font-semibold text-foreground">
+                                  {formatPKR((alloc.inputShares ?? 0) * usePrice, { decimals: 0 })}
+                                </span>
+                              </span>
+                            )
+                          ) : (
+                            usePrice > 0 && cashAmount > 0 && (
+                              <span className="text-[11px] text-muted-foreground ml-auto">
+                                <span className="font-semibold text-foreground">
+                                  {estShares} shares
+                                </span>{" "}
+                                = PKR {formatPKR(estCost, { decimals: 0 })}
+                              </span>
+                            )
                           )}
                         </div>
                       )}
@@ -649,6 +802,9 @@ export default function ModelsPage() {
                       {alloc.symbol === "CASH" && cashAmount > 0 && (
                         <p className="text-[11px] text-muted-foreground mt-1.5">
                           PKR {formatPKR(allocAmount, { decimals: 0 })} reserved
+                          {allocMode === "shares" && (
+                            <span className="ml-1">({alloc.percentage.toFixed(1)}%)</span>
+                          )}
                         </p>
                       )}
                     </div>
@@ -676,7 +832,7 @@ export default function ModelsPage() {
                 }
                 className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
               >
-                {saving ? "Creating..." : "Create & Buy Stocks"}
+                {saving ? "Creating..." : allocMode === "shares" ? "Create & Buy Shares" : "Create & Buy Stocks"}
               </Button>
             </div>
           </CardContent>

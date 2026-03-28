@@ -20,7 +20,7 @@ export async function POST(
   const { id } = await params;
   const body = await req.json();
   const { allocations, customPrices = {} } = body as {
-    allocations: { symbol: string; companyName: string; percentage: number }[];
+    allocations: { symbol: string; companyName: string; percentage: number; exactShares?: number }[];
     customPrices?: Record<string, number>;
   };
 
@@ -96,8 +96,10 @@ export async function POST(
       );
     }
 
-    const targetValue = (alloc.percentage / 100) * totalValue;
-    const targetShares = Math.floor(targetValue / currentPrice);
+    // Use exact shares if provided, otherwise calculate from percentage
+    const targetShares = alloc.exactShares != null && alloc.exactShares >= 0
+      ? alloc.exactShares
+      : Math.floor(((alloc.percentage / 100) * totalValue) / currentPrice);
     const existing = currentMap.get(alloc.symbol);
     const currentShares = existing?.shares || 0;
     const currentAvgPrice = existing?.avgPrice || 0;

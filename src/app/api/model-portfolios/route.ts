@@ -99,6 +99,7 @@ export async function POST(req: Request) {
     companyName: string;
     percentage: number;
     customPrice?: number;
+    exactShares?: number;
   }[]) {
     if (alloc.symbol === "CASH") {
       newAllocations.push({
@@ -128,8 +129,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const allocatedAmount = (alloc.percentage / 100) * cashBalance;
-    const shares = Math.floor(allocatedAmount / price);
+    // Use exact shares if provided (shares mode), otherwise calculate from percentage
+    const shares = alloc.exactShares != null && alloc.exactShares > 0
+      ? alloc.exactShares
+      : Math.floor(((alloc.percentage / 100) * cashBalance) / price);
     const cost = shares * price;
 
     newAllocations.push({

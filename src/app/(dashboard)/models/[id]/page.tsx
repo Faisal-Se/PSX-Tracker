@@ -31,6 +31,8 @@ import {
   ShoppingCart,
   Trash2,
   Activity,
+  Hash,
+  Percent,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
 import {
@@ -106,10 +108,11 @@ export default function ModelDetailPage() {
   // Rebalance mode
   const [showRebalance, setShowRebalance] = useState(false);
   const [rebalanceAllocations, setRebalanceAllocations] = useState<
-    { symbol: string; companyName: string; percentage: number }[]
+    { symbol: string; companyName: string; percentage: number; inputShares?: number }[]
   >([]);
   const [rebalanceLoading, setRebalanceLoading] = useState(false);
   const [rebalanceError, setRebalanceError] = useState("");
+  const [rebalanceMode, setRebalanceMode] = useState<"percent" | "shares">("percent");
 
   // Rebalance confirmation popup (step 2: enter trade prices)
   const [showRebalanceConfirm, setShowRebalanceConfirm] = useState(false);
@@ -231,10 +234,12 @@ export default function ModelDetailPage() {
         symbol: a.symbol,
         companyName: a.companyName,
         percentage: a.percentage,
+        inputShares: a.symbol !== "CASH" ? a.shares : undefined,
       }))
     );
     setRebalanceError("");
     setRebalanceTrades([]);
+    setRebalanceMode("percent");
     setStockQuery("");
     setStockResults([]);
     setShowRebalance(true);
@@ -253,6 +258,32 @@ export default function ModelDetailPage() {
         return a;
       })
     );
+  };
+
+  // Rebalance: change target shares and recalc only the changed stock's % + CASH
+  const handleRebalanceSharesChange = (symbol: string, newShares: number) => {
+    setRebalanceAllocations((prev) => {
+      if (totalValue <= 0) {
+        return prev.map((a) =>
+          a.symbol === symbol ? { ...a, inputShares: newShares } : a
+        );
+      }
+
+      // Calculate new percentage for the changed stock
+      const price = marketPrices[symbol] || 0;
+      const newPct = price > 0 ? Math.round((newShares * price / totalValue) * 1000) / 10 : 0;
+
+      // Find old percentage for this stock
+      const oldAlloc = prev.find((a) => a.symbol === symbol);
+      const oldPct = oldAlloc?.percentage ?? 0;
+      const diff = newPct - oldPct;
+
+      return prev.map((a) => {
+        if (a.symbol === symbol) return { ...a, inputShares: newShares, percentage: newPct };
+        if (a.symbol === "CASH") return { ...a, percentage: Math.max(0, Math.round((a.percentage - diff) * 10) / 10) };
+        return a;
+      });
+    });
   };
 
   const handleRebalanceRemove = (symbol: string) => {
@@ -287,14 +318,16 @@ export default function ModelDetailPage() {
           ? { ...a, percentage: Math.max(0, a.percentage - defaultPct) }
           : a
       );
-      return [
-        ...updated,
-        {
-          symbol: stock.symbol,
-          companyName: stock.company,
-          percentage: defaultPct,
-        },
-      ];
+      const newAlloc: typeof updated[0] = {
+        symbol: stock.symbol,
+        companyName: stock.company,
+        percentage: defaultPct,
+      };
+      if (rebalanceMode === "shares" && stock.current > 0 && totalValue > 0) {
+        const targetValue = (defaultPct / 100) * totalValue;
+        newAlloc.inputShares = Math.floor(targetValue / stock.current);
+      }
+      return [...updated, newAlloc];
     });
     setMarketPrices((prev) => ({ ...prev, [stock.symbol]: stock.current }));
     setStockQuery("");
@@ -314,18 +347,29 @@ export default function ModelDetailPage() {
     for (const alloc of rebalanceAllocations) {
       if (alloc.symbol === "CASH") continue;
 
-      // Skip if percentage hasn't changed
-      const originalPct = originalPctMap.get(alloc.symbol) ?? 0;
-      if (Math.abs(alloc.percentage - originalPct) < 0.01) continue;
-
       const existing = model.allocations.find((a) => a.symbol === alloc.symbol);
       const currentShares = existing?.shares || 0;
       const mktPrice = marketPrices[alloc.symbol] || 0;
-      if (mktPrice <= 0) continue;
-      const targetValue = (alloc.percentage / 100) * totalValue;
-      const targetShares = Math.floor(targetValue / mktPrice);
+
+      // In shares mode, use explicit inputShares; in percent mode, calculate from %
+      let targetShares: number;
+      if (rebalanceMode === "shares" && alloc.inputShares != null) {
+        targetShares = alloc.inputShares;
+      } else {
+        if (mktPrice <= 0) continue;
+        const targetValue = (alloc.percentage / 100) * totalValue;
+        targetShares = Math.floor(targetValue / mktPrice);
+      }
+
+      // Skip if no change in shares
       const diff = targetShares - currentShares;
       if (diff === 0) continue;
+
+      // In percent mode, also skip if percentage hasn't changed
+      if (rebalanceMode === "percent") {
+        const originalPct = originalPctMap.get(alloc.symbol) ?? 0;
+        if (Math.abs(alloc.percentage - originalPct) < 0.01) continue;
+      }
 
       trades.push({
         symbol: alloc.symbol,
@@ -382,7 +426,12 @@ export default function ModelDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          allocations: rebalanceAllocations,
+          allocations: rebalanceAllocations.map((a) => ({
+            symbol: a.symbol,
+            companyName: a.companyName,
+            percentage: a.percentage,
+            ...(rebalanceMode === "shares" && a.inputShares != null ? { exactShares: a.inputShares } : {}),
+          })),
           customPrices,
         }),
       });
@@ -1358,7 +1407,48 @@ export default function ModelDetailPage() {
             {/* Allocations editor */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold">Allocations</Label>
+                <div className="flex items-center gap-3">
+                  <Label className="text-xs font-semibold">Allocations</Label>
+                  <div className="flex items-center bg-muted rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setRebalanceMode("percent")}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                        rebalanceMode === "percent"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Percent className="h-3 w-3" />
+                      Percent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRebalanceMode("shares");
+                        // Initialize inputShares from current percentage targets
+                        setRebalanceAllocations((prev) =>
+                          prev.map((a) => {
+                            if (a.symbol === "CASH") return a;
+                            if (a.inputShares !== undefined) return a;
+                            const price = marketPrices[a.symbol] || 0;
+                            const targetValue = (a.percentage / 100) * totalValue;
+                            const estShares = price > 0 ? Math.floor(targetValue / price) : 0;
+                            return { ...a, inputShares: estShares };
+                          })
+                        );
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                        rebalanceMode === "shares"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Hash className="h-3 w-3" />
+                      Shares
+                    </button>
+                  </div>
+                </div>
                 <span
                   className={`text-xs font-bold font-tabular ${
                     Math.abs(rebalanceTotalPct - 100) < 0.01
@@ -1397,11 +1487,14 @@ export default function ModelDetailPage() {
                   );
                   const currentShares = existing?.shares || 0;
                   const price = marketPrices[alloc.symbol] || 0;
-                  const targetValue =
-                    (alloc.percentage / 100) * totalValue;
+                  // In shares mode, use the explicit inputShares; in percent mode, calculate from %
                   const targetShares =
-                    alloc.symbol !== "CASH" && price > 0
-                      ? Math.floor(targetValue / price)
+                    alloc.symbol !== "CASH"
+                      ? rebalanceMode === "shares" && alloc.inputShares != null
+                        ? alloc.inputShares
+                        : price > 0
+                          ? Math.floor(((alloc.percentage / 100) * totalValue) / price)
+                          : 0
                       : 0;
                   const diff = targetShares - currentShares;
 
@@ -1439,23 +1532,50 @@ export default function ModelDetailPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.5"
-                          value={alloc.percentage}
-                          onChange={(e) =>
-                            handleRebalancePctChange(
-                              alloc.symbol,
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                          className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
-                        />
-                        <span className="text-xs text-muted-foreground font-semibold">
-                          %
-                        </span>
+                        {rebalanceMode === "percent" || alloc.symbol === "CASH" ? (
+                          <>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.5"
+                              value={alloc.percentage}
+                              onChange={(e) =>
+                                handleRebalancePctChange(
+                                  alloc.symbol,
+                                  parseFloat(e.target.value) || 0
+                                )
+                              }
+                              className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                              disabled={rebalanceMode === "shares" && alloc.symbol === "CASH"}
+                            />
+                            <span className="text-xs text-muted-foreground font-semibold">
+                              %
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={alloc.inputShares ?? 0}
+                              onChange={(e) =>
+                                handleRebalanceSharesChange(
+                                  alloc.symbol,
+                                  parseInt(e.target.value) || 0
+                                )
+                              }
+                              className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                            />
+                            <span className="text-xs text-muted-foreground font-semibold">
+                              shares
+                            </span>
+                            <span className="text-[11px] text-muted-foreground font-tabular">
+                              ({alloc.percentage.toFixed(1)}%)
+                            </span>
+                          </>
+                        )}
                         {alloc.symbol !== "CASH" && (
                           <Button
                             size="sm"
