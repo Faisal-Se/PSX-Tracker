@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  password     String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  portfolios   Portfolio[]
+  watchlist    Watchlist[]
+}
+
+model Portfolio {
+  id           String        @id @default(cuid())
+  name         String
+  type         String        @default("Personal") // Personal, Trading, Family, Business
+  cashBalance  Float         @default(1000000) // Starting virtual cash (PKR)
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings     Holding[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Holding {
+  id          String    @id @default(cuid())
+  symbol      String
+  companyName String
+  quantity    Int
+  avgPrice    Float
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([portfolioId, symbol])
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  type        String    // BUY or SELL
+  symbol      String
+  companyName String
+  quantity    Int
+  price       Float
+  total       Float
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+}
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  symbol    String
+  companyName String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, symbol])
+}
