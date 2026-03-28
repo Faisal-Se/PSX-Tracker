@@ -35,14 +35,14 @@ export function MarketStatusBar() {
   };
 
   return (
-    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-      <div className="flex items-center gap-2">
-        <Activity className="h-3.5 w-3.5" />
+    <div className="flex items-center gap-2 sm:gap-4 text-[11px] sm:text-xs text-muted-foreground whitespace-nowrap overflow-hidden">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <Activity className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
         <span className="font-medium text-foreground/70">{time} PKT</span>
       </div>
-      <div className="h-3 w-px bg-border" />
-      <div className="flex items-center gap-1.5">
-        <span className="relative flex h-2 w-2">
+      <div className="h-3 w-px bg-border shrink-0" />
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className="relative flex h-2 w-2 shrink-0">
           <span
             className={`${
               status.status === "open" ? "animate-ping" : ""
@@ -52,8 +52,8 @@ export function MarketStatusBar() {
             className={`relative inline-flex rounded-full h-2 w-2 ${dotColor[status.status]}`}
           />
         </span>
-        <span className="font-semibold">{status.label}</span>
-        <span className="text-muted-foreground/60">
+        <span className="font-semibold shrink-0">{status.label}</span>
+        <span className="text-muted-foreground/60 truncate hidden sm:inline">
           &middot; {status.nextEvent}
         </span>
       </div>

@@ -24,8 +24,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left - Branding */}
+    <div className="min-h-screen flex flex-col lg:flex-row">
+      {/* Left - Branding (hidden on mobile) */}
       <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZyIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48Y2lyY2xlIGN4PSIxIiBjeT0iMSIgcj0iMC41IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCBmaWxsPSJ1cmwoI2cpIiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIvPjwvc3ZnPg==')] opacity-50" />
         <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-emerald-500/10 to-transparent" />
@@ -102,24 +102,26 @@ export default function LoginPage() {
       </div>
 
       {/* Right - Google Sign In */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-background">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 sm:p-8 bg-background">
         <div className="w-full max-w-sm">
-          <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
+          {/* Mobile logo + branding */}
+          <div className="lg:hidden text-center mb-10">
+            <div className="inline-flex h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 items-center justify-center shadow-lg shadow-emerald-500/25 mb-4">
               <TrendingUp
-                className="h-5 w-5 text-white"
+                className="h-7 w-7 text-white"
                 strokeWidth={2.5}
               />
             </div>
-            <span className="text-lg font-bold tracking-tight">
-              PSX Tracker
-            </span>
+            <h1 className="text-xl font-bold tracking-tight">PSX Tracker</h1>
+            <p className="text-xs text-muted-foreground mt-1">
+              Pakistan Stock Exchange Portfolio Tracker
+            </p>
           </div>
 
-          <h1 className="text-2xl font-bold tracking-tight">Welcome</h1>
-          <p className="text-sm text-muted-foreground mt-1.5 mb-8">
-            Sign in with Google to access your portfolio. Your data stays in
-            your own Google Drive — we never store it on our servers.
+          <h1 className="text-2xl font-bold tracking-tight lg:block hidden">Welcome</h1>
+          <h1 className="text-xl font-bold tracking-tight lg:hidden text-center">Sign in to continue</h1>
+          <p className="text-sm text-muted-foreground mt-1.5 mb-8 lg:text-left text-center">
+            Your data stays in your own Google Drive — we never store it.
           </p>
 
           {error && (
@@ -160,7 +162,7 @@ export default function LoginPage() {
           </Button>
 
           {/* Privacy info cards - mobile */}
-          <div className="lg:hidden mt-8 space-y-3">
+          <div className="lg:hidden mt-8 space-y-2.5">
             <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50 border border-border/50">
               <HardDrive className="h-4 w-4 text-emerald-500 shrink-0" />
               <p className="text-xs text-muted-foreground">
@@ -175,10 +177,26 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <p className="text-center text-[11px] text-muted-foreground mt-8 leading-relaxed">
+          <p className="text-center text-[11px] text-muted-foreground mt-6 leading-relaxed">
             By continuing, you agree to let PSX Tracker store portfolio data in
             a private app folder in your Google Drive.
           </p>
+
+          {/* Mobile footer */}
+          <div className="lg:hidden text-center mt-8 text-[11px] text-muted-foreground/50">
+            <p>
+              Built by{" "}
+              <a
+                href="https://www.instagram.com/faisiheree/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-pink-400/70 hover:text-pink-400 transition-colors"
+              >
+                Faisal Qayyum
+              </a>
+            </p>
+            <p className="mt-0.5">&copy; 2026 PSX Tracker</p>
+          </div>
         </div>
       </div>
     </div>

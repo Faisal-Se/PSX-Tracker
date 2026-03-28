@@ -78,7 +78,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="dark fixed left-0 top-0 z-40 h-screen w-[260px] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col border-r border-white/5">
+    <aside className="dark left-0 top-0 z-40 h-screen w-[260px] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col border-r border-white/5">
       {/* Logo */}
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-center gap-2.5">
@@ -155,7 +155,7 @@ export function Sidebar() {
       </nav>
 
       {/* Theme Toggle */}
-      <div className="px-3 mt-auto mb-2">
+      <div className="px-3 shrink-0 mb-2">
         {mounted && (
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -172,7 +172,7 @@ export function Sidebar() {
       </div>
 
       {/* User Section */}
-      <div className="p-3">
+      <div className="p-3 shrink-0">
         {user && (
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10">
             {user.picture ? (
