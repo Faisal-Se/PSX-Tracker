@@ -110,6 +110,9 @@ export default function ModelDetailPage() {
   >([]);
   const [rebalanceLoading, setRebalanceLoading] = useState(false);
   const [rebalanceError, setRebalanceError] = useState("");
+  const [rebalanceSellPrices, setRebalanceSellPrices] = useState<
+    Record<string, string>
+  >({});
 
   // Bulk trade
   const [showBulkTrade, setShowBulkTrade] = useState(false);
@@ -220,6 +223,7 @@ export default function ModelDetailPage() {
       }))
     );
     setRebalanceError("");
+    setRebalanceSellPrices({});
     setStockQuery("");
     setStockResults([]);
     setShowRebalance(true);
@@ -295,7 +299,14 @@ export default function ModelDetailPage() {
       const res = await fetch(`/api/model-portfolios/${id}/rebalance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allocations: rebalanceAllocations }),
+        body: JSON.stringify({
+          allocations: rebalanceAllocations,
+          customPrices: Object.fromEntries(
+            Object.entries(rebalanceSellPrices)
+              .filter(([, v]) => v && parseFloat(v) > 0)
+              .map(([k, v]) => [k, parseFloat(v)])
+          ),
+        }),
       });
 
       if (!res.ok) {
@@ -1333,23 +1344,64 @@ export default function ModelDetailPage() {
                         )}
                         {/* Trade preview */}
                         {alloc.symbol !== "CASH" && price > 0 && (
-                          <p className="text-[11px] mt-0.5">
-                            <span className="text-muted-foreground">
-                              {currentShares} → {targetShares} shares
-                            </span>
-                            {diff !== 0 && (
-                              <span
-                                className={`ml-1.5 font-semibold ${diff > 0 ? "text-emerald-600" : "text-red-500"}`}
-                              >
-                                ({diff > 0 ? "+" : ""}
-                                {diff} = {diff > 0 ? "BUY" : "SELL"} PKR{" "}
-                                {formatPKR(Math.abs(diff) * price, {
-                                  decimals: 0,
-                                })}
-                                )
+                          <>
+                            <p className="text-[11px] mt-0.5">
+                              <span className="text-muted-foreground">
+                                {currentShares} → {targetShares} shares
                               </span>
+                              {diff !== 0 && (() => {
+                                const tradePrice = diff < 0 && rebalanceSellPrices[alloc.symbol] && parseFloat(rebalanceSellPrices[alloc.symbol]) > 0
+                                  ? parseFloat(rebalanceSellPrices[alloc.symbol])
+                                  : price;
+                                const pnlPerShare = diff < 0 ? tradePrice - (existing?.avgPrice || 0) : 0;
+                                const totalPnlTrade = diff < 0 ? pnlPerShare * Math.abs(diff) : 0;
+                                return (
+                                  <span
+                                    className={`ml-1.5 font-semibold ${diff > 0 ? "text-emerald-600" : "text-red-500"}`}
+                                  >
+                                    ({diff > 0 ? "+" : ""}
+                                    {diff} = {diff > 0 ? "BUY" : "SELL"} PKR{" "}
+                                    {formatPKR(Math.abs(diff) * tradePrice, {
+                                      decimals: 0,
+                                    })}
+                                    {diff < 0 && (
+                                      <span className={totalPnlTrade >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                        {" "}· {totalPnlTrade >= 0 ? "Profit" : "Loss"} PKR {formatPKR(Math.abs(totalPnlTrade), { decimals: 0 })}
+                                      </span>
+                                    )}
+                                    )
+                                  </span>
+                                );
+                              })()}
+                            </p>
+                            {/* Price input when shares are being bought or sold */}
+                            {diff !== 0 && (
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <Label className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                  {diff < 0 ? "Sell" : "Buy"} @
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  placeholder={`Market: ${formatPKR(price)}`}
+                                  value={rebalanceSellPrices[alloc.symbol] || ""}
+                                  onChange={(e) =>
+                                    setRebalanceSellPrices((prev) => ({
+                                      ...prev,
+                                      [alloc.symbol]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-36 h-7 rounded-lg font-tabular text-xs"
+                                />
+                                {diff < 0 && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Avg: {formatPKR(existing?.avgPrice || 0)}
+                                  </span>
+                                )}
+                              </div>
                             )}
-                          </p>
+                          </>
                         )}
                       </div>
                       <div className="flex items-center gap-2">

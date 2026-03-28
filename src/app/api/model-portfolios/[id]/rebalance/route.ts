@@ -19,8 +19,9 @@ export async function POST(
 
   const { id } = await params;
   const body = await req.json();
-  const { allocations } = body as {
+  const { allocations, customPrices = {} } = body as {
     allocations: { symbol: string; companyName: string; percentage: number }[];
+    customPrices?: Record<string, number>;
   };
 
   if (!allocations || allocations.length === 0) {
@@ -103,21 +104,24 @@ export async function POST(
     const diff = targetShares - currentShares;
 
     if (diff > 0) {
-      const cost = diff * currentPrice;
+      const buyPrice = customPrices[alloc.symbol] && customPrices[alloc.symbol] > 0
+        ? customPrices[alloc.symbol]
+        : currentPrice;
+      const cost = diff * buyPrice;
       cashDelta -= cost;
       trades.push({
         type: "BUY",
         symbol: alloc.symbol,
         companyName: alloc.companyName,
         quantity: diff,
-        price: currentPrice,
+        price: buyPrice,
         total: cost,
       });
       const newAvgPrice =
         currentShares > 0
-          ? (currentAvgPrice * currentShares + currentPrice * diff) /
+          ? (currentAvgPrice * currentShares + buyPrice * diff) /
             targetShares
-          : currentPrice;
+          : buyPrice;
       newAllocations.push({
         id: existing?.id || generateId(),
         symbol: alloc.symbol,
@@ -130,14 +134,17 @@ export async function POST(
       });
     } else if (diff < 0) {
       const sellQty = Math.abs(diff);
-      const proceeds = sellQty * currentPrice;
+      const sellPrice = customPrices[alloc.symbol] && customPrices[alloc.symbol] > 0
+        ? customPrices[alloc.symbol]
+        : currentPrice;
+      const proceeds = sellQty * sellPrice;
       cashDelta += proceeds;
       trades.push({
         type: "SELL",
         symbol: alloc.symbol,
         companyName: alloc.companyName,
         quantity: sellQty,
-        price: currentPrice,
+        price: sellPrice,
         total: proceeds,
       });
       newAllocations.push({
@@ -169,16 +176,17 @@ export async function POST(
   for (const existing of model.allocations) {
     if (existing.symbol === "CASH") continue;
     if (!newSymbols.has(existing.symbol) && existing.shares > 0) {
-      const currentPrice =
-        priceMap.get(existing.symbol) || existing.avgPrice;
-      const proceeds = existing.shares * currentPrice;
+      const sellPrice = customPrices[existing.symbol] && customPrices[existing.symbol] > 0
+        ? customPrices[existing.symbol]
+        : priceMap.get(existing.symbol) || existing.avgPrice;
+      const proceeds = existing.shares * sellPrice;
       cashDelta += proceeds;
       trades.push({
         type: "SELL",
         symbol: existing.symbol,
         companyName: existing.companyName,
         quantity: existing.shares,
-        price: currentPrice,
+        price: sellPrice,
         total: proceeds,
       });
     }
