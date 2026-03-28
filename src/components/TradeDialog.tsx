@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +17,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, AlertTriangle } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
 
 interface Portfolio {
   id: string;
   name: string;
   cashBalance: number;
+}
+
+interface Holding {
+  symbol: string;
+  quantity: number;
+  avgPrice: number;
 }
 
 interface TradeDialogProps {
@@ -35,6 +41,7 @@ interface TradeDialogProps {
   portfolios: Portfolio[];
   onSuccess: () => void;
   defaultType?: "BUY" | "SELL";
+  defaultPortfolioId?: string;
 }
 
 export function TradeDialog({
@@ -46,6 +53,7 @@ export function TradeDialog({
   portfolios,
   onSuccess,
   defaultType = "BUY",
+  defaultPortfolioId,
 }: TradeDialogProps) {
   const [type, setType] = useState<"BUY" | "SELL">(defaultType);
   const [quantity, setQuantity] = useState("");
@@ -53,6 +61,20 @@ export function TradeDialog({
   const [portfolioId, setPortfolioId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+
+  // Fetch holdings for selected portfolio to validate sell
+  const fetchHoldings = useCallback(async (pid: string) => {
+    try {
+      const res = await fetch(`/api/portfolios/${pid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHoldings(data.holdings || []);
+      }
+    } catch {
+      setHoldings([]);
+    }
+  }, []);
 
   // Reset form when dialog opens or stock changes
   useEffect(() => {
@@ -60,14 +82,26 @@ export function TradeDialog({
       setType(defaultType);
       setQuantity("");
       setPrice(currentPrice > 0 ? currentPrice.toString() : "");
-      setPortfolioId(portfolios[0]?.id || "");
+      const pid = defaultPortfolioId || portfolios[0]?.id || "";
+      setPortfolioId(pid);
       setError("");
       setLoading(false);
+      if (pid) fetchHoldings(pid);
     }
-  }, [open, symbol, currentPrice, portfolios, defaultType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, symbol]);
+
+  // Re-fetch holdings when portfolio changes
+  useEffect(() => {
+    if (portfolioId) fetchHoldings(portfolioId);
+  }, [portfolioId, fetchHoldings]);
 
   const total = (parseInt(quantity) || 0) * (parseFloat(price) || 0);
   const selectedPortfolio = portfolios.find((p) => p.id === portfolioId);
+  const currentHolding = holdings.find((h) => h.symbol === symbol);
+  const ownedQty = currentHolding?.quantity || 0;
+  const avgBuyPrice = currentHolding?.avgPrice || 0;
+  const sellQty = parseInt(quantity) || 0;
 
   const handleSubmit = async () => {
     if (!portfolioId || !quantity || !price) return;
@@ -104,6 +138,14 @@ export function TradeDialog({
     }
   };
 
+  const canSell = type === "SELL" && ownedQty > 0;
+  const cantSellReason =
+    type === "SELL" && ownedQty === 0
+      ? "You don't own this stock in this portfolio"
+      : type === "SELL" && sellQty > ownedQty
+        ? `You only own ${ownedQty} shares`
+        : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md rounded-2xl">
@@ -129,7 +171,7 @@ export function TradeDialog({
                   ? "bg-emerald-500 hover:bg-emerald-600 text-white"
                   : ""
               }`}
-              onClick={() => setType("BUY")}
+              onClick={() => { setType("BUY"); setQuantity(""); setError(""); }}
             >
               Buy
             </Button>
@@ -140,7 +182,7 @@ export function TradeDialog({
                   ? "bg-red-500 hover:bg-red-600 text-white"
                   : ""
               }`}
-              onClick={() => setType("SELL")}
+              onClick={() => { setType("SELL"); setQuantity(""); setError(""); }}
             >
               Sell
             </Button>
@@ -172,16 +214,59 @@ export function TradeDialog({
             </Select>
           </div>
 
+          {/* Sell: Show owned shares info */}
+          {type === "SELL" && (
+            <div className={`p-3 rounded-xl text-sm ${
+              ownedQty > 0
+                ? "bg-amber-500/10 border border-amber-500/20"
+                : "bg-red-500/10 border border-red-500/20"
+            }`}>
+              {ownedQty > 0 ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">You own</span>
+                    <span className="font-bold font-tabular">{ownedQty} shares</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Avg buy price</span>
+                    <span className="font-tabular">PKR {formatPKR(avgBuyPrice)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Current value</span>
+                    <span className="font-tabular font-semibold">PKR {formatPKR(ownedQty * currentPrice, { decimals: 0 })}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-red-500">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="font-medium">You don&apos;t own {symbol} in this portfolio</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Quantity */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Quantity (shares)</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold">Quantity (shares)</Label>
+              {type === "SELL" && ownedQty > 0 && (
+                <button
+                  className="text-[11px] font-semibold text-red-500 hover:text-red-600 transition-colors"
+                  onClick={() => setQuantity(ownedQty.toString())}
+                >
+                  Sell All ({ownedQty})
+                </button>
+              )}
+            </div>
             <Input
               type="number"
               min="1"
+              max={type === "SELL" ? ownedQty : undefined}
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Enter quantity"
+              placeholder={type === "SELL" && ownedQty > 0 ? `Max ${ownedQty} shares` : "Enter quantity"}
               className="rounded-xl font-tabular"
+              disabled={type === "SELL" && ownedQty === 0}
             />
           </div>
 
@@ -197,6 +282,7 @@ export function TradeDialog({
               onChange={(e) => setPrice(e.target.value)}
               placeholder="Enter price"
               className="rounded-xl font-tabular"
+              disabled={type === "SELL" && ownedQty === 0}
             />
           </div>
 
@@ -208,11 +294,22 @@ export function TradeDialog({
                 PKR {formatPKR(total)}
               </span>
             </div>
-            {selectedPortfolio && (
+            {type === "BUY" && selectedPortfolio && (
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Available Cash</span>
                 <span className="font-tabular">
                   PKR {formatPKR(selectedPortfolio.cashBalance, { decimals: 0 })}
+                </span>
+              </div>
+            )}
+            {type === "SELL" && ownedQty > 0 && sellQty > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">P&L on this trade</span>
+                <span className={`font-tabular font-semibold ${
+                  (parseFloat(price) || 0) >= avgBuyPrice ? "text-emerald-600" : "text-red-500"
+                }`}>
+                  {(parseFloat(price) || 0) >= avgBuyPrice ? "+" : ""}
+                  PKR {formatPKR(((parseFloat(price) || 0) - avgBuyPrice) * sellQty, { decimals: 0 })}
                 </span>
               </div>
             )}
@@ -223,6 +320,11 @@ export function TradeDialog({
                   Insufficient cash balance
                 </p>
               )}
+            {cantSellReason && (
+              <p className="text-xs text-red-500 font-medium">
+                {cantSellReason}
+              </p>
+            )}
           </div>
 
           {error && (
@@ -238,7 +340,14 @@ export function TradeDialog({
                 : "bg-red-500 hover:bg-red-600"
             } text-white`}
             onClick={handleSubmit}
-            disabled={loading || !quantity || !price || !portfolioId}
+            disabled={
+              loading ||
+              !quantity ||
+              !price ||
+              !portfolioId ||
+              (type === "BUY" && selectedPortfolio ? total > selectedPortfolio.cashBalance : false) ||
+              (type === "SELL" && (ownedQty === 0 || sellQty > ownedQty))
+            }
           >
             {loading
               ? "Processing..."

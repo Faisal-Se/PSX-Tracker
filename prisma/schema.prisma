@@ -9,14 +9,16 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(cuid())
-  name         String
-  email        String      @unique
-  password     String
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  portfolios   Portfolio[]
-  watchlist    Watchlist[]
+  id              String           @id @default(cuid())
+  name            String
+  email           String           @unique
+  password        String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  portfolios      Portfolio[]
+  watchlist       Watchlist[]
+  modelPortfolios ModelPortfolio[]
+  sessions        Session[]
 }
 
 model Portfolio {
@@ -57,6 +59,56 @@ model Transaction {
   portfolioId String
   portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   createdAt   DateTime  @default(now())
+}
+
+model ModelPortfolio {
+  id           String             @id @default(cuid())
+  name         String
+  description  String             @default("")
+  cashBalance  Float              @default(0)
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  allocations  ModelAllocation[]
+  transactions ModelTransaction[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model ModelAllocation {
+  id               String         @id @default(cuid())
+  symbol           String
+  companyName      String
+  percentage       Float          // target allocation e.g. 20.0 means 20%
+  shares           Int            @default(0)
+  avgPrice         Float          @default(0)
+  modelPortfolioId String
+  modelPortfolio   ModelPortfolio @relation(fields: [modelPortfolioId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([modelPortfolioId, symbol])
+}
+
+model ModelTransaction {
+  id               String         @id @default(cuid())
+  type             String         // BUY, SELL, CASH_IN, CASH_OUT
+  symbol           String
+  companyName      String
+  quantity         Int            @default(0)
+  price            Float          @default(0)
+  total            Float
+  modelPortfolioId String
+  modelPortfolio   ModelPortfolio @relation(fields: [modelPortfolioId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 }
 
 model Watchlist {

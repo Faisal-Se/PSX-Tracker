@@ -11,6 +11,7 @@ import {
   TrendingUp,
   LogOut,
   CircleDot,
+  Layers,
 } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import { getMarketStatus } from "@/lib/market-status";
@@ -20,6 +21,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
   { href: "/market", label: "Market", icon: TrendingUp },
+  { href: "/models", label: "Model Portfolios", icon: Layers },
   { href: "/watchlist", label: "Watchlist", icon: Eye },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },

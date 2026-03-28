@@ -208,42 +208,39 @@ export async function getStockHistory(
     );
     const text = await res.text();
 
-    // Try JSON first
-    try {
-      const data = JSON.parse(text);
-      if (Array.isArray(data)) {
-        return data.map((item: Record<string, string>) => ({
-          date: item.DATE || item.date || "",
-          open: parseFloat(item.OPEN || item.open) || 0,
-          high: parseFloat(item.HIGH || item.high) || 0,
-          low: parseFloat(item.LOW || item.low) || 0,
-          close: parseFloat(item.CLOSE || item.close) || 0,
-          volume: parseInt(item.VOLUME || item.volume) || 0,
-        }));
-      }
-    } catch {
-      // Not JSON, try parsing HTML table
-      const history: StockHistory[] = [];
-      const rows = text.split("</tr>");
-      for (const row of rows) {
-        const orders: string[] = [];
-        const orderRegex = /data-order="([^"]+)"/g;
-        let match;
-        while ((match = orderRegex.exec(row)) !== null) {
-          orders.push(match[1]);
-        }
-        if (orders.length >= 6) {
-          history.push({
-            date: orders[0],
-            open: parseFloat(orders[1]) || 0,
-            high: parseFloat(orders[2]) || 0,
-            low: parseFloat(orders[3]) || 0,
-            close: parseFloat(orders[4]) || 0,
-            volume: parseInt(orders[5]) || 0,
-          });
-        }
-      }
+    const json = JSON.parse(text);
+
+    // New API format: {status, message, data: [[timestamp, close, volume, open], ...]}
+    if (json.data && Array.isArray(json.data)) {
+      const history = json.data.map((item: number[]) => {
+        const d = new Date(item[0] * 1000);
+        const dateStr = d.toISOString().split("T")[0];
+        const close = item[1] || 0;
+        const open = item[3] || 0;
+        return {
+          date: dateStr,
+          open,
+          high: Math.max(open, close),
+          low: Math.min(open, close),
+          close,
+          volume: item[2] || 0,
+        };
+      });
+      // API returns newest-first, chart needs oldest-first
+      history.reverse();
       return history;
+    }
+
+    // Legacy format: array of objects with named keys
+    if (Array.isArray(json)) {
+      return json.map((item: Record<string, string>) => ({
+        date: item.DATE || item.date || "",
+        open: parseFloat(item.OPEN || item.open) || 0,
+        high: parseFloat(item.HIGH || item.high) || 0,
+        low: parseFloat(item.LOW || item.low) || 0,
+        close: parseFloat(item.CLOSE || item.close) || 0,
+        volume: parseInt(item.VOLUME || item.volume) || 0,
+      }));
     }
 
     return [];

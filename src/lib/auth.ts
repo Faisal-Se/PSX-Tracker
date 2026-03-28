@@ -13,7 +13,7 @@ export async function verifyPassword(
   return bcrypt.compare(password, hashedPassword);
 }
 
-// Simple session token - stored in cookie
+// Simple session token
 function generateToken(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let result = "";
@@ -23,12 +23,14 @@ function generateToken(): string {
   return result;
 }
 
-// In-memory session store (for simplicity - use Redis/DB in production)
-const sessions = new Map<string, string>(); // token -> userId
-
 export async function createSession(userId: string): Promise<string> {
   const token = generateToken();
-  sessions.set(token, userId);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+  await prisma.session.create({
+    data: { token, userId, expiresAt },
+  });
+
   const cookieStore = await cookies();
   cookieStore.set("session_token", token, {
     httpOnly: true,
@@ -45,22 +47,27 @@ export async function getCurrentUser() {
   const token = cookieStore.get("session_token")?.value;
   if (!token) return null;
 
-  const userId = sessions.get(token);
-  if (!userId) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, name: true, email: true },
+  const session = await prisma.session.findUnique({
+    where: { token },
+    include: { user: { select: { id: true, name: true, email: true } } },
   });
 
-  return user;
+  if (!session || session.expiresAt < new Date()) {
+    // Expired session — clean up
+    if (session) {
+      await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+    }
+    return null;
+  }
+
+  return session.user;
 }
 
 export async function logout() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session_token")?.value;
   if (token) {
-    sessions.delete(token);
+    await prisma.session.deleteMany({ where: { token } }).catch(() => {});
   }
   cookieStore.delete("session_token");
 }

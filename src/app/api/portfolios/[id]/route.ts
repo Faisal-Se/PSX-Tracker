@@ -2,6 +2,35 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const { id } = await params;
+
+  const portfolio = await prisma.portfolio.findFirst({
+    where: { id, userId: user.id },
+    include: {
+      holdings: true,
+      _count: { select: { transactions: true } },
+    },
+  });
+
+  if (!portfolio) {
+    return NextResponse.json(
+      { error: "Portfolio not found" },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json(portfolio);
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

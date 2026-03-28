@@ -263,7 +263,6 @@
 .stat-card {
   transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
-  overflow: hidden;
 }
 .stat-card::after {
   content: "";
@@ -272,6 +271,7 @@
   background: linear-gradient(135deg, oklch(0.55 0.2 155 / 0) 0%, oklch(0.55 0.2 155 / 0.04) 100%);
   opacity: 0;
   transition: opacity 0.3s ease;
+  pointer-events: none;
 }
 .stat-card:hover {
   transform: translateY(-4px);

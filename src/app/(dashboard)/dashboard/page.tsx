@@ -15,6 +15,7 @@ import {
   PieChart,
   Banknote,
   Briefcase,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -52,19 +53,28 @@ interface MarketStock {
   volume: number;
 }
 
+interface ModelPortfolio {
+  id: string;
+  name: string;
+  cashBalance: number;
+  allocations: { symbol: string; companyName: string; percentage: number; shares: number }[];
+}
+
 export default function DashboardPage() {
   const [kse100, setKse100] = useState<KSE100 | null>(null);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
+  const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [kseRes, portfolioRes, marketRes] = await Promise.all([
+      const [kseRes, portfolioRes, marketRes, modelsRes] = await Promise.all([
         fetch("/api/psx?action=kse100"),
         fetch("/api/portfolios"),
         fetch("/api/psx"),
+        fetch("/api/model-portfolios"),
       ]);
 
       if (kseRes.ok) setKse100(await kseRes.json());
@@ -73,6 +83,7 @@ export default function DashboardPage() {
         const data = await marketRes.json();
         setMarketData(Array.isArray(data) ? data : []);
       }
+      if (modelsRes.ok) setModelPortfolios(await modelsRes.json());
     } catch (error) {
       console.error("Failed to fetch data:", error);
     } finally {
@@ -310,8 +321,57 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* Model Portfolios */}
+      {modelPortfolios.length > 0 && (
+        <div className="animate-in-up-delay-3">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <div className="h-6 w-6 rounded-md icon-bg-violet flex items-center justify-center">
+                <Layers className="h-3.5 w-3.5 text-violet-500" />
+              </div>
+              Model Portfolios
+            </h2>
+            <Link href="/models">
+              <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground hover:text-foreground">
+                View All
+              </Button>
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {modelPortfolios.slice(0, 3).map((model) => (
+              <Link key={model.id} href={`/models/${model.id}`}>
+                <Card className="stat-card stat-card-violet rounded-2xl border-violet-500/15 cursor-pointer">
+                  <CardContent className="pt-4 pb-4">
+                    <p className="font-semibold text-sm">{model.name}</p>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden flex mt-3 mb-2">
+                      {model.allocations.map((a, i) => {
+                        const colors = ["bg-violet-500", "bg-blue-500", "bg-cyan-500", "bg-emerald-500", "bg-amber-500"];
+                        const color = a.symbol === "CASH" ? "bg-slate-400" : colors[i % colors.length];
+                        return (
+                          <div
+                            key={a.symbol}
+                            className={`h-full ${color}`}
+                            style={{ width: `${a.percentage}%` }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{model.allocations.filter(a => a.symbol !== "CASH" && a.shares > 0).length} stocks</span>
+                      <span className="font-tabular font-semibold text-foreground">
+                        PKR {formatPKR(model.cashBalance, { compact: true })} cash
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Holdings & Market Movers */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 animate-in-up-delay-3">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 animate-in-up-delay-4">
         {/* My Holdings - Wider */}
         <Card className="lg:col-span-3 border-border/50 shadow-sm rounded-2xl">
           <CardHeader className="pb-1">
@@ -488,6 +548,7 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+
     </div>
   );
 }

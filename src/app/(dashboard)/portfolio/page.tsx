@@ -87,6 +87,7 @@ export default function PortfolioPage() {
     symbol: string;
     company: string;
     price: number;
+    portfolioId?: string;
   } | null>(null);
 
   // Edit portfolio state
@@ -597,6 +598,7 @@ export default function PortfolioPage() {
                                             symbol: h.symbol,
                                             company: h.companyName,
                                             price: currentPrice,
+                                            portfolioId: portfolio.id,
                                           })
                                         }
                                       >
@@ -798,6 +800,7 @@ export default function PortfolioPage() {
             name: p.name,
             cashBalance: p.cashBalance,
           }))}
+          defaultPortfolioId={tradeStock.portfolioId || activeTab}
           onSuccess={fetchData}
         />
       )}
