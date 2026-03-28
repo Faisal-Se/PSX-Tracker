@@ -20,6 +20,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface Allocation {
   id?: string;
@@ -50,6 +51,7 @@ export default function ModelsPage() {
   const [models, setModels] = useState<ModelPortfolio[]>([]);
   const [showEditor, setShowEditor] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Editor form state
   const [formName, setFormName] = useState("");
@@ -76,6 +78,7 @@ export default function ModelsPage() {
       if (res.ok) setModels(await res.json());
     } finally {
       setLoading(false);
+      setInitialLoading(false);
     }
   }, []);
 
@@ -245,6 +248,8 @@ export default function ModelsPage() {
     "bg-indigo-500",
     "bg-teal-500",
   ];
+
+  if (initialLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">

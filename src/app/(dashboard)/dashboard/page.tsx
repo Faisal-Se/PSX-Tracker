@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { formatPKR } from "@/lib/market-status";
+import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
 
 interface KSE100 {
   current: number;
@@ -106,6 +107,7 @@ export default function DashboardPage() {
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
 
@@ -157,6 +159,7 @@ export default function DashboardPage() {
       console.error("Failed to fetch data:", error);
     } finally {
       setRefreshing(false);
+      setInitialLoading(false);
     }
   }, []);
 
@@ -194,6 +197,29 @@ export default function DashboardPage() {
     .sort((a, b) => b.changePercent - a.changePercent);
   const topGainers = sortedByChange.slice(0, 5);
   const topLosers = sortedByChange.slice(-5).reverse();
+
+  if (initialLoading) {
+    return (
+      <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-44" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <Skeleton className="h-36 w-full rounded-2xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 lg:space-y-8 max-w-[1400px]">

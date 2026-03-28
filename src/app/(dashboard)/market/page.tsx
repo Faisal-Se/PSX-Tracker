@@ -24,6 +24,7 @@ import {
 import Link from "next/link";
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface MarketStock {
   symbol: string;
@@ -65,6 +66,7 @@ export default function MarketPage() {
   const [sortBy, setSortBy] = useState<"symbol" | "change" | "volume">("volume");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [tradeStock, setTradeStock] = useState<MarketStock | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     const [marketRes, portfolioRes] = await Promise.all([
@@ -76,6 +78,7 @@ export default function MarketPage() {
       setStocks(Array.isArray(data) ? data : []);
     }
     if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
+    setInitialLoading(false);
   }, []);
 
   useEffect(() => {
@@ -157,6 +160,8 @@ export default function MarketPage() {
     () => [...activeStocks].sort((a, b) => b.volume - a.volume).slice(0, 1)[0],
     [activeStocks]
   );
+
+  if (initialLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">

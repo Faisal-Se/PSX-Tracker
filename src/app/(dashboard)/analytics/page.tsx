@@ -28,6 +28,7 @@ import {
 } from "recharts";
 import Link from "next/link";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface Holding {
   id: string;
@@ -71,6 +72,7 @@ const tooltipFormatPnL = (value: any) => [`PKR ${Number(value).toLocaleString()}
 export default function AnalyticsPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     const [portfolioRes, marketRes] = await Promise.all([
@@ -83,6 +85,7 @@ export default function AnalyticsPage() {
       const data = await marketRes.json();
       setMarketData(Array.isArray(data) ? data : []);
     }
+    setInitialLoading(false);
   }, []);
 
   useEffect(() => {
@@ -153,6 +156,8 @@ export default function AnalyticsPage() {
   ];
 
   const hasData = allHoldings.length > 0;
+
+  if (initialLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">

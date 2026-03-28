@@ -47,6 +47,7 @@ import Link from "next/link";
 import { TradeDialog } from "@/components/TradeDialog";
 import { StockSearch } from "@/components/StockSearch";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface Holding {
   id: string;
@@ -78,6 +79,7 @@ export default function PortfolioPage() {
   const [marketData, setMarketData] = useState<Map<string, MarketStock>>(
     new Map()
   );
+  const [initialLoading, setInitialLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("Personal");
@@ -119,6 +121,7 @@ export default function PortfolioPage() {
       }
       setMarketData(map);
     }
+    setInitialLoading(false);
   }, []);
 
   useEffect(() => {
@@ -212,6 +215,8 @@ export default function PortfolioPage() {
     Family: "bg-purple-500/10 text-purple-600 border-purple-500/20",
     Business: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   };
+
+  if (initialLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">

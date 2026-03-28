@@ -14,6 +14,7 @@ import { ArrowLeftRight, Receipt, ArrowUpRight, ArrowDownRight } from "lucide-re
 import { format } from "date-fns";
 import Link from "next/link";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface Transaction {
   id: string;
@@ -36,6 +37,7 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [filterPortfolio, setFilterPortfolio] = useState("all");
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     const portfolioParam =
@@ -47,6 +49,7 @@ export default function TransactionsPage() {
 
     if (txRes.ok) setTransactions(await txRes.json());
     if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
+    setInitialLoading(false);
   }, [filterPortfolio]);
 
   useEffect(() => {
@@ -54,6 +57,8 @@ export default function TransactionsPage() {
   }, [fetchData]);
 
   const portfolioMap = new Map(portfolios.map((p) => [p.id, p.name]));
+
+  if (initialLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">

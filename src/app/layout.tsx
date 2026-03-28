@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PSX Tracker - Pakistan Stock Exchange Portfolio Tracker",
+  title: "PSX Tracker",
   description:
     "Track your PSX portfolio, monitor KSE-100, and manage virtual stock trades",
 };

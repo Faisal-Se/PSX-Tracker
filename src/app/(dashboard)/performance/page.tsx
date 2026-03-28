@@ -26,6 +26,7 @@ import {
   Cell,
 } from "recharts";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface Transaction {
   id: string;
@@ -66,6 +67,7 @@ export default function PerformancePage() {
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState<Period>("1M");
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setRefreshing(true);
@@ -84,6 +86,7 @@ export default function PerformancePage() {
       }
     } finally {
       setRefreshing(false);
+      setInitialLoading(false);
     }
   }, []);
 
@@ -224,6 +227,8 @@ export default function PerformancePage() {
   }, [portfolios, priceMap]);
 
   const periods: Period[] = ["1W", "1M", "3M", "6M", "1Y", "ALL"];
+
+  if (initialLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6 lg:space-y-8 max-w-[1400px]">

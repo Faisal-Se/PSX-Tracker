@@ -17,6 +17,7 @@ import Link from "next/link";
 import { StockSearch } from "@/components/StockSearch";
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface WatchlistItem {
   id: string;
@@ -48,6 +49,7 @@ export default function WatchlistPage() {
   );
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [tradeStock, setTradeStock] = useState<MarketStock | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     const [watchRes, marketRes, portfolioRes] = await Promise.all([
@@ -66,6 +68,7 @@ export default function WatchlistPage() {
       setMarketData(map);
     }
     if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
+    setInitialLoading(false);
   }, []);
 
   useEffect(() => {
@@ -92,6 +95,8 @@ export default function WatchlistPage() {
     });
     fetchData();
   };
+
+  if (initialLoading) return <PageSkeleton />;
 
   return (
     <div className="space-y-6">
