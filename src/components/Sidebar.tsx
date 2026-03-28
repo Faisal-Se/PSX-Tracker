@@ -78,9 +78,9 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="dark left-0 top-0 z-40 h-screen w-[260px] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col border-r border-white/5">
+    <aside className="dark left-0 top-0 z-40 h-dvh w-[260px] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col border-r border-white/5">
       {/* Logo */}
-      <div className="px-5 pt-6 pb-4">
+      <div className="px-5 pt-6 pb-4 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 animate-breathe">
             <TrendingUp className="h-5 w-5 text-white" strokeWidth={2.5} />
@@ -97,7 +97,7 @@ export function Sidebar() {
       </div>
 
       {/* Market Status */}
-      <div className="mx-4 mb-4 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10">
+      <div className="mx-4 mb-4 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="relative">

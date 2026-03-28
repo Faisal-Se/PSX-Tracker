@@ -43,7 +43,7 @@ export default function DashboardLayout({
 
       {/* Sidebar - slide-in on mobile, fixed on desktop */}
       <div
-        className={`fixed left-0 top-0 z-50 lg:z-40 h-screen transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed left-0 top-0 z-50 lg:z-40 h-dvh transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
