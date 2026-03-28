@@ -84,9 +84,20 @@ export default function LoginPage() {
               </div>
             </div>
           </div>
-          <p className="text-white/20 text-xs">
-            &copy; 2026 PSX Tracker. For educational purposes only.
-          </p>
+          <div className="text-xs text-white/20">
+            <p>
+              Built by{" "}
+              <a
+                href="https://www.instagram.com/faisiheree/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-white/40 hover:text-pink-400 transition-colors"
+              >
+                Faisal Qayyum
+              </a>
+            </p>
+            <p className="mt-1">&copy; 2026 PSX Tracker. For educational purposes only.</p>
+          </div>
         </div>
       </div>
 

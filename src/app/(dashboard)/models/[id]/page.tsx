@@ -110,9 +110,20 @@ export default function ModelDetailPage() {
   >([]);
   const [rebalanceLoading, setRebalanceLoading] = useState(false);
   const [rebalanceError, setRebalanceError] = useState("");
-  const [rebalanceSellPrices, setRebalanceSellPrices] = useState<
-    Record<string, string>
-  >({});
+
+  // Rebalance confirmation popup (step 2: enter trade prices)
+  const [showRebalanceConfirm, setShowRebalanceConfirm] = useState(false);
+  const [rebalanceTrades, setRebalanceTrades] = useState<
+    {
+      symbol: string;
+      companyName: string;
+      type: "BUY" | "SELL";
+      shares: number;
+      marketPrice: number;
+      avgPrice: number;
+      price: string;
+    }[]
+  >([]);
 
   // Bulk trade
   const [showBulkTrade, setShowBulkTrade] = useState(false);
@@ -223,7 +234,7 @@ export default function ModelDetailPage() {
       }))
     );
     setRebalanceError("");
-    setRebalanceSellPrices({});
+    setRebalanceTrades([]);
     setStockQuery("");
     setStockResults([]);
     setShowRebalance(true);
@@ -290,10 +301,81 @@ export default function ModelDetailPage() {
     setStockResults([]);
   };
 
-  const handleRebalanceSubmit = async () => {
+  // Step 1: User clicks "Review Trades" — only show trades for stocks whose % actually changed
+  const handleRebalanceNext = () => {
     if (Math.abs(rebalanceTotalPct - 100) > 0.01) return;
+
+    // Build a map of original percentages
+    const originalPctMap = new Map(
+      model.allocations.map((a) => [a.symbol, a.percentage])
+    );
+
+    const trades: typeof rebalanceTrades = [];
+    for (const alloc of rebalanceAllocations) {
+      if (alloc.symbol === "CASH") continue;
+
+      // Skip if percentage hasn't changed
+      const originalPct = originalPctMap.get(alloc.symbol) ?? 0;
+      if (Math.abs(alloc.percentage - originalPct) < 0.01) continue;
+
+      const existing = model.allocations.find((a) => a.symbol === alloc.symbol);
+      const currentShares = existing?.shares || 0;
+      const mktPrice = marketPrices[alloc.symbol] || 0;
+      if (mktPrice <= 0) continue;
+      const targetValue = (alloc.percentage / 100) * totalValue;
+      const targetShares = Math.floor(targetValue / mktPrice);
+      const diff = targetShares - currentShares;
+      if (diff === 0) continue;
+
+      trades.push({
+        symbol: alloc.symbol,
+        companyName: alloc.companyName,
+        type: diff > 0 ? "BUY" : "SELL",
+        shares: Math.abs(diff),
+        marketPrice: mktPrice,
+        avgPrice: existing?.avgPrice || 0,
+        price: "",
+      });
+    }
+
+    // Also include removed stocks (percentage went from >0 to not in list)
+    const newSymbols = new Set(rebalanceAllocations.map((a) => a.symbol));
+    for (const existing of model.allocations) {
+      if (existing.symbol === "CASH") continue;
+      if (!newSymbols.has(existing.symbol) && existing.shares > 0) {
+        const mktPrice = marketPrices[existing.symbol] || existing.avgPrice;
+        trades.push({
+          symbol: existing.symbol,
+          companyName: existing.companyName,
+          type: "SELL",
+          shares: existing.shares,
+          marketPrice: mktPrice,
+          avgPrice: existing.avgPrice,
+          price: "",
+        });
+      }
+    }
+
+    if (trades.length === 0) {
+      // No actual trades needed, just submit directly
+      handleRebalanceSubmit({});
+      return;
+    }
+
+    setRebalanceTrades(trades);
+    setShowRebalanceConfirm(true);
+  };
+
+  // Step 2: User enters prices and confirms — submit to API
+  const handleRebalanceSubmit = async (customPricesOverride?: Record<string, number>) => {
     setRebalanceLoading(true);
     setRebalanceError("");
+
+    const customPrices = customPricesOverride ?? Object.fromEntries(
+      rebalanceTrades
+        .filter((t) => t.price && parseFloat(t.price) > 0)
+        .map((t) => [t.symbol, parseFloat(t.price)])
+    );
 
     try {
       const res = await fetch(`/api/model-portfolios/${id}/rebalance`, {
@@ -301,11 +383,7 @@ export default function ModelDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           allocations: rebalanceAllocations,
-          customPrices: Object.fromEntries(
-            Object.entries(rebalanceSellPrices)
-              .filter(([, v]) => v && parseFloat(v) > 0)
-              .map(([k, v]) => [k, parseFloat(v)])
-          ),
+          customPrices,
         }),
       });
 
@@ -315,6 +393,7 @@ export default function ModelDetailPage() {
         return;
       }
 
+      setShowRebalanceConfirm(false);
       setShowRebalance(false);
       fetchData();
     } catch {
@@ -1344,64 +1423,19 @@ export default function ModelDetailPage() {
                         )}
                         {/* Trade preview */}
                         {alloc.symbol !== "CASH" && price > 0 && (
-                          <>
-                            <p className="text-[11px] mt-0.5">
-                              <span className="text-muted-foreground">
-                                {currentShares} → {targetShares} shares
-                              </span>
-                              {diff !== 0 && (() => {
-                                const tradePrice = diff < 0 && rebalanceSellPrices[alloc.symbol] && parseFloat(rebalanceSellPrices[alloc.symbol]) > 0
-                                  ? parseFloat(rebalanceSellPrices[alloc.symbol])
-                                  : price;
-                                const pnlPerShare = diff < 0 ? tradePrice - (existing?.avgPrice || 0) : 0;
-                                const totalPnlTrade = diff < 0 ? pnlPerShare * Math.abs(diff) : 0;
-                                return (
-                                  <span
-                                    className={`ml-1.5 font-semibold ${diff > 0 ? "text-emerald-600" : "text-red-500"}`}
-                                  >
-                                    ({diff > 0 ? "+" : ""}
-                                    {diff} = {diff > 0 ? "BUY" : "SELL"} PKR{" "}
-                                    {formatPKR(Math.abs(diff) * tradePrice, {
-                                      decimals: 0,
-                                    })}
-                                    {diff < 0 && (
-                                      <span className={totalPnlTrade >= 0 ? "text-emerald-600" : "text-red-500"}>
-                                        {" "}· {totalPnlTrade >= 0 ? "Profit" : "Loss"} PKR {formatPKR(Math.abs(totalPnlTrade), { decimals: 0 })}
-                                      </span>
-                                    )}
-                                    )
-                                  </span>
-                                );
-                              })()}
-                            </p>
-                            {/* Price input when shares are being bought or sold */}
+                          <p className="text-[11px] mt-0.5">
+                            <span className="text-muted-foreground">
+                              {currentShares} → {targetShares} shares
+                            </span>
                             {diff !== 0 && (
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <Label className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                  {diff < 0 ? "Sell" : "Buy"} @
-                                </Label>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  placeholder={`Market: ${formatPKR(price)}`}
-                                  value={rebalanceSellPrices[alloc.symbol] || ""}
-                                  onChange={(e) =>
-                                    setRebalanceSellPrices((prev) => ({
-                                      ...prev,
-                                      [alloc.symbol]: e.target.value,
-                                    }))
-                                  }
-                                  className="w-36 h-7 rounded-lg font-tabular text-xs"
-                                />
-                                {diff < 0 && (
-                                  <span className="text-[10px] text-muted-foreground">
-                                    Avg: {formatPKR(existing?.avgPrice || 0)}
-                                  </span>
-                                )}
-                              </div>
+                              <span
+                                className={`ml-1.5 font-semibold ${diff > 0 ? "text-emerald-600" : "text-red-500"}`}
+                              >
+                                ({diff > 0 ? "+" : ""}
+                                {diff} = {diff > 0 ? "BUY" : "SELL"})
+                              </span>
                             )}
-                          </>
+                          </p>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
@@ -1456,7 +1490,7 @@ export default function ModelDetailPage() {
                 Cancel
               </Button>
               <Button
-                onClick={handleRebalanceSubmit}
+                onClick={handleRebalanceNext}
                 disabled={
                   rebalanceLoading ||
                   Math.abs(rebalanceTotalPct - 100) > 0.01
@@ -1465,7 +1499,169 @@ export default function ModelDetailPage() {
               >
                 {rebalanceLoading
                   ? "Rebalancing..."
-                  : "Confirm Rebalance"}
+                  : "Review Trades"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════ */}
+      {/* Rebalance Confirm Prices Dialog    */}
+      {/* ═══════════════════════════════════ */}
+      <Dialog open={showRebalanceConfirm} onOpenChange={setShowRebalanceConfirm}>
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-violet-500" />
+              Confirm Trade Prices
+            </DialogTitle>
+          </DialogHeader>
+
+          <p className="text-xs text-muted-foreground -mt-1">
+            Enter the price at which you are buying/selling each stock. Leave empty to use market price.
+          </p>
+
+          <div className="space-y-3 pt-2">
+            {rebalanceTrades.map((trade, i) => {
+              const tradePrice = trade.price && parseFloat(trade.price) > 0
+                ? parseFloat(trade.price)
+                : trade.marketPrice;
+              const totalCost = trade.shares * tradePrice;
+              const pnl = trade.type === "SELL"
+                ? (tradePrice - trade.avgPrice) * trade.shares
+                : 0;
+              const newAvg = trade.type === "BUY" && trade.avgPrice > 0
+                ? (() => {
+                    const existing = model.allocations.find((a) => a.symbol === trade.symbol);
+                    const existingShares = existing?.shares || 0;
+                    return (trade.avgPrice * existingShares + tradePrice * trade.shares) / (existingShares + trade.shares);
+                  })()
+                : trade.type === "BUY"
+                  ? tradePrice
+                  : 0;
+
+              return (
+                <div
+                  key={trade.symbol}
+                  className={`p-3 rounded-xl border ${
+                    trade.type === "SELL"
+                      ? "bg-red-500/5 border-red-500/20"
+                      : "bg-emerald-500/5 border-emerald-500/20"
+                  }`}
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 py-0 ${
+                          trade.type === "SELL"
+                            ? "border-red-500/40 text-red-600"
+                            : "border-emerald-500/40 text-emerald-600"
+                        }`}
+                      >
+                        {trade.type}
+                      </Badge>
+                      <span className="text-sm font-bold">{trade.symbol}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {trade.shares} shares
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mb-2 truncate">
+                    {trade.companyName}
+                  </p>
+
+                  {/* Price input */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <Label className="text-xs text-muted-foreground whitespace-nowrap w-20">
+                      {trade.type === "SELL" ? "Sell Price" : "Buy Price"}
+                    </Label>
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">PKR</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder={formatPKR(trade.marketPrice)}
+                        value={trade.price}
+                        onChange={(e) => {
+                          setRebalanceTrades((prev) =>
+                            prev.map((t, j) =>
+                              j === i ? { ...t, price: e.target.value } : t
+                            )
+                          );
+                        }}
+                        className="pl-10 h-8 rounded-lg font-tabular text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Info rows */}
+                  <div className="space-y-1 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Market Price</span>
+                      <span className="font-tabular">PKR {formatPKR(trade.marketPrice)}</span>
+                    </div>
+                    {trade.avgPrice > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Your Avg Price</span>
+                        <span className="font-tabular">PKR {formatPKR(trade.avgPrice)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-semibold">
+                      <span className="text-muted-foreground">Total</span>
+                      <span className="font-tabular">PKR {formatPKR(totalCost, { decimals: 0 })}</span>
+                    </div>
+                    {trade.type === "SELL" && trade.avgPrice > 0 && (
+                      <div className="flex justify-between font-bold pt-1 border-t border-border/50">
+                        <span className={pnl >= 0 ? "text-emerald-600" : "text-red-500"}>
+                          {pnl >= 0 ? "Profit" : "Loss"}
+                        </span>
+                        <span className={`font-tabular ${pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          {pnl >= 0 ? "+" : ""}PKR {formatPKR(pnl, { decimals: 0 })}
+                          <span className="text-[10px] ml-1 opacity-70">
+                            ({((tradePrice - trade.avgPrice) / trade.avgPrice * 100).toFixed(1)}%)
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                    {trade.type === "BUY" && (
+                      <div className="flex justify-between pt-1 border-t border-border/50">
+                        <span className="text-muted-foreground">New Avg Price</span>
+                        <span className="font-tabular font-semibold">
+                          PKR {formatPKR(newAvg)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {rebalanceError && (
+              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+                {rebalanceError}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => setShowRebalanceConfirm(false)}
+              >
+                Back
+              </Button>
+              <Button
+                onClick={() => handleRebalanceSubmit()}
+                disabled={rebalanceLoading}
+                className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+              >
+                {rebalanceLoading
+                  ? "Executing..."
+                  : "Confirm & Execute"}
               </Button>
             </div>
           </div>

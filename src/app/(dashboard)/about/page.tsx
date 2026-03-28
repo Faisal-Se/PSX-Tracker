@@ -27,10 +27,15 @@ const features = [
 const techStack = [
   "Next.js",
   "React",
+  "React Native",
+  "iOS",
+  "Android",
   "TypeScript",
   "Tailwind CSS",
-  "Prisma",
-  "SQLite",
+  "Python",
+  "AI / Agentic",
+  "Google Drive API",
+  "Google OAuth 2.0",
 ];
 
 const colorMap: Record<string, { iconBg: string; iconText: string }> = {
@@ -136,7 +141,7 @@ export default function AboutPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">Faisal Qayyum</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Creator & Developer
+                  Full-Stack & Mobile Developer
                 </p>
                 <a
                   href="https://www.instagram.com/faisiheree/"
