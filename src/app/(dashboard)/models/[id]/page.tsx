@@ -28,8 +28,23 @@ import {
   DollarSign,
   Pencil,
   Minus,
+  ShoppingCart,
+  Trash2,
+  Activity,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Cell,
+  PieChart as RechartsPie,
+  Pie,
+} from "recharts";
 
 interface Allocation {
   id: string;
@@ -96,7 +111,15 @@ export default function ModelDetailPage() {
   const [rebalanceLoading, setRebalanceLoading] = useState(false);
   const [rebalanceError, setRebalanceError] = useState("");
 
-  // Stock search for rebalance
+  // Bulk trade
+  const [showBulkTrade, setShowBulkTrade] = useState(false);
+  const [bulkTrades, setBulkTrades] = useState<
+    { symbol: string; companyName: string; type: "BUY" | "SELL"; quantity: string }[]
+  >([]);
+  const [bulkTradeLoading, setBulkTradeLoading] = useState(false);
+  const [bulkTradeError, setBulkTradeError] = useState("");
+
+  // Stock search (shared for rebalance and bulk trade)
   const [stockQuery, setStockQuery] = useState("");
   const [stockResults, setStockResults] = useState<SearchStock[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -347,6 +370,71 @@ export default function ModelDetailPage() {
     }
   };
 
+  const openBulkTrade = () => {
+    setBulkTrades([]);
+    setBulkTradeError("");
+    setStockQuery("");
+    setStockResults([]);
+    setShowBulkTrade(true);
+  };
+
+  const handleBulkTradeAddStock = (stock: SearchStock) => {
+    if (bulkTrades.some((t) => t.symbol === stock.symbol)) return;
+    setBulkTrades((prev) => [
+      ...prev,
+      { symbol: stock.symbol, companyName: stock.company, type: "BUY", quantity: "" },
+    ]);
+    setStockQuery("");
+    setStockResults([]);
+    setMarketPrices((prev) => ({ ...prev, [stock.symbol]: stock.current }));
+  };
+
+  const handleBulkTradeAddHolding = (alloc: Allocation) => {
+    if (bulkTrades.some((t) => t.symbol === alloc.symbol)) return;
+    setBulkTrades((prev) => [
+      ...prev,
+      { symbol: alloc.symbol, companyName: alloc.companyName, type: "SELL", quantity: "" },
+    ]);
+  };
+
+  const handleBulkTradeSubmit = async () => {
+    const validTrades = bulkTrades.filter(
+      (t) => parseInt(t.quantity) > 0
+    );
+    if (validTrades.length === 0) return;
+
+    setBulkTradeLoading(true);
+    setBulkTradeError("");
+
+    try {
+      const res = await fetch(`/api/model-portfolios/${id}/bulk-trade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trades: validTrades.map((t) => ({
+            symbol: t.symbol,
+            companyName: t.companyName,
+            type: t.type,
+            quantity: parseInt(t.quantity),
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setBulkTradeError(data.error || "Bulk trade failed");
+        return;
+      }
+
+      setShowBulkTrade(false);
+      fetchData();
+    } catch {
+      setBulkTradeError("Bulk trade failed");
+    } finally {
+      setBulkTradeLoading(false);
+    }
+  };
+
   const stockColors = [
     "from-violet-500 to-purple-500",
     "from-blue-500 to-cyan-500",
@@ -372,7 +460,7 @@ export default function ModelDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between animate-in-up">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 animate-in-up">
         <div>
           <button
             onClick={() => router.push("/models")}
@@ -382,11 +470,11 @@ export default function ModelDetailPage() {
             Back to Models
           </button>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl icon-bg-violet flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl icon-bg-violet flex items-center justify-center shrink-0">
               <PieChart className="h-5 w-5 text-violet-500" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <h1 className="text-xl lg:text-2xl font-bold tracking-tight flex items-center gap-2">
                 {model.name}
                 <button
                   onClick={() => {
@@ -407,7 +495,7 @@ export default function ModelDetailPage() {
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             className="rounded-xl"
@@ -423,6 +511,14 @@ export default function ModelDetailPage() {
           >
             <Minus className="h-4 w-4 mr-1.5" />
             Withdraw
+          </Button>
+          <Button
+            variant="outline"
+            className="rounded-xl"
+            onClick={openBulkTrade}
+          >
+            <ShoppingCart className="h-4 w-4 mr-1.5" />
+            Bulk Trade
           </Button>
           <Button
             className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
@@ -666,6 +762,242 @@ export default function ModelDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Analytics */}
+      {stockAllocations.length > 0 && (() => {
+        const stockPnlData = stockAllocations.map((alloc) => {
+          const currentPrice = marketPrices[alloc.symbol] || alloc.avgPrice;
+          const currentValue = alloc.shares * currentPrice;
+          const costBasis = alloc.shares * alloc.avgPrice;
+          const pnl = currentValue - costBasis;
+          const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+          return {
+            symbol: alloc.symbol,
+            pnl,
+            pnlPct,
+            currentValue,
+            costBasis,
+          };
+        });
+
+        const pieData = [
+          ...stockAllocations.map((a) => ({
+            name: a.symbol,
+            value: a.shares * (marketPrices[a.symbol] || a.avgPrice),
+          })),
+          ...(model.cashBalance > 0
+            ? [{ name: "Cash", value: model.cashBalance }]
+            : []),
+        ];
+
+        const PIE_COLORS = [
+          "#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b",
+          "#ef4444", "#6366f1", "#14b8a6", "#f97316", "#ec4899",
+        ];
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in-up-delay-3">
+            {/* P&L by Stock */}
+            <Card className="rounded-2xl">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-violet-500" />
+                  P&L by Stock
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={stockPnlData}
+                      layout="vertical"
+                      margin={{ top: 0, right: 10, bottom: 0, left: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        horizontal={false}
+                        stroke="hsl(var(--border))"
+                      />
+                      <XAxis
+                        type="number"
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={(v) => formatPKR(v, { decimals: 0 })}
+                        stroke="hsl(var(--muted-foreground))"
+                      />
+                      <YAxis
+                        dataKey="symbol"
+                        type="category"
+                        tick={{ fontSize: 12, fontWeight: 600 }}
+                        width={65}
+                        stroke="hsl(var(--muted-foreground))"
+                      />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          const d = payload[0].payload;
+                          return (
+                            <div className="bg-popover border border-border rounded-xl px-3 py-2 shadow-lg text-sm">
+                              <p className="font-semibold">{d.symbol}</p>
+                              <p className={d.pnl >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                P&L: {d.pnl >= 0 ? "+" : ""}PKR {formatPKR(d.pnl, { decimals: 0 })}
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                {d.pnlPct >= 0 ? "+" : ""}{d.pnlPct.toFixed(2)}%
+                              </p>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Bar dataKey="pnl" radius={[0, 4, 4, 0]}>
+                        {stockPnlData.map((entry, i) => (
+                          <Cell
+                            key={i}
+                            fill={entry.pnl >= 0 ? "#10b981" : "#ef4444"}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Portfolio Composition Pie */}
+            <Card className="rounded-2xl">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <PieChart className="h-4 w-4 text-violet-500" />
+                  Portfolio Composition
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {pieData.map((_, i) => (
+                          <Cell
+                            key={i}
+                            fill={
+                              pieData[i].name === "Cash"
+                                ? "#94a3b8"
+                                : PIE_COLORS[i % PIE_COLORS.length]
+                            }
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          const d = payload[0].payload;
+                          return (
+                            <div className="bg-popover border border-border rounded-xl px-3 py-2 shadow-lg text-sm">
+                              <p className="font-semibold">{d.name}</p>
+                              <p>PKR {formatPKR(d.value, { decimals: 0 })}</p>
+                              <p className="text-muted-foreground text-xs">
+                                {totalValue > 0
+                                  ? ((d.value / totalValue) * 100).toFixed(1)
+                                  : 0}
+                                %
+                              </p>
+                            </div>
+                          );
+                        }}
+                      />
+                    </RechartsPie>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex flex-wrap gap-2.5 mt-3 justify-center">
+                  {pieData.map((d, i) => (
+                    <div key={d.name} className="flex items-center gap-1.5">
+                      <div
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{
+                          backgroundColor:
+                            d.name === "Cash"
+                              ? "#94a3b8"
+                              : PIE_COLORS[i % PIE_COLORS.length],
+                        }}
+                      />
+                      <span className="text-xs font-medium">{d.name}</span>
+                      <span className="text-xs text-muted-foreground font-tabular">
+                        {totalValue > 0
+                          ? ((d.value / totalValue) * 100).toFixed(1)
+                          : 0}
+                        %
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Stock Returns */}
+            <Card className="rounded-2xl lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-violet-500" />
+                  Stock Returns
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {stockPnlData
+                    .sort((a, b) => b.pnlPct - a.pnlPct)
+                    .map((stock) => (
+                      <div
+                        key={stock.symbol}
+                        className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold">{stock.symbol}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Cost: PKR {formatPKR(stock.costBasis, { decimals: 0 })} → Value: PKR{" "}
+                            {formatPKR(stock.currentValue, { decimals: 0 })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p
+                            className={`text-sm font-bold font-tabular ${
+                              stock.pnl >= 0 ? "text-emerald-600" : "text-red-500"
+                            }`}
+                          >
+                            {stock.pnl >= 0 ? "+" : ""}PKR {formatPKR(stock.pnl, { decimals: 0 })}
+                          </p>
+                          <p
+                            className={`text-xs font-tabular ${
+                              stock.pnl >= 0 ? "text-emerald-600" : "text-red-500"
+                            }`}
+                          >
+                            {stock.pnlPct >= 0 ? "+" : ""}{stock.pnlPct.toFixed(2)}%
+                          </p>
+                        </div>
+                        <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              stock.pnl >= 0 ? "bg-emerald-500" : "bg-red-500"
+                            }`}
+                            style={{
+                              width: `${Math.min(100, Math.abs(stock.pnlPct))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* Transaction History */}
       <Card className="rounded-2xl animate-in-up-delay-4">
@@ -1082,6 +1414,195 @@ export default function ModelDetailPage() {
                 {rebalanceLoading
                   ? "Rebalancing..."
                   : "Confirm Rebalance"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════ */}
+      {/* Bulk Trade Dialog                  */}
+      {/* ═══════════════════════════════════ */}
+      <Dialog open={showBulkTrade} onOpenChange={setShowBulkTrade}>
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5 text-emerald-500" />
+              Bulk Trade
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 pt-2">
+            {/* Quick add from existing holdings */}
+            {stockAllocations.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Quick Sell Holdings</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {stockAllocations
+                    .filter((a) => !bulkTrades.some((t) => t.symbol === a.symbol))
+                    .map((a) => (
+                      <button
+                        key={a.symbol}
+                        onClick={() => handleBulkTradeAddHolding(a)}
+                        className="px-2.5 py-1 rounded-lg bg-muted/40 hover:bg-red-500/10 border border-border/50 hover:border-red-500/30 text-xs font-semibold transition-all"
+                      >
+                        {a.symbol} ({a.shares})
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Search to add buy */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Add Stock to Buy</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={stockQuery}
+                  onChange={(e) => setStockQuery(e.target.value)}
+                  placeholder="Search stocks..."
+                  className="pl-9 rounded-xl"
+                />
+              </div>
+              {stockResults.length > 0 && (
+                <div className="grid grid-cols-1 gap-1.5 pt-1">
+                  {stockResults.map((stock) => (
+                    <button
+                      key={stock.symbol}
+                      className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/40 hover:bg-emerald-500/10 border border-border/50 hover:border-emerald-500/30 transition-all text-left group"
+                      onClick={() => handleBulkTradeAddStock(stock)}
+                    >
+                      <div>
+                        <span className="font-semibold text-sm group-hover:text-emerald-600">
+                          {stock.symbol}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground ml-2">
+                          {stock.company}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-tabular">
+                          PKR {formatPKR(stock.current)}
+                        </span>
+                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-emerald-500" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Trade list */}
+            {bulkTrades.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">
+                  Trades ({bulkTrades.length})
+                </Label>
+                {bulkTrades.map((trade) => {
+                  const price = marketPrices[trade.symbol] || 0;
+                  const qty = parseInt(trade.quantity) || 0;
+                  const total = qty * price;
+
+                  return (
+                    <div
+                      key={trade.symbol}
+                      className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 border border-border/50"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold">{trade.symbol}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {price > 0
+                            ? `@ PKR ${formatPKR(price)}`
+                            : "Price unavailable"}
+                          {qty > 0 && price > 0 && (
+                            <span className="ml-1.5 font-semibold text-foreground">
+                              = PKR {formatPKR(total, { decimals: 0 })}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <select
+                        value={trade.type}
+                        onChange={(e) =>
+                          setBulkTrades((prev) =>
+                            prev.map((t) =>
+                              t.symbol === trade.symbol
+                                ? { ...t, type: e.target.value as "BUY" | "SELL" }
+                                : t
+                            )
+                          )
+                        }
+                        className="h-8 rounded-lg border border-border bg-background px-2 text-xs font-semibold"
+                      >
+                        <option value="BUY">BUY</option>
+                        <option value="SELL">SELL</option>
+                      </select>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="Qty"
+                        value={trade.quantity}
+                        onChange={(e) =>
+                          setBulkTrades((prev) =>
+                            prev.map((t) =>
+                              t.symbol === trade.symbol
+                                ? { ...t, quantity: e.target.value }
+                                : t
+                            )
+                          )
+                        }
+                        className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                      />
+                      <button
+                        onClick={() =>
+                          setBulkTrades((prev) =>
+                            prev.filter((t) => t.symbol !== trade.symbol)
+                          )
+                        }
+                        className="p-1 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Cash info */}
+            <p className="text-[11px] text-muted-foreground">
+              Available cash:{" "}
+              <span className="font-tabular font-semibold text-foreground">
+                PKR {formatPKR(model.cashBalance, { decimals: 0 })}
+              </span>
+            </p>
+
+            {bulkTradeError && (
+              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+                {bulkTradeError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => setShowBulkTrade(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleBulkTradeSubmit}
+                disabled={
+                  bulkTradeLoading ||
+                  bulkTrades.filter((t) => parseInt(t.quantity) > 0).length === 0
+                }
+                className="flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+              >
+                {bulkTradeLoading
+                  ? "Executing..."
+                  : `Execute ${bulkTrades.filter((t) => parseInt(t.quantity) > 0).length} Trade(s)`}
               </Button>
             </div>
           </div>

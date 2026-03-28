@@ -11,7 +11,9 @@ import {
   Wallet,
   Banknote,
   Layers,
+  Download,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   PieChart as RePieChart,
   Pie,
@@ -155,16 +157,47 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2.5">
-          <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-violet-500/10">
-            <BarChart3 className="h-5 w-5 text-violet-500" />
-          </div>
-          Analytics
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Portfolio performance and allocation analysis
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2.5">
+            <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-violet-500/10">
+              <BarChart3 className="h-5 w-5 text-violet-500" />
+            </div>
+            Analytics
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Portfolio performance and allocation analysis
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 rounded-xl"
+            onClick={() => window.open("/api/export?type=portfolios&format=csv")}
+          >
+            <Download className="h-3 w-3" />
+            Export Holdings
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 rounded-xl"
+            onClick={() => window.open("/api/export?type=model-portfolios&format=csv")}
+          >
+            <Download className="h-3 w-3" />
+            Export Models
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 rounded-xl"
+            onClick={() => window.open("/api/export?type=transactions&format=csv")}
+          >
+            <Download className="h-3 w-3" />
+            Export Transactions
+          </Button>
+        </div>
       </div>
 
       {!hasData ? (

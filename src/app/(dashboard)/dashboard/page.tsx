@@ -16,6 +16,11 @@ import {
   Banknote,
   Briefcase,
   Layers,
+  Settings2,
+  EyeOff,
+  Eye,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -60,12 +65,76 @@ interface ModelPortfolio {
   allocations: { symbol: string; companyName: string; percentage: number; shares: number }[];
 }
 
+type WidgetId = "kse100" | "stats" | "models" | "holdings" | "gainers" | "losers";
+
+interface WidgetConfig {
+  id: WidgetId;
+  label: string;
+  visible: boolean;
+}
+
+const DEFAULT_WIDGETS: WidgetConfig[] = [
+  { id: "kse100", label: "KSE-100 Index", visible: true },
+  { id: "stats", label: "Portfolio Stats", visible: true },
+  { id: "models", label: "Model Portfolios", visible: true },
+  { id: "holdings", label: "My Holdings", visible: true },
+  { id: "gainers", label: "Top Gainers", visible: true },
+  { id: "losers", label: "Top Losers", visible: true },
+];
+
+function loadWidgets(): WidgetConfig[] {
+  if (typeof window === "undefined") return DEFAULT_WIDGETS;
+  try {
+    const saved = localStorage.getItem("psx-dashboard-widgets");
+    if (saved) {
+      const parsed = JSON.parse(saved) as WidgetConfig[];
+      // Merge with defaults to handle new widgets
+      const ids = new Set(parsed.map((w) => w.id));
+      const merged = [...parsed];
+      for (const d of DEFAULT_WIDGETS) {
+        if (!ids.has(d.id)) merged.push(d);
+      }
+      return merged;
+    }
+  } catch {}
+  return DEFAULT_WIDGETS;
+}
+
 export default function DashboardPage() {
   const [kse100, setKse100] = useState<KSE100 | null>(null);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
+  const [showWidgetSettings, setShowWidgetSettings] = useState(false);
+
+  useEffect(() => {
+    setWidgets(loadWidgets());
+  }, []);
+
+  const saveWidgets = (updated: WidgetConfig[]) => {
+    setWidgets(updated);
+    localStorage.setItem("psx-dashboard-widgets", JSON.stringify(updated));
+  };
+
+  const toggleWidget = (id: WidgetId) => {
+    saveWidgets(
+      widgets.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w))
+    );
+  };
+
+  const moveWidget = (id: WidgetId, direction: "up" | "down") => {
+    const idx = widgets.findIndex((w) => w.id === id);
+    if (idx < 0) return;
+    const newIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= widgets.length) return;
+    const updated = [...widgets];
+    [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
+    saveWidgets(updated);
+  };
+
+  const isVisible = (id: WidgetId) => widgets.find((w) => w.id === id)?.visible !== false;
 
   const fetchData = useCallback(async () => {
     setRefreshing(true);
@@ -127,34 +196,110 @@ export default function DashboardPage() {
   const topLosers = sortedByChange.slice(-5).reverse();
 
   return (
-    <div className="space-y-8 max-w-[1400px]">
+    <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
       {/* Header */}
       <div className="flex items-end justify-between animate-in-up">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-sm mt-1">
             Your portfolio overview and market summary
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchData}
-          disabled={refreshing}
-          className="h-8 text-xs gap-1.5 rounded-xl"
-        >
-          <RefreshCw
-            className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
-          />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowWidgetSettings(!showWidgetSettings)}
+            className="h-8 text-xs gap-1.5 rounded-xl"
+          >
+            <Settings2 className="h-3 w-3" />
+            Widgets
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchData}
+            disabled={refreshing}
+            className="h-8 text-xs gap-1.5 rounded-xl"
+          >
+            <RefreshCw
+              className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
       </div>
 
+      {/* Widget Settings Panel */}
+      {showWidgetSettings && (
+        <Card className="rounded-2xl border-violet-500/20 animate-in-up">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Dashboard Widgets
+              </p>
+              <button
+                onClick={() => setShowWidgetSettings(false)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Done
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {widgets.map((widget, idx) => (
+                <div
+                  key={widget.id}
+                  className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/30 border border-border/50"
+                >
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => toggleWidget(widget.id)}
+                      className={`p-1 rounded-lg transition-colors ${
+                        widget.visible
+                          ? "text-emerald-500 hover:bg-emerald-500/10"
+                          : "text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {widget.visible ? (
+                        <Eye className="h-4 w-4" />
+                      ) : (
+                        <EyeOff className="h-4 w-4" />
+                      )}
+                    </button>
+                    <span
+                      className={`text-sm font-medium ${!widget.visible ? "text-muted-foreground line-through" : ""}`}
+                    >
+                      {widget.label}
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => moveWidget(widget.id, "up")}
+                      disabled={idx === 0}
+                      className="p-1 rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-30"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => moveWidget(widget.id, "down")}
+                      disabled={idx === widgets.length - 1}
+                      className="p-1 rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-30"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* KSE-100 Hero Card */}
-      <div className="relative rounded-2xl overflow-hidden border-0 shadow-lg shadow-emerald-500/10 hero-card animate-in-up-delay-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
+      {isVisible("kse100") && <div className="relative rounded-2xl overflow-hidden border-0 shadow-lg shadow-emerald-500/10 hero-card animate-in-up-delay-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4 lg:p-6">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZyIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48Y2lyY2xlIGN4PSIxIiBjeT0iMSIgcj0iMC41IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCBmaWxsPSJ1cmwoI2cpIiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIvPjwvc3ZnPg==')] opacity-50" />
         <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-full blur-3xl" />
-        <div className="relative flex items-center justify-between">
+        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Activity className="h-4 w-4 text-emerald-400" />
@@ -166,7 +311,7 @@ export default function DashboardPage() {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
               </span>
             </div>
-            <p className="text-5xl font-bold font-tabular tracking-tight">
+            <p className="text-3xl lg:text-5xl font-bold font-tabular tracking-tight">
               {kse100?.current ? formatPKR(kse100.current) : "—"}
             </p>
             {kse100 && (
@@ -214,10 +359,10 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in-up-delay-2">
+      {isVisible("stats") && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in-up-delay-2">
         <Card className="stat-card stat-card-emerald border-border/50 shadow-sm rounded-2xl">
           <CardContent className="pt-5 pb-4">
             <div className="flex items-start justify-between">
@@ -319,10 +464,10 @@ export default function DashboardPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
+      </div>}
 
       {/* Model Portfolios */}
-      {modelPortfolios.length > 0 && (
+      {isVisible("models") && modelPortfolios.length > 0 && (
         <div className="animate-in-up-delay-3">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold flex items-center gap-2">
@@ -371,9 +516,10 @@ export default function DashboardPage() {
       )}
 
       {/* Holdings & Market Movers */}
+      {(isVisible("holdings") || isVisible("gainers") || isVisible("losers")) && (
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 animate-in-up-delay-4">
         {/* My Holdings - Wider */}
-        <Card className="lg:col-span-3 border-border/50 shadow-sm rounded-2xl">
+        {isVisible("holdings") && <Card className="lg:col-span-3 border-border/50 shadow-sm rounded-2xl">
           <CardHeader className="pb-1">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -463,11 +609,11 @@ export default function DashboardPage() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Market Movers */}
-        <div className="lg:col-span-2 space-y-4">
-          <Card className="border-emerald-500/20 shadow-sm rounded-2xl overflow-hidden">
+        {(isVisible("gainers") || isVisible("losers")) && <div className="lg:col-span-2 space-y-4">
+          {isVisible("gainers") && <Card className="border-emerald-500/20 shadow-sm rounded-2xl overflow-hidden">
             <CardHeader className="pb-1 bg-gradient-to-r from-emerald-500/5 to-transparent">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <div className="h-6 w-6 rounded-md bg-emerald-500/15 flex items-center justify-center">
@@ -505,9 +651,9 @@ export default function DashboardPage() {
                 )}
               </div>
             </CardContent>
-          </Card>
+          </Card>}
 
-          <Card className="border-red-500/20 shadow-sm rounded-2xl overflow-hidden">
+          {isVisible("losers") && <Card className="border-red-500/20 shadow-sm rounded-2xl overflow-hidden">
             <CardHeader className="pb-1 bg-gradient-to-r from-red-500/5 to-transparent">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <div className="h-6 w-6 rounded-md bg-red-500/15 flex items-center justify-center">
@@ -545,9 +691,10 @@ export default function DashboardPage() {
                 )}
               </div>
             </CardContent>
-          </Card>
-        </div>
+          </Card>}
+        </div>}
       </div>
+      )}
 
     </div>
   );

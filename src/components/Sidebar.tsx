@@ -12,10 +12,17 @@ import {
   LogOut,
   CircleDot,
   Layers,
+  Sun,
+  Moon,
+  Info,
+  Activity,
+  Calculator,
+  Upload,
 } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import { getMarketStatus } from "@/lib/market-status";
 import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -24,7 +31,11 @@ const navItems = [
   { href: "/models", label: "Model Portfolios", icon: Layers },
   { href: "/watchlist", label: "Watchlist", icon: Eye },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { href: "/performance", label: "Performance", icon: Activity },
+  { href: "/what-if", label: "What-If", icon: Calculator },
+  { href: "/import", label: "Import", icon: Upload },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/about", label: "About", icon: Info },
 ];
 
 export function Sidebar() {
@@ -32,6 +43,12 @@ export function Sidebar() {
   const router = useRouter();
   const { user, setUser } = useStore();
   const [marketStatus, setMarketStatus] = useState(getMarketStatus());
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -137,8 +154,25 @@ export function Sidebar() {
         })}
       </nav>
 
+      {/* Theme Toggle */}
+      <div className="px-3 mt-auto mb-2">
+        {mounted && (
+          <button
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium text-white/50 hover:text-white/90 hover:bg-white/8 transition-all duration-200"
+          >
+            {theme === "dark" ? (
+              <Sun className="h-[18px] w-[18px] text-white/35" strokeWidth={1.8} />
+            ) : (
+              <Moon className="h-[18px] w-[18px] text-white/35" strokeWidth={1.8} />
+            )}
+            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          </button>
+        )}
+      </div>
+
       {/* User Section */}
-      <div className="p-3 mt-auto">
+      <div className="p-3">
         {user && (
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-400/25 to-cyan-400/25 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0">
