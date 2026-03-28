@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import { getPortfolios, getModelPortfolios } from "@/lib/gdrive";
 
 function escapeCsvField(value: string | number): string {
   const str = String(value);
@@ -12,9 +12,7 @@ function escapeCsvField(value: string | number): string {
 
 function toCsv(headers: string[], rows: (string | number)[][]): string {
   const headerLine = headers.map(escapeCsvField).join(",");
-  const dataLines = rows.map((row) =>
-    row.map(escapeCsvField).join(",")
-  );
+  const dataLines = rows.map((row) => row.map(escapeCsvField).join(","));
   return [headerLine, ...dataLines].join("\n");
 }
 
@@ -35,9 +33,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (!type || !["portfolios", "model-portfolios", "transactions"].includes(type)) {
+  if (
+    !type ||
+    !["portfolios", "model-portfolios", "transactions"].includes(type)
+  ) {
     return Response.json(
-      { error: "Invalid type. Must be one of: portfolios, model-portfolios, transactions" },
+      {
+        error:
+          "Invalid type. Must be one of: portfolios, model-portfolios, transactions",
+      },
       { status: 400 }
     );
   }
@@ -47,12 +51,15 @@ export async function GET(request: NextRequest) {
     let filename: string;
 
     if (type === "portfolios") {
-      const portfolios = await prisma.portfolio.findMany({
-        where: { userId: user.id },
-        include: { holdings: true },
-      });
+      const portfolios = await getPortfolios();
 
-      const headers = ["Symbol", "Company", "Shares", "Avg Price", "Portfolio Name"];
+      const headers = [
+        "Symbol",
+        "Company",
+        "Shares",
+        "Avg Price",
+        "Portfolio Name",
+      ];
       const rows: (string | number)[][] = [];
 
       for (const portfolio of portfolios) {
@@ -70,12 +77,16 @@ export async function GET(request: NextRequest) {
       csv = toCsv(headers, rows);
       filename = "portfolios-holdings.csv";
     } else if (type === "model-portfolios") {
-      const modelPortfolios = await prisma.modelPortfolio.findMany({
-        where: { userId: user.id },
-        include: { allocations: true },
-      });
+      const modelPortfolios = await getModelPortfolios();
 
-      const headers = ["Model Name", "Symbol", "Company", "Shares", "Avg Price", "Allocation %"];
+      const headers = [
+        "Model Name",
+        "Symbol",
+        "Company",
+        "Shares",
+        "Avg Price",
+        "Allocation %",
+      ];
       const rows: (string | number)[][] = [];
 
       for (const model of modelPortfolios) {
@@ -94,63 +105,51 @@ export async function GET(request: NextRequest) {
       csv = toCsv(headers, rows);
       filename = "model-portfolios.csv";
     } else {
-      // transactions: fetch both portfolio and model transactions
-      const portfolios = await prisma.portfolio.findMany({
-        where: { userId: user.id },
-        select: { id: true, name: true },
-      });
+      const portfolios = await getPortfolios();
+      const modelPortfolios = await getModelPortfolios();
 
-      const portfolioIds = portfolios.map((p) => p.id);
-      const portfolioNameMap = new Map(portfolios.map((p) => [p.id, p.name]));
-
-      const transactions = await prisma.transaction.findMany({
-        where: { portfolioId: { in: portfolioIds } },
-        orderBy: { createdAt: "desc" },
-      });
-
-      const modelPortfolios = await prisma.modelPortfolio.findMany({
-        where: { userId: user.id },
-        select: { id: true, name: true },
-      });
-
-      const modelIds = modelPortfolios.map((m) => m.id);
-      const modelNameMap = new Map(modelPortfolios.map((m) => [m.id, m.name]));
-
-      const modelTransactions = await prisma.modelTransaction.findMany({
-        where: { modelPortfolioId: { in: modelIds } },
-        orderBy: { createdAt: "desc" },
-      });
-
-      const headers = ["Date", "Type", "Symbol", "Company", "Quantity", "Price", "Total", "Portfolio"];
+      const headers = [
+        "Date",
+        "Type",
+        "Symbol",
+        "Company",
+        "Quantity",
+        "Price",
+        "Total",
+        "Portfolio",
+      ];
       const rows: (string | number)[][] = [];
 
-      for (const tx of transactions) {
-        rows.push([
-          tx.createdAt.toISOString().split("T")[0],
-          tx.type,
-          tx.symbol,
-          tx.companyName,
-          tx.quantity,
-          tx.price,
-          tx.total,
-          portfolioNameMap.get(tx.portfolioId) ?? "",
-        ]);
+      for (const p of portfolios) {
+        for (const tx of p.transactions) {
+          rows.push([
+            tx.createdAt.split("T")[0],
+            tx.type,
+            tx.symbol,
+            tx.companyName,
+            tx.quantity,
+            tx.price,
+            tx.total,
+            p.name,
+          ]);
+        }
       }
 
-      for (const tx of modelTransactions) {
-        rows.push([
-          tx.createdAt.toISOString().split("T")[0],
-          tx.type,
-          tx.symbol,
-          tx.companyName,
-          tx.quantity,
-          tx.price,
-          tx.total,
-          modelNameMap.get(tx.modelPortfolioId) ?? "",
-        ]);
+      for (const m of modelPortfolios) {
+        for (const tx of m.transactions) {
+          rows.push([
+            tx.createdAt.split("T")[0],
+            tx.type,
+            tx.symbol,
+            tx.companyName,
+            tx.quantity,
+            tx.price,
+            tx.total,
+            m.name,
+          ]);
+        }
       }
 
-      // Sort all transactions by date descending
       rows.sort((a, b) => String(b[0]).localeCompare(String(a[0])));
 
       csv = toCsv(headers, rows);

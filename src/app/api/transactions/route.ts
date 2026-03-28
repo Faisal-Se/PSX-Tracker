@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import {
+  getPortfolios,
+  savePortfolios,
+  generateId,
+  type TransactionData,
+  type HoldingData,
+} from "@/lib/gdrive";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -11,20 +17,22 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const portfolioId = searchParams.get("portfolioId");
 
-  const where: Record<string, unknown> = {
-    portfolio: { userId: user.id },
-  };
-  if (portfolioId) {
-    where.portfolioId = portfolioId;
+  const portfolios = await getPortfolios();
+
+  const allTransactions: (TransactionData & { portfolioId: string })[] = [];
+  for (const p of portfolios) {
+    if (portfolioId && p.id !== portfolioId) continue;
+    for (const t of p.transactions) {
+      allTransactions.push({ ...t, portfolioId: p.id });
+    }
   }
 
-  const transactions = await prisma.transaction.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  // Sort by date desc, take 100
+  allTransactions.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 
-  return NextResponse.json(transactions);
+  return NextResponse.json(allTransactions.slice(0, 100));
 }
 
 export async function POST(req: Request) {
@@ -43,19 +51,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // Verify portfolio belongs to user
-  const portfolio = await prisma.portfolio.findFirst({
-    where: { id: portfolioId, userId: user.id },
-  });
+  const portfolios = await getPortfolios();
+  const pIdx = portfolios.findIndex((p) => p.id === portfolioId);
 
-  if (!portfolio) {
+  if (pIdx === -1) {
     return NextResponse.json(
       { error: "Portfolio not found" },
       { status: 404 }
     );
   }
 
+  const portfolio = portfolios[pIdx];
   const total = quantity * price;
+  const now = new Date().toISOString();
 
   if (type === "BUY") {
     if (portfolio.cashBalance < total) {
@@ -65,81 +73,79 @@ export async function POST(req: Request) {
       );
     }
 
-    // Update cash balance
-    await prisma.portfolio.update({
-      where: { id: portfolioId },
-      data: { cashBalance: portfolio.cashBalance - total },
-    });
+    portfolio.cashBalance -= total;
 
-    // Update or create holding
-    const existingHolding = await prisma.holding.findUnique({
-      where: { portfolioId_symbol: { portfolioId, symbol } },
-    });
-
-    if (existingHolding) {
-      const newQuantity = existingHolding.quantity + quantity;
+    const existingIdx = portfolio.holdings.findIndex(
+      (h) => h.symbol === symbol
+    );
+    if (existingIdx >= 0) {
+      const existing = portfolio.holdings[existingIdx];
+      const newQuantity = existing.quantity + quantity;
       const newAvgPrice =
-        (existingHolding.avgPrice * existingHolding.quantity +
-          price * quantity) /
-        newQuantity;
-
-      await prisma.holding.update({
-        where: { id: existingHolding.id },
-        data: { quantity: newQuantity, avgPrice: newAvgPrice },
-      });
+        (existing.avgPrice * existing.quantity + price * quantity) / newQuantity;
+      portfolio.holdings[existingIdx] = {
+        ...existing,
+        quantity: newQuantity,
+        avgPrice: newAvgPrice,
+        updatedAt: now,
+      };
     } else {
-      await prisma.holding.create({
-        data: {
-          symbol,
-          companyName: companyName || symbol,
-          quantity,
-          avgPrice: price,
-          portfolioId,
-        },
-      });
+      const holding: HoldingData = {
+        id: generateId(),
+        symbol,
+        companyName: companyName || symbol,
+        quantity,
+        avgPrice: price,
+        createdAt: now,
+        updatedAt: now,
+      };
+      portfolio.holdings.push(holding);
     }
   } else if (type === "SELL") {
-    const existingHolding = await prisma.holding.findUnique({
-      where: { portfolioId_symbol: { portfolioId, symbol } },
-    });
-
-    if (!existingHolding || existingHolding.quantity < quantity) {
+    const existingIdx = portfolio.holdings.findIndex(
+      (h) => h.symbol === symbol
+    );
+    if (
+      existingIdx === -1 ||
+      portfolio.holdings[existingIdx].quantity < quantity
+    ) {
       return NextResponse.json(
         { error: "Insufficient shares to sell" },
         { status: 400 }
       );
     }
 
-    // Update cash balance
-    await prisma.portfolio.update({
-      where: { id: portfolioId },
-      data: { cashBalance: portfolio.cashBalance + total },
-    });
+    portfolio.cashBalance += total;
 
-    // Update holding
-    const newQuantity = existingHolding.quantity - quantity;
+    const existing = portfolio.holdings[existingIdx];
+    const newQuantity = existing.quantity - quantity;
     if (newQuantity === 0) {
-      await prisma.holding.delete({ where: { id: existingHolding.id } });
+      portfolio.holdings.splice(existingIdx, 1);
     } else {
-      await prisma.holding.update({
-        where: { id: existingHolding.id },
-        data: { quantity: newQuantity },
-      });
+      portfolio.holdings[existingIdx] = {
+        ...existing,
+        quantity: newQuantity,
+        updatedAt: now,
+      };
     }
   }
 
-  // Create transaction record
-  const transaction = await prisma.transaction.create({
-    data: {
-      type,
-      symbol,
-      companyName: companyName || symbol,
-      quantity,
-      price,
-      total,
-      portfolioId,
-    },
-  });
+  const transaction: TransactionData = {
+    id: generateId(),
+    type,
+    symbol,
+    companyName: companyName || symbol,
+    quantity,
+    price,
+    total,
+    portfolioId,
+    createdAt: now,
+  };
+
+  portfolio.transactions.push(transaction);
+  portfolio.updatedAt = now;
+  portfolios[pIdx] = portfolio;
+  await savePortfolios(portfolios);
 
   return NextResponse.json(transaction);
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import { getPortfolio, updatePortfolio, deletePortfolio } from "@/lib/gdrive";
 
 export async function GET(
   _req: Request,
@@ -12,14 +12,7 @@ export async function GET(
   }
 
   const { id } = await params;
-
-  const portfolio = await prisma.portfolio.findFirst({
-    where: { id, userId: user.id },
-    include: {
-      holdings: true,
-      _count: { select: { transactions: true } },
-    },
-  });
+  const portfolio = await getPortfolio(id);
 
   if (!portfolio) {
     return NextResponse.json(
@@ -28,7 +21,10 @@ export async function GET(
     );
   }
 
-  return NextResponse.json(portfolio);
+  return NextResponse.json({
+    ...portfolio,
+    _count: { transactions: portfolio.transactions.length },
+  });
 }
 
 export async function PATCH(
@@ -44,40 +40,30 @@ export async function PATCH(
   const body = await req.json();
   const { name, type, addCash, removeCash } = body;
 
-  const portfolio = await prisma.portfolio.findFirst({
-    where: { id, userId: user.id },
+  const updated = await updatePortfolio(id, (p) => {
+    if (name !== undefined) p.name = name;
+    if (type !== undefined) p.type = type;
+
+    if (addCash && addCash > 0) {
+      p.cashBalance += addCash;
+    }
+
+    if (removeCash && removeCash > 0) {
+      if (removeCash > p.cashBalance) {
+        throw new Error("Insufficient cash balance");
+      }
+      p.cashBalance -= removeCash;
+    }
+
+    return p;
   });
 
-  if (!portfolio) {
+  if (!updated) {
     return NextResponse.json(
       { error: "Portfolio not found" },
       { status: 404 }
     );
   }
-
-  const updateData: Record<string, unknown> = {};
-
-  if (name !== undefined) updateData.name = name;
-  if (type !== undefined) updateData.type = type;
-
-  if (addCash && addCash > 0) {
-    updateData.cashBalance = portfolio.cashBalance + addCash;
-  }
-
-  if (removeCash && removeCash > 0) {
-    if (removeCash > portfolio.cashBalance) {
-      return NextResponse.json(
-        { error: "Insufficient cash balance" },
-        { status: 400 }
-      );
-    }
-    updateData.cashBalance = portfolio.cashBalance - removeCash;
-  }
-
-  const updated = await prisma.portfolio.update({
-    where: { id },
-    data: updateData,
-  });
 
   return NextResponse.json(updated);
 }
@@ -92,19 +78,14 @@ export async function DELETE(
   }
 
   const { id } = await params;
+  const deleted = await deletePortfolio(id);
 
-  const portfolio = await prisma.portfolio.findFirst({
-    where: { id, userId: user.id },
-  });
-
-  if (!portfolio) {
+  if (!deleted) {
     return NextResponse.json(
       { error: "Portfolio not found" },
       { status: 404 }
     );
   }
-
-  await prisma.portfolio.delete({ where: { id } });
 
   return NextResponse.json({ success: true });
 }

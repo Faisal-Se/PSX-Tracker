@@ -175,14 +175,23 @@ export function Sidebar() {
       <div className="p-3">
         {user && (
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-400/25 to-cyan-400/25 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0">
-              {user.name
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .toUpperCase()
-                .slice(0, 2)}
-            </div>
+            {user.picture ? (
+              <img
+                src={user.picture}
+                alt={user.name}
+                className="h-8 w-8 rounded-lg shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-400/25 to-cyan-400/25 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0">
+                {user.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .toUpperCase()
+                  .slice(0, 2)}
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-white/90 truncate">
                 {user.name}

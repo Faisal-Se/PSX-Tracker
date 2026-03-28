@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import {
+  getModelPortfolio,
+  updateModelPortfolio,
+  generateId,
+} from "@/lib/gdrive";
 import { getMarketWatch } from "@/lib/psx";
 
 export async function POST(
@@ -20,7 +24,7 @@ export async function POST(
       companyName: string;
       type: "BUY" | "SELL";
       quantity: number;
-      price?: number; // optional custom price, else market price
+      price?: number;
     }[];
   };
 
@@ -31,20 +35,14 @@ export async function POST(
     );
   }
 
-  const model = await prisma.modelPortfolio.findFirst({
-    where: { id, userId: user.id },
-    include: { allocations: true },
-  });
-
+  const model = await getModelPortfolio(id);
   if (!model) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Fetch market prices
   const marketData = await getMarketWatch();
   const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
 
-  // Validate all trades
   let totalBuyCost = 0;
   const resolvedTrades: {
     symbol: string;
@@ -102,7 +100,6 @@ export async function POST(
     });
   }
 
-  // Calculate net cash impact
   const totalSellProceeds = resolvedTrades
     .filter((t) => t.type === "SELL")
     .reduce((sum, t) => sum + t.total, 0);
@@ -117,79 +114,92 @@ export async function POST(
     );
   }
 
-  // Execute all trades atomically
-  const updated = await prisma.$transaction(async (tx) => {
+  const now = new Date().toISOString();
+
+  const updated = await updateModelPortfolio(id, (m) => {
     for (const trade of resolvedTrades) {
       // Record transaction
-      await tx.modelTransaction.create({
-        data: {
-          type: trade.type,
-          symbol: trade.symbol,
-          companyName: trade.companyName,
-          quantity: trade.quantity,
-          price: trade.price,
-          total: trade.total,
-          modelPortfolioId: id,
-        },
+      m.transactions.push({
+        id: generateId(),
+        type: trade.type,
+        symbol: trade.symbol,
+        companyName: trade.companyName,
+        quantity: trade.quantity,
+        price: trade.price,
+        total: trade.total,
+        createdAt: now,
       });
 
       // Update allocation
-      const existing = model.allocations.find(
+      const existingIdx = m.allocations.findIndex(
         (a) => a.symbol === trade.symbol
       );
 
       if (trade.type === "BUY") {
-        if (existing) {
+        if (existingIdx >= 0) {
+          const existing = m.allocations[existingIdx];
           const newShares = existing.shares + trade.quantity;
           const newAvg =
             (existing.avgPrice * existing.shares +
               trade.price * trade.quantity) /
             newShares;
-          await tx.modelAllocation.update({
-            where: { id: existing.id },
-            data: { shares: newShares, avgPrice: newAvg },
-          });
+          m.allocations[existingIdx] = {
+            ...existing,
+            shares: newShares,
+            avgPrice: newAvg,
+            updatedAt: now,
+          };
         } else {
-          await tx.modelAllocation.create({
-            data: {
-              symbol: trade.symbol,
-              companyName: trade.companyName,
-              percentage: 0,
-              shares: trade.quantity,
-              avgPrice: trade.price,
-              modelPortfolioId: id,
-            },
+          m.allocations.push({
+            id: generateId(),
+            symbol: trade.symbol,
+            companyName: trade.companyName,
+            percentage: 0,
+            shares: trade.quantity,
+            avgPrice: trade.price,
+            createdAt: now,
+            updatedAt: now,
           });
         }
       } else {
         // SELL
-        if (existing) {
+        if (existingIdx >= 0) {
+          const existing = m.allocations[existingIdx];
           const newShares = existing.shares - trade.quantity;
           if (newShares <= 0) {
-            await tx.modelAllocation.delete({ where: { id: existing.id } });
+            m.allocations.splice(existingIdx, 1);
           } else {
-            await tx.modelAllocation.update({
-              where: { id: existing.id },
-              data: { shares: newShares },
-            });
+            m.allocations[existingIdx] = {
+              ...existing,
+              shares: newShares,
+              updatedAt: now,
+            };
           }
         }
       }
     }
 
-    // Update cash balance
-    return tx.modelPortfolio.update({
-      where: { id },
-      data: { cashBalance: model.cashBalance - netCashNeeded },
-      include: {
-        allocations: { orderBy: { percentage: "desc" } },
-        transactions: { orderBy: { createdAt: "desc" }, take: 100 },
-      },
-    });
+    m.cashBalance -= netCashNeeded;
+    return m;
   });
 
+  if (!updated) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   return NextResponse.json({
-    model: updated,
+    model: {
+      ...updated,
+      allocations: [...updated.allocations].sort(
+        (a, b) => b.percentage - a.percentage
+      ),
+      transactions: [...updated.transactions]
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+        .slice(0, 100),
+    },
     executed: resolvedTrades,
   });
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import { getPortfolios, savePortfolios, generateId } from "@/lib/gdrive";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -21,21 +21,30 @@ export async function POST(req: Request) {
   };
 
   if (!portfolioId) {
-    return NextResponse.json({ error: "Portfolio is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Portfolio is required" },
+      { status: 400 }
+    );
   }
 
   if (!trades || trades.length === 0) {
-    return NextResponse.json({ error: "No trades to import" }, { status: 400 });
+    return NextResponse.json(
+      { error: "No trades to import" },
+      { status: 400 }
+    );
   }
 
-  const portfolio = await prisma.portfolio.findFirst({
-    where: { id: portfolioId, userId: user.id },
-    include: { holdings: true },
-  });
+  const portfolios = await getPortfolios();
+  const pIdx = portfolios.findIndex((p) => p.id === portfolioId);
 
-  if (!portfolio) {
-    return NextResponse.json({ error: "Portfolio not found" }, { status: 404 });
+  if (pIdx === -1) {
+    return NextResponse.json(
+      { error: "Portfolio not found" },
+      { status: 404 }
+    );
   }
+
+  const portfolio = portfolios[pIdx];
 
   // Validate trades
   for (const trade of trades) {
@@ -46,7 +55,9 @@ export async function POST(req: Request) {
       );
     }
     if (trade.type === "SELL") {
-      const holding = portfolio.holdings.find((h) => h.symbol === trade.symbol);
+      const holding = portfolio.holdings.find(
+        (h) => h.symbol === trade.symbol
+      );
       if (!holding || holding.quantity < trade.quantity) {
         return NextResponse.json(
           {
@@ -69,82 +80,85 @@ export async function POST(req: Request) {
 
   if (portfolio.cashBalance + netCash < 0) {
     return NextResponse.json(
-      { error: `Insufficient cash. Need PKR ${Math.abs(netCash).toFixed(0)}, have PKR ${portfolio.cashBalance.toFixed(0)}` },
+      {
+        error: `Insufficient cash. Need PKR ${Math.abs(netCash).toFixed(0)}, have PKR ${portfolio.cashBalance.toFixed(0)}`,
+      },
       { status: 400 }
     );
   }
 
-  // Execute all trades
-  const result = await prisma.$transaction(async (tx) => {
-    for (const trade of trades) {
-      const total = trade.quantity * trade.price;
+  const now = new Date().toISOString();
 
-      await tx.transaction.create({
-        data: {
-          type: trade.type,
+  // Execute all trades
+  for (const trade of trades) {
+    const total = trade.quantity * trade.price;
+
+    portfolio.transactions.push({
+      id: generateId(),
+      type: trade.type,
+      symbol: trade.symbol,
+      companyName: trade.companyName,
+      quantity: trade.quantity,
+      price: trade.price,
+      total,
+      portfolioId,
+      createdAt: now,
+    });
+
+    const existingIdx = portfolio.holdings.findIndex(
+      (h) => h.symbol === trade.symbol
+    );
+
+    if (trade.type === "BUY") {
+      if (existingIdx >= 0) {
+        const existing = portfolio.holdings[existingIdx];
+        const newQty = existing.quantity + trade.quantity;
+        const newAvg =
+          (existing.avgPrice * existing.quantity +
+            trade.price * trade.quantity) /
+          newQty;
+        portfolio.holdings[existingIdx] = {
+          ...existing,
+          quantity: newQty,
+          avgPrice: newAvg,
+          updatedAt: now,
+        };
+      } else {
+        portfolio.holdings.push({
+          id: generateId(),
           symbol: trade.symbol,
           companyName: trade.companyName,
           quantity: trade.quantity,
-          price: trade.price,
-          total,
-          portfolioId,
-        },
-      });
-
-      const existing = portfolio.holdings.find(
-        (h) => h.symbol === trade.symbol
-      );
-
-      if (trade.type === "BUY") {
-        if (existing) {
-          const newQty = existing.quantity + trade.quantity;
-          const newAvg =
-            (existing.avgPrice * existing.quantity +
-              trade.price * trade.quantity) /
-            newQty;
-          await tx.holding.update({
-            where: { id: existing.id },
-            data: { quantity: newQty, avgPrice: newAvg },
-          });
-          existing.quantity = newQty;
-          existing.avgPrice = newAvg;
+          avgPrice: trade.price,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } else {
+      if (existingIdx >= 0) {
+        const existing = portfolio.holdings[existingIdx];
+        const newQty = existing.quantity - trade.quantity;
+        if (newQty <= 0) {
+          portfolio.holdings.splice(existingIdx, 1);
         } else {
-          const created = await tx.holding.create({
-            data: {
-              symbol: trade.symbol,
-              companyName: trade.companyName,
-              quantity: trade.quantity,
-              avgPrice: trade.price,
-              portfolioId,
-            },
-          });
-          portfolio.holdings.push(created);
-        }
-      } else {
-        if (existing) {
-          const newQty = existing.quantity - trade.quantity;
-          if (newQty <= 0) {
-            await tx.holding.delete({ where: { id: existing.id } });
-          } else {
-            await tx.holding.update({
-              where: { id: existing.id },
-              data: { quantity: newQty },
-            });
-          }
-          existing.quantity = newQty;
+          portfolio.holdings[existingIdx] = {
+            ...existing,
+            quantity: newQty,
+            updatedAt: now,
+          };
         }
       }
     }
+  }
 
-    return tx.portfolio.update({
-      where: { id: portfolioId },
-      data: { cashBalance: portfolio.cashBalance + netCash },
-    });
-  });
+  portfolio.cashBalance += netCash;
+  portfolio.updatedAt = now;
+  portfolios[pIdx] = portfolio;
+  await savePortfolios(portfolios);
 
   return NextResponse.json({
     success: true,
     imported: trades.length,
-    newCashBalance: result.cashBalance,
+    newCashBalance: portfolio.cashBalance,
   });
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import { getPortfolios, createPortfolio } from "@/lib/gdrive";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -8,16 +8,15 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const portfolios = await prisma.portfolio.findMany({
-    where: { userId: user.id },
-    include: {
-      holdings: true,
-      _count: { select: { transactions: true } },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const portfolios = await getPortfolios();
 
-  return NextResponse.json(portfolios);
+  // Add _count for compatibility with frontend
+  const result = portfolios.map((p) => ({
+    ...p,
+    _count: { transactions: p.transactions.length },
+  }));
+
+  return NextResponse.json(result);
 }
 
 export async function POST(req: Request) {
@@ -35,13 +34,10 @@ export async function POST(req: Request) {
     );
   }
 
-  const portfolio = await prisma.portfolio.create({
-    data: {
-      name,
-      type: type || "Personal",
-      cashBalance: cashBalance || 1000000,
-      userId: user.id,
-    },
+  const portfolio = await createPortfolio({
+    name,
+    type: type || "Personal",
+    cashBalance: cashBalance || 1000000,
   });
 
   return NextResponse.json(portfolio);

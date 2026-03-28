@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import {
+  getModelPortfolio,
+  updateModelPortfolio,
+  generateId,
+  type ModelAllocationData,
+} from "@/lib/gdrive";
 import { getMarketWatch } from "@/lib/psx";
 
 export async function POST(
@@ -19,23 +24,23 @@ export async function POST(
   };
 
   if (!allocations || allocations.length === 0) {
-    return NextResponse.json({ error: "Allocations are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Allocations are required" },
+      { status: 400 }
+    );
   }
 
   const totalPct = allocations.reduce((sum, a) => sum + a.percentage, 0);
   if (Math.abs(totalPct - 100) > 0.01) {
     return NextResponse.json(
-      { error: `Allocations must sum to 100% (currently ${totalPct.toFixed(1)}%)` },
+      {
+        error: `Allocations must sum to 100% (currently ${totalPct.toFixed(1)}%)`,
+      },
       { status: 400 }
     );
   }
 
-  // Load current model
-  const model = await prisma.modelPortfolio.findFirst({
-    where: { id, userId: user.id },
-    include: { allocations: true },
-  });
-
+  const model = await getModelPortfolio(id);
   if (!model) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -44,7 +49,7 @@ export async function POST(
   const marketData = await getMarketWatch();
   const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
 
-  // Calculate total portfolio value (cash + holdings at market price)
+  // Calculate total portfolio value
   let totalValue = model.cashBalance;
   for (const alloc of model.allocations) {
     if (alloc.symbol === "CASH") continue;
@@ -52,12 +57,9 @@ export async function POST(
     totalValue += alloc.shares * price;
   }
 
-  // Build a map of current allocations
-  const currentMap = new Map(
-    model.allocations.map((a) => [a.symbol, a])
-  );
+  const currentMap = new Map(model.allocations.map((a) => [a.symbol, a]));
+  const now = new Date().toISOString();
 
-  // Calculate trades needed
   const trades: {
     type: "BUY" | "SELL";
     symbol: string;
@@ -67,24 +69,20 @@ export async function POST(
     total: number;
   }[] = [];
 
-  const newAllocations: {
-    symbol: string;
-    companyName: string;
-    percentage: number;
-    shares: number;
-    avgPrice: number;
-  }[] = [];
-
-  let cashDelta = 0; // positive = cash increases (sells), negative = cash decreases (buys)
+  const newAllocations: ModelAllocationData[] = [];
+  let cashDelta = 0;
 
   for (const alloc of allocations) {
     if (alloc.symbol === "CASH") {
       newAllocations.push({
+        id: generateId(),
         symbol: "CASH",
         companyName: "Cash Reserve",
         percentage: alloc.percentage,
         shares: 0,
         avgPrice: 0,
+        createdAt: now,
+        updatedAt: now,
       });
       continue;
     }
@@ -99,14 +97,12 @@ export async function POST(
 
     const targetValue = (alloc.percentage / 100) * totalValue;
     const targetShares = Math.floor(targetValue / currentPrice);
-
     const existing = currentMap.get(alloc.symbol);
     const currentShares = existing?.shares || 0;
     const currentAvgPrice = existing?.avgPrice || 0;
     const diff = targetShares - currentShares;
 
     if (diff > 0) {
-      // BUY more shares
       const cost = diff * currentPrice;
       cashDelta -= cost;
       trades.push({
@@ -117,20 +113,22 @@ export async function POST(
         price: currentPrice,
         total: cost,
       });
-      // Weighted average price
       const newAvgPrice =
         currentShares > 0
-          ? (currentAvgPrice * currentShares + currentPrice * diff) / targetShares
+          ? (currentAvgPrice * currentShares + currentPrice * diff) /
+            targetShares
           : currentPrice;
       newAllocations.push({
+        id: existing?.id || generateId(),
         symbol: alloc.symbol,
         companyName: alloc.companyName,
         percentage: alloc.percentage,
         shares: targetShares,
         avgPrice: newAvgPrice,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
       });
     } else if (diff < 0) {
-      // SELL shares
       const sellQty = Math.abs(diff);
       const proceeds = sellQty * currentPrice;
       cashDelta += proceeds;
@@ -143,30 +141,36 @@ export async function POST(
         total: proceeds,
       });
       newAllocations.push({
+        id: existing?.id || generateId(),
         symbol: alloc.symbol,
         companyName: alloc.companyName,
         percentage: alloc.percentage,
         shares: targetShares,
-        avgPrice: currentAvgPrice, // avg price doesn't change on sell
+        avgPrice: currentAvgPrice,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
       });
     } else {
-      // No change in shares
       newAllocations.push({
+        id: existing?.id || generateId(),
         symbol: alloc.symbol,
         companyName: alloc.companyName,
         percentage: alloc.percentage,
         shares: currentShares,
         avgPrice: currentAvgPrice,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
       });
     }
   }
 
-  // Sell all shares of stocks that were removed from allocations
+  // Sell removed stocks
   const newSymbols = new Set(allocations.map((a) => a.symbol));
   for (const existing of model.allocations) {
     if (existing.symbol === "CASH") continue;
     if (!newSymbols.has(existing.symbol) && existing.shares > 0) {
-      const currentPrice = priceMap.get(existing.symbol) || existing.avgPrice;
+      const currentPrice =
+        priceMap.get(existing.symbol) || existing.avgPrice;
       const proceeds = existing.shares * currentPrice;
       cashDelta += proceeds;
       trades.push({
@@ -180,7 +184,6 @@ export async function POST(
     }
   }
 
-  // Check if we have enough cash
   const newCashBalance = model.cashBalance + cashDelta;
   if (newCashBalance < -0.01) {
     return NextResponse.json(
@@ -191,48 +194,41 @@ export async function POST(
     );
   }
 
-  // Execute everything in a transaction
-  const updated = await prisma.$transaction(async (tx) => {
-    // Delete old allocations
-    await tx.modelAllocation.deleteMany({ where: { modelPortfolioId: id } });
-
-    // Create new allocations
-    await tx.modelAllocation.createMany({
-      data: newAllocations.map((a) => ({
-        symbol: a.symbol,
-        companyName: a.companyName,
-        percentage: a.percentage,
-        shares: a.shares,
-        avgPrice: a.avgPrice,
-        modelPortfolioId: id,
-      })),
-    });
-
-    // Record transactions
+  const updated = await updateModelPortfolio(id, (m) => {
+    m.allocations = newAllocations;
+    m.cashBalance = Math.max(0, newCashBalance);
     for (const trade of trades) {
-      await tx.modelTransaction.create({
-        data: {
-          type: trade.type,
-          symbol: trade.symbol,
-          companyName: trade.companyName,
-          quantity: trade.quantity,
-          price: trade.price,
-          total: trade.total,
-          modelPortfolioId: id,
-        },
+      m.transactions.push({
+        id: generateId(),
+        type: trade.type,
+        symbol: trade.symbol,
+        companyName: trade.companyName,
+        quantity: trade.quantity,
+        price: trade.price,
+        total: trade.total,
+        createdAt: now,
       });
     }
-
-    // Update cash balance
-    return tx.modelPortfolio.update({
-      where: { id },
-      data: { cashBalance: Math.max(0, newCashBalance) },
-      include: {
-        allocations: { orderBy: { percentage: "desc" } },
-        transactions: { orderBy: { createdAt: "desc" }, take: 100 },
-      },
-    });
+    return m;
   });
 
-  return NextResponse.json({ model: updated, trades });
+  if (!updated) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({
+    model: {
+      ...updated,
+      allocations: [...updated.allocations].sort(
+        (a, b) => b.percentage - a.percentage
+      ),
+      transactions: [...updated.transactions]
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+        .slice(0, 100),
+    },
+    trades,
+  });
 }

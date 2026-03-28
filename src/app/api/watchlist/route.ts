@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/google-auth";
+import { getWatchlist, addToWatchlist, removeFromWatchlist } from "@/lib/gdrive";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -8,11 +8,7 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const watchlist = await prisma.watchlist.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-  });
-
+  const watchlist = await getWatchlist();
   return NextResponse.json(watchlist);
 }
 
@@ -31,21 +27,15 @@ export async function POST(req: Request) {
     );
   }
 
-  try {
-    const item = await prisma.watchlist.create({
-      data: {
-        symbol,
-        companyName: companyName || symbol,
-        userId: user.id,
-      },
-    });
-    return NextResponse.json(item);
-  } catch {
+  const item = await addToWatchlist(symbol, companyName || symbol);
+  if (!item) {
     return NextResponse.json(
       { error: "Stock already in watchlist" },
       { status: 409 }
     );
   }
+
+  return NextResponse.json(item);
 }
 
 export async function DELETE(req: Request) {
@@ -64,9 +54,6 @@ export async function DELETE(req: Request) {
     );
   }
 
-  await prisma.watchlist.deleteMany({
-    where: { userId: user.id, symbol },
-  });
-
+  await removeFromWatchlist(symbol);
   return NextResponse.json({ success: true });
 }
