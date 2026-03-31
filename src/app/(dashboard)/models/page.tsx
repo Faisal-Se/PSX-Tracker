@@ -14,10 +14,8 @@ import {
   Target,
   X,
   Search,
-  Pencil,
   ArrowRight,
   Wallet,
-  TrendingUp,
   Hash,
   Percent,
 } from "lucide-react";
@@ -70,6 +68,9 @@ export default function ModelsPage() {
 
   // Market prices for preview
   const [marketPrices, setMarketPrices] = useState<Record<string, number>>({});
+
+  // Raw string values for buy price inputs (so user can clear/type freely)
+  const [customPriceInputs, setCustomPriceInputs] = useState<Record<string, string>>({});
 
   // Allocation mode: percent or shares
   const [allocMode, setAllocMode] = useState<"percent" | "shares">("percent");
@@ -151,8 +152,8 @@ export default function ModelsPage() {
       return [...updated, newAlloc];
     });
 
-    // Store market price
     setMarketPrices((prev) => ({ ...prev, [stock.symbol]: stock.current }));
+    setCustomPriceInputs((prev) => ({ ...prev, [stock.symbol]: stock.current > 0 ? String(stock.current) : "" }));
     setStockQuery("");
     setStockResults([]);
   };
@@ -246,6 +247,7 @@ export default function ModelsPage() {
     setStockQuery("");
     setStockResults([]);
     setMarketPrices({});
+    setCustomPriceInputs({});
     setAllocMode("percent");
     setShowEditor(true);
   };
@@ -253,7 +255,7 @@ export default function ModelsPage() {
   const handleSave = async () => {
     if (
       !formName.trim() ||
-      Math.abs(totalPct - 100) > 0.01 ||
+      Math.abs(totalPct - 100) > 1 ||
       cashAmount <= 0
     )
       return;
@@ -356,11 +358,6 @@ export default function ModelsPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 animate-in-up-delay-1">
           {models.map((model) => {
-            // Calculate total value (cash + holdings)
-            const holdingsValue = model.allocations
-              .filter((a) => a.symbol !== "CASH")
-              .reduce((sum, a) => sum + a.shares * a.avgPrice, 0);
-            const totalValue = model.cashBalance + holdingsValue;
             const stockCount = model.allocations.filter(
               (a) => a.symbol !== "CASH" && a.shares > 0
             ).length;
@@ -615,7 +612,7 @@ export default function ModelsPage() {
                 </div>
                 <span
                   className={`text-xs font-bold font-tabular ${
-                    Math.abs(totalPct - 100) < 0.01
+                    Math.abs(totalPct - 100) < 1
                       ? "text-emerald-600"
                       : "text-amber-500"
                   }`}
@@ -742,31 +739,31 @@ export default function ModelsPage() {
                               type="number"
                               min="0.01"
                               step="0.01"
-                              value={alloc.customPrice || mktPrice || ""}
+                              value={customPriceInputs[alloc.symbol] ?? (mktPrice > 0 ? String(mktPrice) : "")}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                setAllocations((prev) =>
-                                  prev.map((a) =>
-                                    a.symbol === alloc.symbol
-                                      ? { ...a, customPrice: val }
-                                      : a
-                                  )
-                                );
-                                // Recalc percentage for this stock + CASH in shares mode
-                                if (allocMode === "shares" && cashAmount > 0) {
-                                  setAllocations((prev2) => {
-                                    const thisAlloc = prev2.find((a2) => a2.symbol === alloc.symbol);
+                                const raw = e.target.value;
+                                setCustomPriceInputs((prev) => ({ ...prev, [alloc.symbol]: raw }));
+                                const val = raw === "" ? undefined : parseFloat(raw);
+                                setAllocations((prev) => {
+                                  const updated = prev.map((a) =>
+                                    a.symbol === alloc.symbol ? { ...a, customPrice: val } : a
+                                  );
+                                  // Recalc % in shares mode
+                                  if (allocMode === "shares" && cashAmount > 0) {
+                                    const thisAlloc = updated.find((a) => a.symbol === alloc.symbol);
                                     const shares = thisAlloc?.inputShares ?? 0;
-                                    const newPct = val > 0 ? Math.round((shares * val / cashAmount) * 1000) / 10 : 0;
+                                    const effectivePrice = (val != null && val > 0) ? val : mktPrice;
+                                    const newPct = effectivePrice > 0 ? Math.round((shares * effectivePrice / cashAmount) * 1000) / 10 : 0;
                                     const oldPct = thisAlloc?.percentage ?? 0;
                                     const diff = newPct - oldPct;
-                                    return prev2.map((a2) => {
-                                      if (a2.symbol === alloc.symbol) return { ...a2, percentage: newPct };
-                                      if (a2.symbol === "CASH") return { ...a2, percentage: Math.max(0, Math.round((a2.percentage - diff) * 10) / 10) };
-                                      return a2;
+                                    return updated.map((a) => {
+                                      if (a.symbol === alloc.symbol) return { ...a, percentage: newPct };
+                                      if (a.symbol === "CASH") return { ...a, percentage: Math.max(0, Math.round((a.percentage - diff) * 10) / 10) };
+                                      return a;
                                     });
-                                  });
-                                }
+                                  }
+                                  return updated;
+                                });
                               }}
                               className="w-24 h-7 rounded-lg font-tabular text-center text-xs"
                             />
@@ -827,7 +824,7 @@ export default function ModelsPage() {
                 disabled={
                   saving ||
                   !formName.trim() ||
-                  Math.abs(totalPct - 100) > 0.01 ||
+                  Math.abs(totalPct - 100) > 1 ||
                   cashAmount <= 0
                 }
                 className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"

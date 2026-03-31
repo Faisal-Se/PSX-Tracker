@@ -336,7 +336,7 @@ export default function ModelDetailPage() {
 
   // Step 1: User clicks "Review Trades" — only show trades for stocks whose % actually changed
   const handleRebalanceNext = () => {
-    if (Math.abs(rebalanceTotalPct - 100) > 0.01) return;
+    if (Math.abs(rebalanceTotalPct - 100) > 1) return;
 
     // Build a map of original percentages
     const originalPctMap = new Map(
@@ -426,12 +426,24 @@ export default function ModelDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          allocations: rebalanceAllocations.map((a) => ({
-            symbol: a.symbol,
-            companyName: a.companyName,
-            percentage: a.percentage,
-            ...(rebalanceMode === "shares" && a.inputShares != null ? { exactShares: a.inputShares } : {}),
-          })),
+          allocations: rebalanceAllocations.map((a) => {
+            if (a.symbol === "CASH") {
+              return { symbol: a.symbol, companyName: a.companyName, percentage: a.percentage };
+            }
+            // Always send exactShares so the API uses the same share counts the user reviewed
+            const mktPrice = marketPrices[a.symbol] || 0;
+            const exactShares = rebalanceMode === "shares" && a.inputShares != null
+              ? a.inputShares
+              : mktPrice > 0
+                ? Math.floor(((a.percentage / 100) * totalValue) / mktPrice)
+                : 0;
+            return {
+              symbol: a.symbol,
+              companyName: a.companyName,
+              percentage: a.percentage,
+              exactShares,
+            };
+          }),
           customPrices,
         }),
       });
@@ -1451,7 +1463,7 @@ export default function ModelDetailPage() {
                 </div>
                 <span
                   className={`text-xs font-bold font-tabular ${
-                    Math.abs(rebalanceTotalPct - 100) < 0.01
+                    Math.abs(rebalanceTotalPct - 100) < 1
                       ? "text-emerald-600"
                       : "text-amber-500"
                   }`}
@@ -1613,7 +1625,7 @@ export default function ModelDetailPage() {
                 onClick={handleRebalanceNext}
                 disabled={
                   rebalanceLoading ||
-                  Math.abs(rebalanceTotalPct - 100) > 0.01
+                  Math.abs(rebalanceTotalPct - 100) > 1
                 }
                 className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
               >

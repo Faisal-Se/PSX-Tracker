@@ -32,7 +32,8 @@ export async function POST(
   }
 
   const totalPct = allocations.reduce((sum, a) => sum + a.percentage, 0);
-  if (Math.abs(totalPct - 100) > 0.01) {
+  // Use 1% tolerance to allow for rounding in shares mode
+  if (Math.abs(totalPct - 100) > 1) {
     return NextResponse.json(
       {
         error: `Allocations must sum to 100% (currently ${totalPct.toFixed(1)}%)`,
@@ -73,16 +74,19 @@ export async function POST(
   const newAllocations: ModelAllocationData[] = [];
   let cashDelta = 0;
 
+  const existingCash = currentMap.get("CASH");
+
   for (const alloc of allocations) {
     if (alloc.symbol === "CASH") {
+      // Preserve existing CASH allocation ID; percentage updated after trades are computed
       newAllocations.push({
-        id: generateId(),
+        id: existingCash?.id || generateId(),
         symbol: "CASH",
         companyName: "Cash Reserve",
-        percentage: alloc.percentage,
+        percentage: alloc.percentage, // updated below after cashDelta is known
         shares: 0,
         avgPrice: 0,
-        createdAt: now,
+        createdAt: existingCash?.createdAt || now,
         updatedAt: now,
       });
       continue;
@@ -155,7 +159,7 @@ export async function POST(
         companyName: alloc.companyName,
         percentage: alloc.percentage,
         shares: targetShares,
-        avgPrice: currentAvgPrice,
+        avgPrice: targetShares > 0 ? currentAvgPrice : 0,
         createdAt: existing?.createdAt || now,
         updatedAt: now,
       });
@@ -202,6 +206,24 @@ export async function POST(
       },
       { status: 400 }
     );
+  }
+
+  // Recalculate actual percentages based on real resulting values
+  const actualCash = Math.max(0, newCashBalance);
+  let actualTotalValue = actualCash;
+  for (const a of newAllocations) {
+    if (a.symbol === "CASH") continue;
+    actualTotalValue += a.shares * (priceMap.get(a.symbol) || a.avgPrice);
+  }
+  if (actualTotalValue > 0) {
+    for (const a of newAllocations) {
+      if (a.symbol === "CASH") {
+        a.percentage = Math.round((actualCash / actualTotalValue) * 1000) / 10;
+      } else {
+        const price = priceMap.get(a.symbol) || a.avgPrice;
+        a.percentage = Math.round(((a.shares * price) / actualTotalValue) * 1000) / 10;
+      }
+    }
   }
 
   const updated = await updateModelPortfolio(id, (m) => {

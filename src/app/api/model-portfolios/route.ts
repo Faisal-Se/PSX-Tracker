@@ -57,7 +57,8 @@ export async function POST(req: Request) {
     (sum: number, a: { percentage: number }) => sum + a.percentage,
     0
   );
-  if (Math.abs(totalPct - 100) > 0.01) {
+  // Use 1% tolerance to allow for rounding in shares mode
+  if (Math.abs(totalPct - 100) > 1) {
     return NextResponse.json(
       {
         error: `Allocations must sum to 100% (currently ${totalPct.toFixed(1)}%)`,
@@ -130,7 +131,7 @@ export async function POST(req: Request) {
     }
 
     // Use exact shares if provided (shares mode), otherwise calculate from percentage
-    const shares = alloc.exactShares != null && alloc.exactShares > 0
+    const shares = alloc.exactShares != null
       ? alloc.exactShares
       : Math.floor(((alloc.percentage / 100) * cashBalance) / price);
     const cost = shares * price;
@@ -162,10 +163,26 @@ export async function POST(req: Request) {
     totalSpent += cost;
   }
 
+  const actualCash = cashBalance - totalSpent;
+  const actualTotal = actualCash + newAllocations
+    .filter((a) => a.symbol !== "CASH")
+    .reduce((sum, a) => sum + a.shares * a.avgPrice, 0);
+
+  // Recalculate actual percentages from real resulting values
+  if (actualTotal > 0) {
+    for (const a of newAllocations) {
+      if (a.symbol === "CASH") {
+        a.percentage = Math.round((actualCash / actualTotal) * 1000) / 10;
+      } else {
+        a.percentage = Math.round(((a.shares * a.avgPrice) / actualTotal) * 1000) / 10;
+      }
+    }
+  }
+
   const model = await createModelPortfolio({
     name,
     description: description || "",
-    cashBalance: cashBalance - totalSpent,
+    cashBalance: actualCash,
     allocations: newAllocations,
     transactions: newTransactions,
   });
