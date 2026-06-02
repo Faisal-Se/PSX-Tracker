@@ -6,6 +6,34 @@ import {
   deleteModelPortfolio,
   generateId,
 } from "@/lib/gdrive";
+import { getMarketWatch } from "@/lib/psx";
+
+// Recalculate allocation percentages based on actual market values
+async function recalcPercentages(
+  allocations: { symbol: string; shares: number; avgPrice: number; percentage: number }[],
+  cashBalance: number
+) {
+  const marketData = await getMarketWatch();
+  const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
+
+  let total = cashBalance;
+  for (const a of allocations) {
+    if (a.symbol === "CASH") continue;
+    const price = priceMap.get(a.symbol) || a.avgPrice;
+    total += a.shares * price;
+  }
+
+  if (total > 0) {
+    for (const a of allocations) {
+      if (a.symbol === "CASH") {
+        a.percentage = Math.round((cashBalance / total) * 1000) / 10;
+      } else {
+        const price = priceMap.get(a.symbol) || a.avgPrice;
+        a.percentage = Math.round(((a.shares * price) / total) * 1000) / 10;
+      }
+    }
+  }
+}
 
 export async function GET(
   _req: Request,
@@ -72,6 +100,14 @@ export async function PATCH(
       return m;
     });
 
+    if (updated) {
+      await recalcPercentages(updated.allocations, updated.cashBalance);
+      await updateModelPortfolio(id, (m) => {
+        m.allocations = updated.allocations;
+        return m;
+      });
+    }
+
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -123,6 +159,12 @@ export async function PATCH(
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    await recalcPercentages(updated.allocations, updated.cashBalance);
+    await updateModelPortfolio(id, (m) => {
+      m.allocations = updated.allocations;
+      return m;
+    });
 
     return NextResponse.json({
       ...updated,

@@ -33,6 +33,7 @@ import {
   Activity,
   Hash,
   Percent,
+  Sparkles,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
 import {
@@ -136,6 +137,17 @@ export default function ModelDetailPage() {
   const [bulkTradeLoading, setBulkTradeLoading] = useState(false);
   const [bulkTradeError, setBulkTradeError] = useState("");
 
+  // SIP (Systematic Investment Plan) dialog
+  const [showSip, setShowSip] = useState(false);
+  const [sipAmount, setSipAmount] = useState("");
+  const [sipBasis, setSipBasis] = useState<"current" | "target">("current");
+  const [sipPlan, setSipPlan] = useState<
+    { symbol: string; companyName: string; shares: number; price: string; marketPrice: number; weight: number }[]
+  >([]);
+  const [sipLoading, setSipLoading] = useState(false);
+  const [sipError, setSipError] = useState("");
+  const [showSipConfirm, setShowSipConfirm] = useState(false);
+
   // Stock search (shared for rebalance and bulk trade)
   const [stockQuery, setStockQuery] = useState("");
   const [stockResults, setStockResults] = useState<SearchStock[]>([]);
@@ -197,6 +209,72 @@ export default function ModelDetailPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [stockQuery, rebalanceAllocations]);
+
+  // Recompute SIP plan when amount/basis/model/prices change
+  useEffect(() => {
+    const amount = parseFloat(sipAmount);
+    if (!amount || amount <= 0 || !model) {
+      setSipPlan([]);
+      return;
+    }
+    const stockAllocs = model.allocations.filter((a) => a.symbol !== "CASH");
+    if (stockAllocs.length === 0) {
+      setSipPlan([]);
+      return;
+    }
+
+    let weights: { symbol: string; companyName: string; weight: number; price: number }[] = [];
+
+    if (sipBasis === "current") {
+      const totalMktValue = stockAllocs.reduce((sum, a) => {
+        const price = marketPrices[a.symbol] || a.avgPrice;
+        return sum + a.shares * price;
+      }, 0);
+      if (totalMktValue <= 0) {
+        setSipPlan([]);
+        return;
+      }
+      weights = stockAllocs.map((a) => {
+        const price = marketPrices[a.symbol] || a.avgPrice;
+        const value = a.shares * price;
+        return {
+          symbol: a.symbol,
+          companyName: a.companyName,
+          weight: value / totalMktValue,
+          price,
+        };
+      });
+    } else {
+      const totalPct = stockAllocs.reduce((sum, a) => sum + a.percentage, 0);
+      if (totalPct <= 0) {
+        setSipPlan([]);
+        return;
+      }
+      weights = stockAllocs.map((a) => ({
+        symbol: a.symbol,
+        companyName: a.companyName,
+        weight: a.percentage / totalPct,
+        price: marketPrices[a.symbol] || a.avgPrice,
+      }));
+    }
+
+    const plan = weights
+      .map((w) => {
+        const targetAmount = amount * w.weight;
+        const shares = w.price > 0 ? Math.floor(targetAmount / w.price) : 0;
+        return {
+          symbol: w.symbol,
+          companyName: w.companyName,
+          shares,
+          price: String(w.price),
+          marketPrice: w.price,
+          weight: w.weight,
+        };
+      })
+      .filter((t) => t.shares > 0);
+
+    setSipPlan(plan);
+  }, [sipAmount, sipBasis, model, marketPrices]);
 
   if (loading || !model) {
     return (
@@ -351,25 +429,21 @@ export default function ModelDetailPage() {
       const currentShares = existing?.shares || 0;
       const mktPrice = marketPrices[alloc.symbol] || 0;
 
-      // In shares mode, use explicit inputShares; in percent mode, calculate from %
+      // Determine target shares
       let targetShares: number;
       if (rebalanceMode === "shares" && alloc.inputShares != null) {
         targetShares = alloc.inputShares;
       } else {
+        // Percent mode: only recalculate for stocks whose % actually changed
+        const originalPct = originalPctMap.get(alloc.symbol) ?? -1;
+        const pctChanged = Math.abs(alloc.percentage - originalPct) > 0.01;
+        if (!pctChanged) continue; // unchanged stock — skip entirely
         if (mktPrice <= 0) continue;
-        const targetValue = (alloc.percentage / 100) * totalValue;
-        targetShares = Math.floor(targetValue / mktPrice);
+        targetShares = Math.floor(((alloc.percentage / 100) * totalValue) / mktPrice);
       }
 
-      // Skip if no change in shares
       const diff = targetShares - currentShares;
       if (diff === 0) continue;
-
-      // In percent mode, also skip if percentage hasn't changed
-      if (rebalanceMode === "percent") {
-        const originalPct = originalPctMap.get(alloc.symbol) ?? 0;
-        if (Math.abs(alloc.percentage - originalPct) < 0.01) continue;
-      }
 
       trades.push({
         symbol: alloc.symbol,
@@ -430,19 +504,19 @@ export default function ModelDetailPage() {
             if (a.symbol === "CASH") {
               return { symbol: a.symbol, companyName: a.companyName, percentage: a.percentage };
             }
-            // Always send exactShares so the API uses the same share counts the user reviewed
+            if (rebalanceMode === "shares" && a.inputShares != null) {
+              // Shares mode: always use explicit inputShares
+              return { symbol: a.symbol, companyName: a.companyName, percentage: a.percentage, exactShares: a.inputShares };
+            }
+            // Percent mode: use current shares for unchanged stocks, recalculate only for changed ones
+            const originalPct = model.allocations.find((o) => o.symbol === a.symbol)?.percentage ?? -1;
+            const pctChanged = Math.abs(a.percentage - originalPct) > 0.01;
+            const existingShares = model.allocations.find((o) => o.symbol === a.symbol)?.shares ?? 0;
             const mktPrice = marketPrices[a.symbol] || 0;
-            const exactShares = rebalanceMode === "shares" && a.inputShares != null
-              ? a.inputShares
-              : mktPrice > 0
-                ? Math.floor(((a.percentage / 100) * totalValue) / mktPrice)
-                : 0;
-            return {
-              symbol: a.symbol,
-              companyName: a.companyName,
-              percentage: a.percentage,
-              exactShares,
-            };
+            const exactShares = pctChanged && mktPrice > 0
+              ? Math.floor(((a.percentage / 100) * totalValue) / mktPrice)
+              : existingShares;
+            return { symbol: a.symbol, companyName: a.companyName, percentage: a.percentage, exactShares };
           }),
           customPrices,
         }),
@@ -518,6 +592,82 @@ export default function ModelDetailPage() {
     if (res.ok) {
       setShowEditInfo(false);
       fetchData();
+    }
+  };
+
+  // ═══════════════════════════════════
+  // SIP (Systematic Investment Plan)
+  // ═══════════════════════════════════
+  const openSip = () => {
+    setSipAmount("");
+    setSipPlan([]);
+    setSipError("");
+    setSipBasis("current");
+    setShowSip(true);
+  };
+
+  // Step 1: User reviews plan, clicks "Review & Confirm"
+  const handleSipNext = () => {
+    if (sipPlan.length === 0) {
+      setSipError("Nothing to buy. Check the amount or add stocks to the portfolio first.");
+      return;
+    }
+    setSipError("");
+    setShowSipConfirm(true);
+  };
+
+  // Step 2: Submit via bulk-trade API
+  const handleSipSubmit = async () => {
+    if (!model) return;
+    const amount = parseFloat(sipAmount);
+    if (!amount || amount <= 0) return;
+
+    setSipLoading(true);
+    setSipError("");
+
+    try {
+      // First add cash, then execute bulk buys
+      const addRes = await fetch(`/api/model-portfolios/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addCash: amount }),
+      });
+      if (!addRes.ok) {
+        const data = await addRes.json();
+        setSipError(data.error || "Failed to add SIP cash");
+        return;
+      }
+
+      const trades = sipPlan
+        .filter((p) => p.shares > 0)
+        .map((p) => ({
+          symbol: p.symbol,
+          companyName: p.companyName,
+          type: "BUY" as const,
+          quantity: p.shares,
+          price: parseFloat(p.price) > 0 ? parseFloat(p.price) : undefined,
+        }));
+
+      if (trades.length > 0) {
+        const buyRes = await fetch(`/api/model-portfolios/${id}/bulk-trade`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ trades }),
+        });
+        if (!buyRes.ok) {
+          const data = await buyRes.json();
+          setSipError(data.error || "Failed to execute SIP buys");
+          return;
+        }
+      }
+
+      setShowSipConfirm(false);
+      setShowSip(false);
+      fetchData();
+    } catch {
+      setSipError("SIP failed");
+    } finally {
+      setSipLoading(false);
     }
   };
 
@@ -670,6 +820,14 @@ export default function ModelDetailPage() {
           >
             <ShoppingCart className="h-4 w-4 mr-1.5" />
             Bulk Trade
+          </Button>
+          <Button
+            variant="outline"
+            className="rounded-xl border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700"
+            onClick={openSip}
+          >
+            <Sparkles className="h-4 w-4 mr-1.5" />
+            SIP
           </Button>
           <Button
             className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
@@ -1499,15 +1657,20 @@ export default function ModelDetailPage() {
                   );
                   const currentShares = existing?.shares || 0;
                   const price = marketPrices[alloc.symbol] || 0;
-                  // In shares mode, use the explicit inputShares; in percent mode, calculate from %
-                  const targetShares =
-                    alloc.symbol !== "CASH"
-                      ? rebalanceMode === "shares" && alloc.inputShares != null
-                        ? alloc.inputShares
-                        : price > 0
-                          ? Math.floor(((alloc.percentage / 100) * totalValue) / price)
-                          : 0
-                      : 0;
+                  // Determine target shares
+                  let targetShares = 0;
+                  if (alloc.symbol !== "CASH") {
+                    if (rebalanceMode === "shares" && alloc.inputShares != null) {
+                      targetShares = alloc.inputShares;
+                    } else {
+                      // Percent mode: only recalculate if user changed this stock's %
+                      const originalPct = existing?.percentage ?? -1;
+                      const pctChanged = Math.abs(alloc.percentage - originalPct) > 0.01;
+                      targetShares = pctChanged && price > 0
+                        ? Math.floor(((alloc.percentage / 100) * totalValue) / price)
+                        : currentShares;
+                    }
+                  }
                   const diff = targetShares - currentShares;
 
                   return (
@@ -1794,6 +1957,260 @@ export default function ModelDetailPage() {
                 {rebalanceLoading
                   ? "Executing..."
                   : "Confirm & Execute"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════ */}
+      {/* SIP Dialog                          */}
+      {/* ═══════════════════════════════════ */}
+      <Dialog open={showSip} onOpenChange={setShowSip}>
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-emerald-500" />
+              SIP — Smart Investment Plan
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <p className="text-xs text-muted-foreground">
+              Enter an amount to invest. We&apos;ll auto-distribute it across your
+              stocks based on{" "}
+              {sipBasis === "current"
+                ? "their current weights in the portfolio"
+                : "your stored target allocation"}
+              . Whole shares only — any leftover stays as cash.
+            </p>
+
+            {/* Amount input */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Investment Amount (PKR)</Label>
+              <Input
+                type="number"
+                min="0"
+                value={sipAmount}
+                onChange={(e) => setSipAmount(e.target.value)}
+                placeholder="e.g. 30000"
+                className="rounded-xl font-tabular"
+                autoFocus
+              />
+            </div>
+
+            {/* Basis toggle */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Distribute by</Label>
+              <div className="flex items-center bg-muted rounded-lg p-0.5 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setSipBasis("current")}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    sipBasis === "current"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Current holdings
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSipBasis("target")}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    sipBasis === "target"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Target allocation
+                </button>
+              </div>
+            </div>
+
+            {/* Plan preview */}
+            {sipPlan.length > 0 && (() => {
+              const amount = parseFloat(sipAmount) || 0;
+              const totalCost = sipPlan.reduce(
+                (sum, p) => sum + p.shares * (parseFloat(p.price) || p.marketPrice),
+                0
+              );
+              const leftover = amount - totalCost;
+              return (
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold">Plan</Label>
+                  <div className="space-y-1.5">
+                    {sipPlan.map((item) => {
+                      const price = parseFloat(item.price) || item.marketPrice;
+                      const cost = item.shares * price;
+                      return (
+                        <div
+                          key={item.symbol}
+                          className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 border border-border/50"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate">
+                              {item.symbol}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              {item.companyName}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold font-tabular text-emerald-600">
+                              {item.shares} shares
+                            </p>
+                            <p className="text-[11px] text-muted-foreground font-tabular">
+                              PKR {formatPKR(cost, { decimals: 0 })} ·{" "}
+                              {(item.weight * 100).toFixed(1)}%
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between pt-2 text-xs border-t border-border/50">
+                    <span className="text-muted-foreground">
+                      Invested: PKR {formatPKR(totalCost, { decimals: 0 })}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Leftover cash:{" "}
+                      <span className="font-bold text-emerald-600 font-tabular">
+                        PKR {formatPKR(leftover, { decimals: 0 })}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {sipAmount && parseFloat(sipAmount) > 0 && sipPlan.length === 0 && (
+              <div className="text-sm text-amber-600 bg-amber-500/10 px-3 py-2 rounded-lg">
+                Amount is too small to buy even 1 share of any stock, or no stocks in portfolio.
+              </div>
+            )}
+
+            {sipError && (
+              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+                {sipError}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => setShowSip(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSipNext}
+                disabled={!sipAmount || parseFloat(sipAmount) <= 0 || sipPlan.length === 0}
+                className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white"
+              >
+                Review & Confirm
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════ */}
+      {/* SIP Confirm Prices Dialog           */}
+      {/* ═══════════════════════════════════ */}
+      <Dialog open={showSipConfirm} onOpenChange={setShowSipConfirm}>
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-emerald-500" />
+              Confirm Buy Prices
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-2">
+            <p className="text-xs text-muted-foreground">
+              Override any buy price if needed, then execute to add PKR{" "}
+              {formatPKR(parseFloat(sipAmount) || 0, { decimals: 0 })} cash and
+              buy these shares.
+            </p>
+
+            <div className="space-y-2">
+              {sipPlan.map((item, idx) => {
+                const price = parseFloat(item.price) || item.marketPrice;
+                const cost = item.shares * price;
+                return (
+                  <div
+                    key={item.symbol}
+                    className="p-3 rounded-xl bg-muted/30 border border-border/50"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-semibold">{item.symbol}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {item.companyName}
+                        </p>
+                      </div>
+                      <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                        BUY {item.shares}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-[11px] text-muted-foreground">
+                          Buy @
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={item.price}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSipPlan((prev) =>
+                              prev.map((p, i) =>
+                                i === idx ? { ...p, price: val } : p
+                              )
+                            );
+                          }}
+                          className="w-24 h-7 rounded-lg font-tabular text-center text-xs"
+                        />
+                      </div>
+                      <span className="text-[11px] text-muted-foreground">
+                        Mkt: {formatPKR(item.marketPrice)}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground ml-auto">
+                        ={" "}
+                        <span className="font-bold text-foreground font-tabular">
+                          PKR {formatPKR(cost, { decimals: 0 })}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {sipError && (
+              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+                {sipError}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => setShowSipConfirm(false)}
+              >
+                Back
+              </Button>
+              <Button
+                onClick={handleSipSubmit}
+                disabled={sipLoading}
+                className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white"
+              >
+                {sipLoading ? "Executing..." : "Execute SIP"}
               </Button>
             </div>
           </div>
