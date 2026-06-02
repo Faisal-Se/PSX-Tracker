@@ -17,6 +17,29 @@ export async function GET() {
 
   const models = await getModelPortfolios();
 
+  // Recompute allocation percentages from current market values so the list
+  // cards always reflect the latest prices/holdings (stored percentages can go
+  // stale after trades). Only the percentage field is derived; not persisted.
+  const marketData = await getMarketWatch();
+  const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
+  for (const m of models) {
+    let total = m.cashBalance;
+    for (const a of m.allocations) {
+      if (a.symbol === "CASH") continue;
+      total += a.shares * (priceMap.get(a.symbol) || a.avgPrice);
+    }
+    if (total > 0) {
+      for (const a of m.allocations) {
+        if (a.symbol === "CASH") {
+          a.percentage = Math.round((m.cashBalance / total) * 1000) / 10;
+        } else {
+          const price = priceMap.get(a.symbol) || a.avgPrice;
+          a.percentage = Math.round(((a.shares * price) / total) * 1000) / 10;
+        }
+      }
+    }
+  }
+
   // Add _count for compatibility
   const result = models.map((m) => ({
     ...m,
