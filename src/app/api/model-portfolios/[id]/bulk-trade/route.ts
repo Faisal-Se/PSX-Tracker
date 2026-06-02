@@ -180,6 +180,25 @@ export async function POST(
     }
 
     m.cashBalance -= netCashNeeded;
+
+    // Recalculate allocation percentages from real resulting market values
+    // (trades/shares/cash are unchanged above — this only refreshes the % display)
+    let totalValue = m.cashBalance;
+    for (const a of m.allocations) {
+      if (a.symbol === "CASH") continue;
+      totalValue += a.shares * (priceMap.get(a.symbol) || a.avgPrice);
+    }
+    if (totalValue > 0) {
+      for (const a of m.allocations) {
+        if (a.symbol === "CASH") {
+          a.percentage = Math.round((m.cashBalance / totalValue) * 1000) / 10;
+        } else {
+          const price = priceMap.get(a.symbol) || a.avgPrice;
+          a.percentage = Math.round(((a.shares * price) / totalValue) * 1000) / 10;
+        }
+      }
+    }
+
     return m;
   });
 
