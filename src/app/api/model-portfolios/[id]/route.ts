@@ -51,6 +51,11 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // Recompute percentages live from current market values so they always
+  // reflect the latest prices and holdings (stored percentages can go stale
+  // after trades). Only the percentage field is derived — nothing is persisted.
+  await recalcPercentages(model.allocations, model.cashBalance);
+
   // Sort allocations by percentage desc, transactions by date desc (take 100)
   const sorted = {
     ...model,
