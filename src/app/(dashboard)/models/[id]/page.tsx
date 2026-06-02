@@ -300,6 +300,29 @@ export default function ModelDetailPage() {
   const totalPnl = marketValue - investedValue;
   const totalPnlPct = investedValue > 0 ? (totalPnl / investedValue) * 100 : 0;
 
+  // Live allocation % — derived from current market values so they always
+  // reflect the latest prices/holdings (never stale stored percentages).
+  const livePct = (symbol: string) => {
+    if (totalValue <= 0) return 0;
+    if (symbol === "CASH") return (model.cashBalance / totalValue) * 100;
+    const alloc = stockAllocations.find((a) => a.symbol === symbol);
+    if (!alloc) return 0;
+    const price = marketPrices[symbol] || alloc.avgPrice;
+    return (alloc.shares * price) / totalValue * 100;
+  };
+
+  // Unified breakdown (stocks + cash) used by the bar and legend.
+  const allocationBreakdown = [
+    ...stockAllocations.map((a) => ({
+      symbol: a.symbol,
+      label: a.symbol,
+      pct: livePct(a.symbol),
+    })),
+    { symbol: "CASH", label: "Cash", pct: livePct("CASH") },
+  ]
+    .filter((a) => a.pct > 0)
+    .sort((a, b) => b.pct - a.pct);
+
   // Rebalance helpers
   const rebalanceTotalPct = rebalanceAllocations.reduce(
     (sum, a) => sum + a.percentage,
@@ -978,7 +1001,7 @@ export default function ModelDetailPage() {
                             variant="secondary"
                             className="text-[10px] font-tabular px-1.5 py-0 rounded-md"
                           >
-                            {alloc.percentage.toFixed(1)}%
+                            {livePct(alloc.symbol).toFixed(1)}%
                           </Badge>
                         </td>
                         <td className="text-right py-3 px-2 font-tabular font-semibold">
@@ -1031,43 +1054,37 @@ export default function ModelDetailPage() {
         </CardHeader>
         <CardContent>
           <div className="h-4 bg-muted rounded-full overflow-hidden flex mb-4">
-            {model.allocations
-              .filter((a) => a.percentage > 0)
-              .map((a, i) => {
-                const color =
-                  a.symbol === "CASH"
-                    ? "bg-slate-400"
-                    : barColors[i % barColors.length];
-                return (
-                  <div
-                    key={a.symbol}
-                    className={`h-full ${color} transition-all`}
-                    style={{ width: `${a.percentage}%` }}
-                    title={`${a.symbol}: ${a.percentage.toFixed(1)}%`}
-                  />
-                );
-              })}
+            {allocationBreakdown.map((a, i) => {
+              const color =
+                a.symbol === "CASH"
+                  ? "bg-slate-400"
+                  : barColors[i % barColors.length];
+              return (
+                <div
+                  key={a.symbol}
+                  className={`h-full ${color} transition-all`}
+                  style={{ width: `${a.pct}%` }}
+                  title={`${a.label}: ${a.pct.toFixed(1)}%`}
+                />
+              );
+            })}
           </div>
           <div className="flex flex-wrap gap-3">
-            {model.allocations
-              .filter((a) => a.percentage > 0)
-              .map((a, i) => {
-                const color =
-                  a.symbol === "CASH"
-                    ? "bg-slate-400"
-                    : barColors[i % barColors.length];
-                return (
-                  <div key={a.symbol} className="flex items-center gap-1.5">
-                    <div className={`h-2.5 w-2.5 rounded-full ${color}`} />
-                    <span className="text-xs font-medium">
-                      {a.symbol === "CASH" ? "Cash" : a.symbol}
-                    </span>
-                    <span className="text-xs text-muted-foreground font-tabular">
-                      {a.percentage.toFixed(1)}%
-                    </span>
-                  </div>
-                );
-              })}
+            {allocationBreakdown.map((a, i) => {
+              const color =
+                a.symbol === "CASH"
+                  ? "bg-slate-400"
+                  : barColors[i % barColors.length];
+              return (
+                <div key={a.symbol} className="flex items-center gap-1.5">
+                  <div className={`h-2.5 w-2.5 rounded-full ${color}`} />
+                  <span className="text-xs font-medium">{a.label}</span>
+                  <span className="text-xs text-muted-foreground font-tabular">
+                    {a.pct.toFixed(1)}%
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
