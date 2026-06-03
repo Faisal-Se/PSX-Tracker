@@ -106,6 +106,15 @@ export default function ModelDetailPage() {
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
 
+  // Edit holding (avg price / shares) dialog
+  const [showEditHolding, setShowEditHolding] = useState(false);
+  const [editHoldingSymbol, setEditHoldingSymbol] = useState("");
+  const [editHoldingName, setEditHoldingName] = useState("");
+  const [editHoldingAvg, setEditHoldingAvg] = useState("");
+  const [editHoldingShares, setEditHoldingShares] = useState("");
+  const [editHoldingLoading, setEditHoldingLoading] = useState(false);
+  const [editHoldingError, setEditHoldingError] = useState("");
+
   // Rebalance mode
   const [showRebalance, setShowRebalance] = useState(false);
   const [rebalanceAllocations, setRebalanceAllocations] = useState<
@@ -619,6 +628,53 @@ export default function ModelDetailPage() {
   };
 
   // ═══════════════════════════════════
+  // Edit Holding (correct avg price / shares)
+  // ═══════════════════════════════════
+  const openEditHolding = (alloc: Allocation) => {
+    setEditHoldingSymbol(alloc.symbol);
+    setEditHoldingName(alloc.companyName);
+    setEditHoldingAvg(String(alloc.avgPrice));
+    setEditHoldingShares(String(alloc.shares));
+    setEditHoldingError("");
+    setShowEditHolding(true);
+  };
+
+  const handleEditHoldingSubmit = async () => {
+    const avg = parseFloat(editHoldingAvg);
+    const shares = parseInt(editHoldingShares);
+    if (isNaN(avg) || avg < 0) {
+      setEditHoldingError("Enter a valid average price");
+      return;
+    }
+    if (isNaN(shares) || shares < 0) {
+      setEditHoldingError("Enter a valid share count");
+      return;
+    }
+    setEditHoldingLoading(true);
+    setEditHoldingError("");
+    try {
+      const res = await fetch(`/api/model-portfolios/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          editHolding: { symbol: editHoldingSymbol, avgPrice: avg, shares },
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setEditHoldingError(data.error || "Failed to update holding");
+        return;
+      }
+      setShowEditHolding(false);
+      fetchData();
+    } catch {
+      setEditHoldingError("Failed to update holding");
+    } finally {
+      setEditHoldingLoading(false);
+    }
+  };
+
+  // ═══════════════════════════════════
   // SIP (Systematic Investment Plan)
   // ═══════════════════════════════════
   const openSip = () => {
@@ -989,7 +1045,16 @@ export default function ModelDetailPage() {
                               {alloc.symbol.slice(0, 3)}
                             </div>
                             <div>
-                              <p className="font-semibold">{alloc.symbol}</p>
+                              <p className="font-semibold flex items-center gap-1.5">
+                                {alloc.symbol}
+                                <button
+                                  onClick={() => openEditHolding(alloc)}
+                                  className="text-muted-foreground hover:text-violet-500 transition-colors"
+                                  title="Edit avg price / shares"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              </p>
                               <p className="text-[11px] text-muted-foreground truncate max-w-[150px]">
                                 {alloc.companyName}
                               </p>
@@ -1530,6 +1595,63 @@ export default function ModelDetailPage() {
               className="w-full rounded-xl"
             >
               Save
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════ */}
+      {/* Edit Holding Dialog                */}
+      {/* ═══════════════════════════════════ */}
+      <Dialog open={showEditHolding} onOpenChange={setShowEditHolding}>
+        <DialogContent className="sm:max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-violet-500" />
+              Edit {editHoldingSymbol}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-[11px] text-muted-foreground">
+              Correct the stored average (cost) price or share count for{" "}
+              <span className="font-semibold text-foreground">
+                {editHoldingName}
+              </span>
+              . Cash and transaction history are not affected.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Average Price (PKR)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editHoldingAvg}
+                onChange={(e) => setEditHoldingAvg(e.target.value)}
+                className="rounded-xl font-tabular text-lg"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Shares</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={editHoldingShares}
+                onChange={(e) => setEditHoldingShares(e.target.value)}
+                className="rounded-xl font-tabular text-lg"
+              />
+            </div>
+            {editHoldingError && (
+              <p className="text-[11px] text-red-500 font-semibold">
+                {editHoldingError}
+              </p>
+            )}
+            <Button
+              onClick={handleEditHoldingSubmit}
+              disabled={editHoldingLoading}
+              className="w-full rounded-xl bg-violet-500 hover:bg-violet-600 text-white font-semibold"
+            >
+              {editHoldingLoading ? "Saving..." : "Save Changes"}
             </Button>
           </div>
         </DialogContent>

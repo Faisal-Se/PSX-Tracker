@@ -84,9 +84,77 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { name, description, addCash, withdrawCash } = body;
+  const { name, description, addCash, withdrawCash, editHolding } = body;
 
   const now = new Date().toISOString();
+
+  // Edit a holding's average price (and optionally shares) in place.
+  // Does NOT touch cash or transactions — only corrects the stored cost basis.
+  if (editHolding && editHolding.symbol) {
+    const { symbol, avgPrice, shares } = editHolding as {
+      symbol: string;
+      avgPrice?: number;
+      shares?: number;
+    };
+    if (symbol === "CASH") {
+      return NextResponse.json(
+        { error: "Cannot edit the cash allocation" },
+        { status: 400 }
+      );
+    }
+    if (avgPrice != null && (isNaN(avgPrice) || avgPrice < 0)) {
+      return NextResponse.json(
+        { error: "Average price must be a non-negative number" },
+        { status: 400 }
+      );
+    }
+    if (shares != null && (!Number.isInteger(shares) || shares < 0)) {
+      return NextResponse.json(
+        { error: "Shares must be a non-negative whole number" },
+        { status: 400 }
+      );
+    }
+
+    const existing = await getModelPortfolio(id);
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (!existing.allocations.some((a) => a.symbol === symbol)) {
+      return NextResponse.json(
+        { error: `Holding ${symbol} not found in this portfolio` },
+        { status: 404 }
+      );
+    }
+
+    const updated = await updateModelPortfolio(id, (m) => {
+      const alloc = m.allocations.find((a) => a.symbol === symbol);
+      if (alloc) {
+        if (avgPrice != null) alloc.avgPrice = avgPrice;
+        if (shares != null) alloc.shares = shares;
+        alloc.updatedAt = now;
+      }
+      return m;
+    });
+
+    if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    await recalcPercentages(updated.allocations, updated.cashBalance);
+
+    return NextResponse.json({
+      ...updated,
+      allocations: [...updated.allocations].sort(
+        (a, b) => b.percentage - a.percentage
+      ),
+      transactions: [...updated.transactions]
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+        .slice(0, 100),
+    });
+  }
 
   // Add cash flow
   if (addCash && addCash > 0) {
