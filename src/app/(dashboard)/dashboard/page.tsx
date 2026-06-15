@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   TrendingUp,
   TrendingDown,
@@ -14,18 +13,30 @@ import {
   Activity,
   PieChart,
   Banknote,
-  Briefcase,
   Layers,
   Settings2,
   EyeOff,
   Eye,
   ChevronUp,
   ChevronDown,
+  Briefcase,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { formatPKR } from "@/lib/market-status";
 import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
+import { Sparkline } from "@/components/Sparkline";
+import {
+  AreaChart,
+  Area,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  PieChart as RechartsPie,
+  Pie,
+  Cell,
+} from "recharts";
 
 interface KSE100 {
   current: number;
@@ -66,6 +77,15 @@ interface ModelPortfolio {
   allocations: { symbol: string; companyName: string; percentage: number; shares: number }[];
 }
 
+interface HistoryPoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 type WidgetId = "kse100" | "stats" | "models" | "holdings" | "gainers" | "losers";
 
 interface WidgetConfig {
@@ -82,6 +102,19 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: "gainers", label: "Top Gainers", visible: true },
   { id: "losers", label: "Top Losers", visible: true },
 ];
+
+// Indigo-family allocation palette (Linear-style, no rainbow)
+const ALLOCATION_PALETTE = [
+  "var(--primary)",
+  "#6366f1",
+  "#818cf8",
+  "#a5b4fc",
+  "#4f46e5",
+  "#7c3aed",
+  "#c7d2fe",
+  "#3730a3",
+];
+const CASH_COLOR = "var(--muted-foreground)";
 
 function loadWidgets(): WidgetConfig[] {
   if (typeof window === "undefined") return DEFAULT_WIDGETS;
@@ -101,6 +134,8 @@ function loadWidgets(): WidgetConfig[] {
   return DEFAULT_WIDGETS;
 }
 
+type SortKey = "value" | "pnl";
+
 export default function DashboardPage() {
   const [kse100, setKse100] = useState<KSE100 | null>(null);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -111,6 +146,9 @@ export default function DashboardPage() {
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
   const [balancesHidden, setBalancesHidden] = useState(false);
+  const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
+  const [sortKey, setSortKey] = useState<SortKey>("value");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
     setWidgets(loadWidgets());
@@ -183,6 +221,40 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  // Unique holding symbols (capped to limit history requests)
+  const uniqueSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of portfolios) for (const h of p.holdings) set.add(h.symbol);
+    return Array.from(set).slice(0, 12);
+  }, [portfolios]);
+
+  // Fetch per-symbol price history once portfolios load
+  useEffect(() => {
+    if (uniqueSymbols.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        uniqueSymbols.map(async (sym) => {
+          try {
+            const res = await fetch(`/api/psx/history?symbol=${encodeURIComponent(sym)}`);
+            if (!res.ok) return [sym, [] as HistoryPoint[]] as const;
+            const data = (await res.json()) as HistoryPoint[];
+            return [sym, Array.isArray(data) ? data : []] as const;
+          } catch {
+            return [sym, [] as HistoryPoint[]] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      const map: Record<string, HistoryPoint[]> = {};
+      for (const [sym, data] of results) map[sym] = data;
+      setHistory(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [uniqueSymbols]);
+
   const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
 
   const totalInvested = portfolios.reduce(
@@ -212,6 +284,105 @@ export default function DashboardPage() {
   const topGainers = sortedByChange.slice(0, 5);
   const topLosers = sortedByChange.slice(-5).reverse();
 
+  // Flat list of all holdings (across portfolios)
+  const allHoldings = useMemo(
+    () => portfolios.flatMap((p) => p.holdings),
+    [portfolios]
+  );
+
+  // ---- Portfolio value-over-time series (weighted by shares) ----
+  const valueSeries = useMemo<{ date: string; value: number }[]>(() => {
+    if (allHoldings.length === 0) return [];
+    // Aggregate shares per symbol
+    const shares = new Map<string, number>();
+    const avg = new Map<string, number>();
+    for (const h of allHoldings) {
+      shares.set(h.symbol, (shares.get(h.symbol) || 0) + h.quantity);
+      if (!avg.has(h.symbol)) avg.set(h.symbol, h.avgPrice);
+    }
+
+    // Union of trading dates across all fetched histories
+    const dateSet = new Set<string>();
+    for (const sym of shares.keys()) {
+      for (const pt of history[sym] || []) dateSet.add(pt.date);
+    }
+    const dates = Array.from(dateSet).sort().slice(-30); // last ~30 trading days
+    if (dates.length < 2) return [];
+
+    // Per-symbol sorted history for "most recent close on/before date" lookup
+    const sortedHist: Record<string, HistoryPoint[]> = {};
+    for (const sym of shares.keys()) {
+      sortedHist[sym] = [...(history[sym] || [])].sort((a, b) =>
+        a.date.localeCompare(b.date)
+      );
+    }
+
+    return dates.map((date) => {
+      let value = totalCash;
+      for (const [sym, qty] of shares) {
+        const hist = sortedHist[sym] || [];
+        // most recent close on/before this date
+        let close = avg.get(sym) || 0;
+        for (let i = hist.length - 1; i >= 0; i--) {
+          if (hist[i].date <= date && hist[i].close > 0) {
+            close = hist[i].close;
+            break;
+          }
+        }
+        value += qty * close;
+      }
+      return { date, value };
+    });
+  }, [allHoldings, history, totalCash]);
+
+  // ---- Allocation donut data ----
+  const allocationData = useMemo(() => {
+    const bySymbol = new Map<string, number>();
+    for (const h of allHoldings) {
+      const cp = priceMap.get(h.symbol) || h.avgPrice;
+      bySymbol.set(h.symbol, (bySymbol.get(h.symbol) || 0) + cp * h.quantity);
+    }
+    const slices = Array.from(bySymbol.entries())
+      .map(([symbol, value]) => ({ name: symbol, value }))
+      .sort((a, b) => b.value - a.value);
+    if (totalCash > 0) slices.push({ name: "Cash", value: totalCash });
+    const total = slices.reduce((s, x) => s + x.value, 0) || 1;
+    return slices.map((s) => ({ ...s, pct: (s.value / total) * 100 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allHoldings, marketData, totalCash]);
+
+  // ---- Holdings table rows (sortable) ----
+  const holdingRows = useMemo(() => {
+    const rows = allHoldings.map((h) => {
+      const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
+      const value = currentPrice * h.quantity;
+      const pnl = (currentPrice - h.avgPrice) * h.quantity;
+      const pnlPercent =
+        h.avgPrice > 0 ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100 : 0;
+      const trend = (history[h.symbol] || [])
+        .map((p) => p.close)
+        .filter((n) => n > 0)
+        .slice(-20);
+      return { ...h, currentPrice, value, pnl, pnlPercent, trend };
+    });
+    rows.sort((a, b) => {
+      const av = sortKey === "value" ? a.value : a.pnl;
+      const bv = sortKey === "value" ? b.value : b.pnl;
+      return sortDir === "desc" ? bv - av : av - bv;
+    });
+    return rows.slice(0, 10);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allHoldings, marketData, history, sortKey, sortDir]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
   if (initialLoading) {
     return (
       <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
@@ -219,21 +390,22 @@ export default function DashboardPage() {
           <Skeleton className="h-8 w-44" />
           <Skeleton className="h-4 w-72" />
         </div>
-        <Skeleton className="h-36 w-full rounded-2xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Skeleton className="h-64 w-full rounded-xl" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <CardSkeleton />
           <CardSkeleton />
           <CardSkeleton />
           <CardSkeleton />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Skeleton className="h-48 rounded-2xl" />
-          <Skeleton className="h-48 rounded-2xl" />
-          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-72 rounded-xl" />
+          <Skeleton className="h-72 rounded-xl lg:col-span-2" />
         </div>
       </div>
     );
   }
+
+  const pnlColor = totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)";
 
   return (
     <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
@@ -286,7 +458,7 @@ export default function DashboardPage() {
 
       {/* Widget Settings Panel */}
       {showWidgetSettings && (
-        <Card className="rounded-2xl border-violet-500/20 animate-in-up">
+        <Card className="rounded-xl border border-border bg-card animate-in-up">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -303,14 +475,14 @@ export default function DashboardPage() {
               {widgets.map((widget, idx) => (
                 <div
                   key={widget.id}
-                  className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/30 border border-border/50"
+                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/40 border border-border"
                 >
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => toggleWidget(widget.id)}
-                      className={`p-1 rounded-lg transition-colors ${
+                      className={`p-1 rounded-md transition-colors ${
                         widget.visible
-                          ? "text-emerald-500 hover:bg-emerald-500/10"
+                          ? "text-primary hover:bg-muted"
                           : "text-muted-foreground hover:bg-muted"
                       }`}
                     >
@@ -330,14 +502,14 @@ export default function DashboardPage() {
                     <button
                       onClick={() => moveWidget(widget.id, "up")}
                       disabled={idx === 0}
-                      className="p-1 rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-30"
+                      className="p-1 rounded-md hover:bg-muted text-muted-foreground disabled:opacity-30"
                     >
                       <ChevronUp className="h-3.5 w-3.5" />
                     </button>
                     <button
                       onClick={() => moveWidget(widget.id, "down")}
                       disabled={idx === widgets.length - 1}
-                      className="p-1 rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-30"
+                      className="p-1 rounded-md hover:bg-muted text-muted-foreground disabled:opacity-30"
                     >
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
@@ -349,179 +521,364 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* KSE-100 Hero Card */}
-      {isVisible("kse100") && <div className="rounded-xl border border-border bg-card p-5 lg:p-6 animate-in-up-delay-1">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2.5">
-              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
-                KSE 100 Index
-              </span>
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-              </span>
-            </div>
-            <p className="text-3xl lg:text-4xl font-semibold font-tabular tracking-tight">
-              {kse100?.current ? formatPKR(kse100.current) : "—"}
-            </p>
-            {kse100 && (
-              <div
-                className={`flex items-center gap-2 mt-2.5 text-sm font-medium ${
-                  kse100.change >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]"
-                }`}
-              >
-                {kse100.change >= 0 ? (
-                  <ArrowUpRight className="h-4 w-4" />
-                ) : (
-                  <ArrowDownRight className="h-4 w-4" />
-                )}
-                <span className="font-tabular">
-                  {kse100.change >= 0 ? "+" : ""}
-                  {formatPKR(Math.abs(kse100.change))}
+      {/* Hero: portfolio value + value-over-time chart */}
+      {isVisible("stats") && (
+        <div className="rounded-xl border border-border bg-card overflow-hidden animate-in-up-delay-1">
+          <div className="flex flex-col lg:flex-row">
+            <div className="p-5 lg:p-6 lg:w-[34%] lg:border-r border-border">
+              <div className="flex items-center gap-2 mb-2.5">
+                <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
+                  Portfolio Value
                 </span>
+              </div>
+              <p
+                className={`text-3xl lg:text-4xl font-semibold font-tabular tracking-tight ${balancesHidden ? "balance-blur" : ""}`}
+              >
+                {formatPKR(totalCurrentValue, { decimals: 0 })}
+              </p>
+              <div className="flex items-center gap-2 mt-3">
                 <span
-                  className="px-1.5 py-0.5 rounded-md text-xs font-semibold font-tabular"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold font-tabular"
                   style={{
+                    color: pnlColor,
                     backgroundColor:
-                      kse100.change >= 0
+                      totalPnL >= 0
                         ? "var(--color-profit-bg)"
                         : "var(--color-loss-bg)",
                   }}
                 >
-                  {kse100.changePercent >= 0 ? "+" : ""}
-                  {kse100.changePercent.toFixed(2)}%
+                  {totalPnL >= 0 ? (
+                    <ArrowUpRight className="h-3 w-3" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3" />
+                  )}
+                  {totalPnLPercent >= 0 ? "+" : ""}
+                  {totalPnLPercent.toFixed(2)}%
                 </span>
-              </div>
-            )}
-          </div>
-          {kse100 && (
-            <div className="flex sm:flex-col gap-6 sm:gap-2 sm:text-right">
-              <div className="text-sm">
-                <span className="text-muted-foreground">High </span>
-                <span className="font-tabular font-medium">
-                  {formatPKR(kse100.high)}
-                </span>
-              </div>
-              <div className="text-sm">
-                <span className="text-muted-foreground">Low </span>
-                <span className="font-tabular font-medium">
-                  {formatPKR(kse100.low)}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>}
-
-      {/* Stats Grid */}
-      {isVisible("stats") && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 animate-in-up-delay-2">
-        <Card className="stat-card border border-border rounded-xl">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Portfolio Value
-                </p>
-                <p className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}>
-                  {formatPKR(totalCurrentValue, { decimals: 0 })}
-                </p>
-              </div>
-              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <BarChart3 className="h-[18px] w-[18px] text-muted-foreground" />
-              </div>
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              Across {portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="stat-card border border-border rounded-xl">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Cash Balance
-                </p>
-                <p className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}>
-                  {formatPKR(totalCash, { decimals: 0 })}
-                </p>
-              </div>
-              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <Wallet className="h-[18px] w-[18px] text-muted-foreground" />
-              </div>
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              Available for trading
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="stat-card border border-border rounded-xl">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Total Invested
-                </p>
-                <p className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}>
-                  {formatPKR(totalInvested, { decimals: 0 })}
-                </p>
-              </div>
-              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <Banknote className="h-[18px] w-[18px] text-muted-foreground" />
-              </div>
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              Cost basis
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="stat-card border border-border rounded-xl">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Total P&L
-                </p>
-                <p
-                  className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}
-                  style={{ color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
+                <span
+                  className={`text-xs font-medium font-tabular ${balancesHidden ? "balance-blur" : ""}`}
+                  style={{ color: pnlColor }}
                 >
                   {totalPnL >= 0 ? "+" : ""}
                   {formatPKR(totalPnL, { decimals: 0 })}
-                </p>
+                </span>
               </div>
-              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                {totalPnL >= 0 ? (
-                  <TrendingUp className="h-[18px] w-[18px]" style={{ color: "var(--color-profit)" }} />
-                ) : (
-                  <TrendingDown className="h-[18px] w-[18px]" style={{ color: "var(--color-loss)" }} />
-                )}
-              </div>
+              <p className="text-[11px] text-muted-foreground mt-3">
+                Across {portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""}
+              </p>
             </div>
-            <p
-              className="text-[11px] font-medium mt-2 font-tabular"
-              style={{ color: totalPnLPercent >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-            >
-              {totalPnLPercent >= 0 ? "+" : ""}
-              {totalPnLPercent.toFixed(2)}% return
-            </p>
-          </CardContent>
-        </Card>
-      </div>}
+
+            <div className="flex-1 h-44 lg:h-auto min-h-[176px] px-2 pb-2 pt-4 lg:py-4 lg:pr-4">
+              {valueSeries.length >= 2 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={valueSeries} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+                    <defs>
+                      <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.22} />
+                        <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="date"
+                      hide
+                    />
+                    <YAxis domain={["dataMin", "dataMax"]} hide />
+                    <Tooltip
+                      cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
+                      contentStyle={{
+                        background: "var(--card)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        fontSize: 12,
+                        padding: "6px 10px",
+                        boxShadow: "none",
+                        color: "var(--foreground)",
+                      }}
+                      labelStyle={{ color: "var(--muted-foreground)", marginBottom: 2 }}
+                      formatter={(v) => [`PKR ${formatPKR(Number(v), { decimals: 0 })}`, "Value"]}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke="var(--primary)"
+                      strokeWidth={2}
+                      fill="url(#heroFill)"
+                      dot={false}
+                      activeDot={{ r: 3, fill: "var(--primary)" }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full min-h-[150px] flex items-center justify-center">
+                  <p className="text-xs text-muted-foreground">
+                    {allHoldings.length === 0
+                      ? "Add holdings to see value over time"
+                      : "Building price history…"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metric strip */}
+      {isVisible("stats") && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 rounded-xl border border-border bg-card overflow-hidden divide-x divide-y lg:divide-y-0 divide-border animate-in-up-delay-2">
+          <Metric
+            icon={<Wallet className="h-3.5 w-3.5 text-muted-foreground" />}
+            label="Cash"
+            value={formatPKR(totalCash, { decimals: 0 })}
+            hidden={balancesHidden}
+          />
+          <Metric
+            icon={<Banknote className="h-3.5 w-3.5 text-muted-foreground" />}
+            label="Invested"
+            value={formatPKR(totalInvested, { decimals: 0 })}
+            hidden={balancesHidden}
+          />
+          <Metric
+            icon={
+              totalPnL >= 0 ? (
+                <TrendingUp className="h-3.5 w-3.5" style={{ color: "var(--color-profit)" }} />
+              ) : (
+                <TrendingDown className="h-3.5 w-3.5" style={{ color: "var(--color-loss)" }} />
+              )
+            }
+            label="Total P&L"
+            value={`${totalPnL >= 0 ? "+" : ""}${formatPKR(totalPnL, { decimals: 0 })}`}
+            valueColor={pnlColor}
+            hidden={balancesHidden}
+          />
+          {isVisible("kse100") ? (
+            <Metric
+              icon={
+                <span className="relative flex h-1.5 w-1.5">
+                  <span
+                    className="relative inline-flex rounded-full h-1.5 w-1.5"
+                    style={{
+                      background: kse100 && kse100.change >= 0 ? "var(--color-profit)" : "var(--color-loss)",
+                    }}
+                  />
+                </span>
+              }
+              label="KSE-100"
+              value={kse100?.current ? formatPKR(kse100.current, { decimals: 0 }) : "—"}
+              sub={
+                kse100 ? (
+                  <span style={{ color: kse100.change >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}>
+                    {kse100.changePercent >= 0 ? "+" : ""}
+                    {kse100.changePercent.toFixed(2)}%
+                  </span>
+                ) : undefined
+              }
+            />
+          ) : (
+            <Metric
+              icon={<Activity className="h-3.5 w-3.5 text-muted-foreground" />}
+              label="Holdings"
+              value={String(allHoldings.length)}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Allocation donut + Holdings table */}
+      {isVisible("holdings") && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 animate-in-up-delay-3">
+          {/* Allocation donut */}
+          <Card className="border border-border bg-card rounded-xl">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <PieChart className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm font-semibold">Allocation</span>
+              </div>
+              {allocationData.length === 0 ? (
+                <div className="h-48 flex items-center justify-center">
+                  <p className="text-xs text-muted-foreground">No allocation yet</p>
+                </div>
+              ) : (
+                <>
+                  <div className="h-44">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPie>
+                        <Pie
+                          data={allocationData}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius="62%"
+                          outerRadius="92%"
+                          paddingAngle={1.5}
+                          stroke="var(--card)"
+                          strokeWidth={2}
+                        >
+                          {allocationData.map((entry, i) => (
+                            <Cell
+                              key={entry.name}
+                              fill={
+                                entry.name === "Cash"
+                                  ? CASH_COLOR
+                                  : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length]
+                              }
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            background: "var(--card)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 8,
+                            fontSize: 12,
+                            padding: "6px 10px",
+                            boxShadow: "none",
+                            color: "var(--foreground)",
+                          }}
+                          formatter={(v, n) => [
+                            `PKR ${formatPKR(Number(v), { decimals: 0 })}`,
+                            String(n),
+                          ]}
+                        />
+                      </RechartsPie>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-3 space-y-1.5">
+                    {allocationData.slice(0, 6).map((entry, i) => (
+                      <div key={entry.name} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="h-2 w-2 rounded-sm shrink-0"
+                            style={{
+                              background:
+                                entry.name === "Cash"
+                                  ? CASH_COLOR
+                                  : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length],
+                            }}
+                          />
+                          <span className="truncate text-muted-foreground">{entry.name}</span>
+                        </div>
+                        <span className="font-tabular font-semibold">{entry.pct.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Holdings table */}
+          <Card className="lg:col-span-2 border border-border bg-card rounded-xl">
+            <CardContent className="pt-4 pb-2">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm font-semibold">My Holdings</span>
+                </div>
+                <Link href="/portfolio">
+                  <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground hover:text-foreground">
+                    View All
+                  </Button>
+                </Link>
+              </div>
+
+              {holdingRows.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center mx-auto mb-3">
+                    <Briefcase className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm font-medium text-muted-foreground">No holdings yet</p>
+                  <Link href="/market">
+                    <Button variant="link" size="sm" className="mt-1 text-xs">
+                      Browse market to buy stocks
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <th className="text-left font-medium py-2 px-1">Stock</th>
+                        <th className="text-center font-medium py-2 px-1 hidden sm:table-cell">Trend</th>
+                        <th
+                          className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
+                          onClick={() => toggleSort("value")}
+                        >
+                          <span className="inline-flex items-center gap-0.5">
+                            Value
+                            <SortCaret active={sortKey === "value"} dir={sortDir} />
+                          </span>
+                        </th>
+                        <th
+                          className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
+                          onClick={() => toggleSort("pnl")}
+                        >
+                          <span className="inline-flex items-center gap-0.5">
+                            P&amp;L
+                            <SortCaret active={sortKey === "pnl"} dir={sortDir} />
+                          </span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {holdingRows.map((h) => {
+                        const c = h.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)";
+                        return (
+                          <tr
+                            key={h.id}
+                            className="border-t border-border hover:bg-muted/40 transition-colors"
+                          >
+                            <td className="py-2.5 px-1">
+                              <Link href={`/stock/${h.symbol}`} className="block group">
+                                <p className="font-semibold group-hover:text-primary transition-colors">
+                                  {h.symbol}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground font-tabular">
+                                  {h.quantity} @ {h.avgPrice.toFixed(2)}
+                                </p>
+                              </Link>
+                            </td>
+                            <td className="py-2.5 px-1 hidden sm:table-cell">
+                              <div className="flex justify-center">
+                                <Sparkline data={h.trend} width={72} height={24} fill />
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-1 text-right">
+                              <span className={`font-semibold font-tabular ${balancesHidden ? "balance-blur" : ""}`}>
+                                {formatPKR(h.value, { decimals: 0 })}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-1 text-right">
+                              <span
+                                className={`font-semibold font-tabular ${balancesHidden ? "balance-blur" : ""}`}
+                                style={{ color: c }}
+                              >
+                                {h.pnl >= 0 ? "+" : ""}
+                                {formatPKR(h.pnl, { decimals: 0 })}
+                              </span>
+                              <span className="block text-[11px] font-tabular" style={{ color: c }}>
+                                {h.pnlPercent >= 0 ? "+" : ""}
+                                {h.pnlPercent.toFixed(1)}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Model Portfolios */}
       {isVisible("models") && modelPortfolios.length > 0 && (
         <div className="animate-in-up-delay-3">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold flex items-center gap-2">
-              <div className="h-6 w-6 rounded-md icon-bg-violet flex items-center justify-center">
-                <Layers className="h-3.5 w-3.5 text-violet-500" />
-              </div>
+              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
               Model Portfolios
             </h2>
             <Link href="/models">
@@ -533,24 +890,28 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {modelPortfolios.slice(0, 3).map((model) => (
               <Link key={model.id} href={`/models/${model.id}`}>
-                <Card className="stat-card stat-card-violet rounded-2xl border-violet-500/15 cursor-pointer">
+                <Card className="border border-border bg-card rounded-xl cursor-pointer hover:border-primary/40 transition-colors h-full">
                   <CardContent className="pt-4 pb-4">
                     <p className="font-semibold text-sm">{model.name}</p>
                     <div className="h-2 bg-muted rounded-full overflow-hidden flex mt-3 mb-2">
                       {model.allocations.map((a, i) => {
-                        const colors = ["bg-violet-500", "bg-blue-500", "bg-cyan-500", "bg-emerald-500", "bg-amber-500"];
-                        const color = a.symbol === "CASH" ? "bg-slate-400" : colors[i % colors.length];
+                        const color =
+                          a.symbol === "CASH"
+                            ? CASH_COLOR
+                            : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length];
                         return (
                           <div
                             key={a.symbol}
-                            className={`h-full ${color}`}
-                            style={{ width: `${a.percentage}%` }}
+                            className="h-full"
+                            style={{ width: `${a.percentage}%`, background: color }}
                           />
                         );
                       })}
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{model.allocations.filter(a => a.symbol !== "CASH" && a.shares > 0).length} stocks</span>
+                      <span>
+                        {model.allocations.filter((a) => a.symbol !== "CASH" && a.shares > 0).length} stocks
+                      </span>
                       <span className="font-tabular font-semibold text-foreground">
                         PKR {formatPKR(model.cashBalance, { compact: true })} cash
                       </span>
@@ -563,187 +924,128 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Holdings & Market Movers */}
-      {(isVisible("holdings") || isVisible("gainers") || isVisible("losers")) && (
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 animate-in-up-delay-4">
-        {/* My Holdings - Wider */}
-        {isVisible("holdings") && <Card className="lg:col-span-3 border-border/50 shadow-sm rounded-2xl">
-          <CardHeader className="pb-1">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <div className="h-6 w-6 rounded-md icon-bg-violet flex items-center justify-center">
-                  <PieChart className="h-3.5 w-3.5 text-violet-500" />
-                </div>
-                My Holdings
-              </CardTitle>
-              <Link href="/portfolio">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 text-muted-foreground hover:text-foreground"
-                >
-                  View All
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {portfolios.flatMap((p) => p.holdings).length === 0 ? (
-              <div className="text-center py-12">
-                <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-3">
-                  <Briefcase className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  No holdings yet
-                </p>
-                <Link href="/market">
-                  <Button variant="link" size="sm" className="mt-1 text-xs">
-                    Browse market to buy stocks
-                  </Button>
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-0.5">
-                {portfolios
-                  .flatMap((p) =>
-                    p.holdings.map((h) => ({ ...h, portfolioName: p.name }))
-                  )
-                  .slice(0, 8)
-                  .map((h) => {
-                    const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
-                    const pnl = (currentPrice - h.avgPrice) * h.quantity;
-                    const pnlPercent =
-                      h.avgPrice > 0
-                        ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100
-                        : 0;
-
-                    return (
-                      <Link
-                        key={h.id}
-                        href={`/stock/${h.symbol}`}
-                        className="flex items-center justify-between p-3 rounded-xl hover:bg-muted/60 transition-colors group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 flex items-center justify-center text-xs font-bold text-emerald-600 group-hover:from-emerald-500/20 group-hover:to-cyan-500/20 transition-all">
-                            {h.symbol.slice(0, 3)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold">{h.symbol}</p>
-                            <p className="text-[11px] text-muted-foreground font-tabular">
-                              {h.quantity} shares @ {h.avgPrice.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold font-tabular">
-                            {formatPKR(currentPrice * h.quantity, {
-                              decimals: 0,
-                            })}
-                          </p>
-                          <p
-                            className={`text-[11px] font-semibold font-tabular ${
-                              pnl >= 0 ? "text-emerald-600" : "text-red-500"
-                            }`}
-                          >
-                            {pnl >= 0 ? "+" : ""}
-                            {formatPKR(pnl, { decimals: 0 })} (
-                            {pnlPercent >= 0 ? "+" : ""}
-                            {pnlPercent.toFixed(1)}%)
-                          </p>
-                        </div>
-                      </Link>
-                    );
-                  })}
-              </div>
-            )}
-          </CardContent>
-        </Card>}
-
-        {/* Market Movers */}
-        {(isVisible("gainers") || isVisible("losers")) && <div className="lg:col-span-2 space-y-4">
-          {isVisible("gainers") && <Card className="border-emerald-500/20 shadow-sm rounded-2xl overflow-hidden">
-            <CardHeader className="pb-1 bg-gradient-to-r from-emerald-500/5 to-transparent">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <div className="h-6 w-6 rounded-md bg-emerald-500/15 flex items-center justify-center">
-                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
-                </div>
-                <span className="text-emerald-700 dark:text-emerald-400">Top Gainers</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-0.5">
-                {topGainers.map((s, i) => (
-                  <Link
-                    key={s.symbol}
-                    href={`/stock/${s.symbol}`}
-                    className="flex items-center justify-between py-2.5 px-2 rounded-lg hover:bg-emerald-500/5 transition-colors group"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-[10px] font-bold text-muted-foreground/50 w-4">{i + 1}</span>
-                      <span className="text-sm font-semibold group-hover:text-emerald-600 transition-colors">{s.symbol}</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-sm font-tabular font-medium">
-                        {s.current.toFixed(2)}
-                      </span>
-                      <span className="text-[11px] font-bold font-tabular px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 min-w-[56px] text-center">
-                        +{s.changePercent.toFixed(2)}%
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-                {topGainers.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-6">
-                    Loading...
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>}
-
-          {isVisible("losers") && <Card className="border-red-500/20 shadow-sm rounded-2xl overflow-hidden">
-            <CardHeader className="pb-1 bg-gradient-to-r from-red-500/5 to-transparent">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <div className="h-6 w-6 rounded-md bg-red-500/15 flex items-center justify-center">
-                  <ArrowDownRight className="h-3.5 w-3.5 text-red-500" />
-                </div>
-                <span className="text-red-700 dark:text-red-400">Top Losers</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-0.5">
-                {topLosers.map((s, i) => (
-                  <Link
-                    key={s.symbol}
-                    href={`/stock/${s.symbol}`}
-                    className="flex items-center justify-between py-2.5 px-2 rounded-lg hover:bg-red-500/5 transition-colors group"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-[10px] font-bold text-muted-foreground/50 w-4">{i + 1}</span>
-                      <span className="text-sm font-semibold group-hover:text-red-500 transition-colors">{s.symbol}</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-sm font-tabular font-medium">
-                        {s.current.toFixed(2)}
-                      </span>
-                      <span className="text-[11px] font-bold font-tabular px-2 py-0.5 rounded-md bg-red-500/15 text-red-500 min-w-[56px] text-center">
-                        {s.changePercent.toFixed(2)}%
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-                {topLosers.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-6">
-                    Loading...
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>}
-        </div>}
-      </div>
+      {/* Top Gainers / Top Losers */}
+      {(isVisible("gainers") || isVisible("losers")) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 animate-in-up-delay-4">
+          {isVisible("gainers") && (
+            <MoverList
+              title="Top Gainers"
+              icon={<ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />}
+              stocks={topGainers}
+              positive
+            />
+          )}
+          {isVisible("losers") && (
+            <MoverList
+              title="Top Losers"
+              icon={<ArrowDownRight className="h-3.5 w-3.5 text-muted-foreground" />}
+              stocks={topLosers}
+              positive={false}
+            />
+          )}
+        </div>
       )}
-
     </div>
+  );
+}
+
+function Metric({
+  icon,
+  label,
+  value,
+  sub,
+  valueColor,
+  hidden,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: React.ReactNode;
+  valueColor?: string;
+  hidden?: boolean;
+}) {
+  return (
+    <div className="px-4 py-3.5">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon}
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+      </div>
+      <p
+        className={`text-lg font-semibold font-tabular ${hidden ? "balance-blur" : ""}`}
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </p>
+      {sub && <p className="text-[11px] font-medium font-tabular mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function SortCaret({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
+  if (!active) return <ChevronDown className="h-3 w-3 opacity-30" />;
+  return dir === "desc" ? (
+    <ChevronDown className="h-3 w-3" />
+  ) : (
+    <ChevronUp className="h-3 w-3" />
+  );
+}
+
+function MoverList({
+  title,
+  icon,
+  stocks,
+  positive,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  stocks: MarketStock[];
+  positive: boolean;
+}) {
+  const color = positive ? "var(--color-profit)" : "var(--color-loss)";
+  const bg = positive ? "var(--color-profit-bg)" : "var(--color-loss-bg)";
+  return (
+    <Card className="border border-border bg-card rounded-xl">
+      <CardContent className="pt-4 pb-3">
+        <div className="flex items-center gap-2 mb-2">
+          {icon}
+          <span className="text-sm font-semibold">{title}</span>
+        </div>
+        <div className="divide-y divide-border">
+          {stocks.map((s, i) => (
+            <Link
+              key={s.symbol}
+              href={`/stock/${s.symbol}`}
+              className="flex items-center justify-between py-2.5 group"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-tabular text-muted-foreground w-4 text-right">
+                  {i + 1}
+                </span>
+                <span className="text-sm font-semibold group-hover:text-primary transition-colors">
+                  {s.symbol}
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm font-tabular text-muted-foreground">
+                  {s.current.toFixed(2)}
+                </span>
+                <span
+                  className="text-[11px] font-semibold font-tabular px-2 py-0.5 rounded-md min-w-[58px] text-center"
+                  style={{ color, backgroundColor: bg }}
+                >
+                  {s.changePercent >= 0 ? "+" : ""}
+                  {s.changePercent.toFixed(2)}%
+                </span>
+              </div>
+            </Link>
+          ))}
+          {stocks.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
