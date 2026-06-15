@@ -265,10 +265,80 @@
 /*  CARD STYLES                           */
 /* ═══════════════════════════════════════ */
 
-/* Stat card — Linear flat surface, subtle hover */
-.stat-card {
-  transition: border-color 0.18s ease, background-color 0.18s ease;
+/* ─── Elegant elevated surface ───
+   Subtle top-down sheen + soft shadow + edge highlight.
+   Tasteful depth (premium, not loud). Applied via .card-elevated
+   and inherited by .stat-card. */
+.card-elevated {
   position: relative;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--foreground) 2.5%, var(--card)) 0%,
+      var(--card) 42%
+    );
+  box-shadow:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 5%, transparent) inset,
+    0 1px 2px 0 oklch(0 0 0 / 0.04),
+    0 8px 24px -12px oklch(0 0 0 / 0.10);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+.dark .card-elevated {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, white 4%, var(--card)) 0%,
+      var(--card) 45%
+    );
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.04) inset,
+    0 1px 2px 0 oklch(0 0 0 / 0.25),
+    0 12px 32px -16px oklch(0 0 0 / 0.5);
+}
+.card-elevated:hover {
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
+  box-shadow:
+    0 1px 0 0 color-mix(in oklch, var(--primary) 14%, transparent) inset,
+    0 2px 4px 0 oklch(0 0 0 / 0.05),
+    0 16px 40px -16px color-mix(in oklch, var(--primary) 22%, oklch(0 0 0 / 0.14));
+}
+.dark .card-elevated:hover {
+  border-color: color-mix(in oklch, var(--primary) 40%, var(--border));
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.06) inset,
+    0 2px 4px 0 oklch(0 0 0 / 0.3),
+    0 20px 48px -18px color-mix(in oklch, var(--primary) 35%, oklch(0 0 0 / 0.6));
+}
+
+/* Stat card — now elegant elevated surface */
+.stat-card {
+  position: relative;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--foreground) 2.5%, var(--card)) 0%,
+      var(--card) 42%
+    );
+  box-shadow:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 5%, transparent) inset,
+    0 1px 2px 0 oklch(0 0 0 / 0.04),
+    0 8px 24px -12px oklch(0 0 0 / 0.10);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.dark .stat-card {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, white 4%, var(--card)) 0%,
+      var(--card) 45%
+    );
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.04) inset,
+    0 1px 2px 0 oklch(0 0 0 / 0.25),
+    0 12px 32px -16px oklch(0 0 0 / 0.5);
 }
 .stat-card:hover {
   border-color: color-mix(in oklch, var(--primary) 35%, var(--border));

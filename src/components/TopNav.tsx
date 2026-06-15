@@ -35,9 +35,9 @@ import {
 
 const primaryItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/models", label: "Models", icon: Layers },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
   { href: "/market", label: "Market", icon: TrendingUp },
-  { href: "/models", label: "Models", icon: Layers },
   { href: "/performance", label: "Performance", icon: Activity },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];

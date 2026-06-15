@@ -9,6 +9,7 @@ import {
   BarChart3,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRight,
   RefreshCw,
   Activity,
   PieChart,
@@ -571,7 +572,7 @@ export default function DashboardPage() {
 
       {/* Hero: portfolio value + value-over-time chart */}
       {isVisible("stats") && (
-        <div className="rounded-xl border border-border bg-card overflow-hidden animate-in-up-delay-1">
+        <div className="card-elevated rounded-xl border border-border overflow-hidden animate-in-up-delay-1">
           <div className="flex flex-col lg:flex-row">
             <div className="p-7 lg:p-9 lg:w-[34%] lg:border-r border-border">
               <div className="flex items-center gap-2 mb-3">
@@ -673,7 +674,7 @@ export default function DashboardPage() {
 
       {/* Metric strip */}
       {isVisible("stats") && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 rounded-xl border border-border bg-card overflow-hidden divide-x divide-y lg:divide-y-0 divide-border animate-in-up-delay-2">
+        <div className="card-elevated grid grid-cols-2 lg:grid-cols-4 rounded-xl border border-border overflow-hidden divide-x divide-y lg:divide-y-0 divide-border animate-in-up-delay-2">
           <Metric
             icon={<Wallet className="h-3.5 w-3.5 text-muted-foreground" />}
             label="Cash"
@@ -729,6 +730,85 @@ export default function DashboardPage() {
               value={String(allHoldings.length)}
             />
           )}
+        </div>
+      )}
+
+      {/* Model Portfolios — highlighted feature section */}
+      {isVisible("models") && modelPortfolios.length > 0 && (
+        <div className="card-elevated rounded-2xl border border-border p-5 lg:p-6 animate-in-up-delay-2">
+          <div className="mb-5 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                <Layers className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold leading-none">Model Portfolios</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Your investment strategies</p>
+              </div>
+            </div>
+            <Link
+              href="/models"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              View all <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {modelMetrics.slice(0, 3).map((model) => {
+              const up = model.pnl >= 0;
+              return (
+                <Link key={model.id} href={`/models/${model.id}`}>
+                  <Card className="rounded-xl cursor-pointer hover:border-primary/40 transition-colors h-full">
+                    <CardContent className="pt-4 pb-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm truncate">{model.name}</p>
+                          <p className={`text-xl font-semibold font-tabular mt-1 ${balancesHidden ? "balance-blur" : ""}`}>
+                            PKR {formatPKR(model.totalValue, { decimals: 0 })}
+                          </p>
+                        </div>
+                        {model.trend.length >= 2 && (
+                          <Sparkline data={model.trend} width={72} height={32} fill />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span
+                          className="text-xs font-medium font-tabular px-1.5 py-0.5 rounded-md"
+                          style={{
+                            color: up ? "var(--color-profit)" : "var(--color-loss)",
+                            backgroundColor: up ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
+                          }}
+                        >
+                          {up ? "+" : ""}{formatPKR(model.pnl, { decimals: 0 })} ({up ? "+" : ""}{model.pnlPct.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden flex mt-3 mb-2">
+                        {model.allocations.map((a, i) => {
+                          const color =
+                            a.symbol === "CASH"
+                              ? CASH_COLOR
+                              : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length];
+                          return (
+                            <div
+                              key={a.symbol}
+                              className="h-full"
+                              style={{ width: `${a.percentage}%`, background: color }}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{model.stockCount} stocks</span>
+                        <span className="font-tabular">
+                          PKR {formatPKR(model.cashBalance, { compact: true })} cash
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -918,81 +998,6 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      )}
-
-      {/* Model Portfolios */}
-      {isVisible("models") && modelPortfolios.length > 0 && (
-        <div className="animate-in-up-delay-3">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-              Model Portfolios
-            </h2>
-            <Link href="/models">
-              <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground hover:text-foreground">
-                View All
-              </Button>
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {modelMetrics.slice(0, 3).map((model) => {
-              const up = model.pnl >= 0;
-              return (
-                <Link key={model.id} href={`/models/${model.id}`}>
-                  <Card className="border border-border bg-card rounded-xl cursor-pointer hover:border-primary/40 transition-colors h-full">
-                    <CardContent className="pt-4 pb-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-sm truncate">{model.name}</p>
-                          <p className={`text-xl font-semibold font-tabular mt-1 ${balancesHidden ? "balance-blur" : ""}`}>
-                            PKR {formatPKR(model.totalValue, { decimals: 0 })}
-                          </p>
-                        </div>
-                        {model.trend.length >= 2 && (
-                          <Sparkline data={model.trend} width={72} height={32} fill />
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span
-                          className="text-xs font-medium font-tabular px-1.5 py-0.5 rounded-md"
-                          style={{
-                            color: up ? "var(--color-profit)" : "var(--color-loss)",
-                            backgroundColor: up ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
-                          }}
-                        >
-                          {up ? "+" : ""}{formatPKR(model.pnl, { decimals: 0 })} ({up ? "+" : ""}{model.pnlPct.toFixed(1)}%)
-                        </span>
-                      </div>
-
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden flex mt-3 mb-2">
-                        {model.allocations.map((a, i) => {
-                          const color =
-                            a.symbol === "CASH"
-                              ? CASH_COLOR
-                              : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length];
-                          return (
-                            <div
-                              key={a.symbol}
-                              className="h-full"
-                              style={{ width: `${a.percentage}%`, background: color }}
-                            />
-                          );
-                        })}
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{model.stockCount} stocks</span>
-                        <span className="font-tabular">
-                          PKR {formatPKR(model.cashBalance, { compact: true })} cash
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
         </div>
       )}
 
