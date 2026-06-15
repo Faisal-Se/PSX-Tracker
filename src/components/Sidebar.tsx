@@ -122,36 +122,44 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50 px-2.5 mb-1.5">
+      <nav className="flex-1 px-2.5 overflow-y-auto">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/45 px-2.5 mb-2 mt-1">
           Menu
         </p>
-        {navItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            pathname?.startsWith(item.href + "/");
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`group flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors duration-150 ${
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60"
-              }`}
-            >
-              <item.icon
-                className={`h-[17px] w-[17px] transition-colors ${
+        <div className="space-y-px">
+          {navItems.map((item) => {
+            const isActive =
+              pathname === item.href ||
+              pathname?.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`group relative flex items-center gap-2.5 pl-3.5 pr-2.5 h-8 rounded-md text-[13px] transition-colors duration-150 ${
                   isActive
-                    ? "text-sidebar-primary"
-                    : "text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/50 font-normal"
                 }`}
-                strokeWidth={1.9}
-              />
-              {item.label}
-            </Link>
-          );
-        })}
+              >
+                {/* Active left indicator bar (Linear signature) */}
+                <span
+                  className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-full bg-sidebar-primary transition-all duration-200 ${
+                    isActive ? "h-4 opacity-100" : "h-0 opacity-0"
+                  }`}
+                />
+                <item.icon
+                  className={`h-[16px] w-[16px] shrink-0 transition-colors ${
+                    isActive
+                      ? "text-sidebar-primary"
+                      : "text-sidebar-foreground/55 group-hover:text-sidebar-accent-foreground"
+                  }`}
+                  strokeWidth={2}
+                />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
 
       {/* Theme Toggle */}
