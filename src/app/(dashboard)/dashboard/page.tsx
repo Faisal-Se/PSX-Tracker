@@ -1,31 +1,25 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import {
-  TrendingUp,
-  TrendingDown,
-  Wallet,
-  BarChart3,
-  ArrowUpRight,
-  ArrowDownRight,
-  ArrowRight,
-  RefreshCw,
-  Activity,
-  PieChart,
-  Banknote,
-  Layers,
-  Settings2,
-  EyeOff,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import Link from "next/link";
+import {
   Eye,
+  EyeOff,
+  LayoutGrid,
+  RefreshCw,
+  Plus,
   ChevronUp,
   ChevronDown,
-  Briefcase,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { formatPKR } from "@/lib/market-status";
-import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
+import { formatPKR, getMarketStatus } from "@/lib/market-status";
 import { Sparkline } from "@/components/Sparkline";
 import {
   AreaChart,
@@ -38,6 +32,8 @@ import {
   Pie,
   Cell,
 } from "recharts";
+
+/* ────────────────────────── types ────────────────────────── */
 
 interface KSE100 {
   current: number;
@@ -65,6 +61,8 @@ interface Portfolio {
 
 interface MarketStock {
   symbol: string;
+  company?: string;
+  sector?: string;
   current: number;
   change: number;
   changePercent: number;
@@ -75,7 +73,13 @@ interface ModelPortfolio {
   id: string;
   name: string;
   cashBalance: number;
-  allocations: { symbol: string; companyName: string; percentage: number; shares: number; avgPrice: number }[];
+  allocations: {
+    symbol: string;
+    companyName: string;
+    percentage: number;
+    shares: number;
+    avgPrice: number;
+  }[];
 }
 
 interface HistoryPoint {
@@ -104,18 +108,36 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: "losers", label: "Top Losers", visible: true },
 ];
 
-// Indigo-family allocation palette (Linear-style, no rainbow)
-const ALLOCATION_PALETTE = [
-  "var(--primary)",
-  "#6366f1",
-  "#818cf8",
-  "#a5b4fc",
-  "#4f46e5",
-  "#7c3aed",
-  "#c7d2fe",
-  "#3730a3",
+/* Avatar tint palette (per ticker) — multi-series, never used for P&L. */
+const TINTS = [
+  "#2563EB",
+  "#7C3AED",
+  "#0D9488",
+  "#DB2777",
+  "#CA8A04",
+  "#0891B2",
+  "#4F46E5",
+  "#DC2626",
 ];
-const CASH_COLOR = "var(--muted-foreground)";
+const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#DB2777"];
+const CASH_COLOR = "#CBD5E1";
+
+const RANGES = ["1D", "1W", "1M", "3M", "1Y", "ALL"] as const;
+type Range = (typeof RANGES)[number];
+const RANGE_DAYS: Record<Range, number> = {
+  "1D": 2,
+  "1W": 6,
+  "1M": 22,
+  "3M": 66,
+  "1Y": 252,
+  ALL: Infinity,
+};
+
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
+}
 
 function loadWidgets(): WidgetConfig[] {
   if (typeof window === "undefined") return DEFAULT_WIDGETS;
@@ -123,19 +145,41 @@ function loadWidgets(): WidgetConfig[] {
     const saved = localStorage.getItem("psx-dashboard-widgets");
     if (saved) {
       const parsed = JSON.parse(saved) as WidgetConfig[];
-      // Merge with defaults to handle new widgets
       const ids = new Set(parsed.map((w) => w.id));
       const merged = [...parsed];
-      for (const d of DEFAULT_WIDGETS) {
-        if (!ids.has(d.id)) merged.push(d);
-      }
+      for (const d of DEFAULT_WIDGETS) if (!ids.has(d.id)) merged.push(d);
       return merged;
     }
   } catch {}
   return DEFAULT_WIDGETS;
 }
 
-type SortKey = "value" | "pnl";
+/** Count-up animation for the hero figure (honors reduced motion). */
+function useCountUp(target: number, ms = 900) {
+  const [n, setN] = useState(target);
+  const raf = useRef(0);
+  const prefersReduced =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  useEffect(() => {
+    if (prefersReduced || target === 0) {
+      setN(target);
+      return;
+    }
+    const start = performance.now();
+    const from = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / ms);
+      setN(from + (target - from) * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [target, ms, prefersReduced]);
+  return n;
+}
+
+/* ────────────────────────── page ────────────────────────── */
 
 export default function DashboardPage() {
   const [kse100, setKse100] = useState<KSE100 | null>(null);
@@ -143,19 +187,25 @@ export default function DashboardPage() {
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
   const [balancesHidden, setBalancesHidden] = useState(false);
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
-  const [sortKey, setSortKey] = useState<SortKey>("value");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [range, setRange] = useState<Range>("1M");
+  const [userName, setUserName] = useState<string>("");
 
   useEffect(() => {
     setWidgets(loadWidgets());
     try {
       setBalancesHidden(localStorage.getItem("psx-hide-balances") === "1");
     } catch {}
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const name = d?.user?.name;
+        if (name) setUserName(String(name).split(" ")[0]);
+      })
+      .catch(() => {});
   }, []);
 
   const toggleBalances = () => {
@@ -170,26 +220,23 @@ export default function DashboardPage() {
 
   const saveWidgets = (updated: WidgetConfig[]) => {
     setWidgets(updated);
-    localStorage.setItem("psx-dashboard-widgets", JSON.stringify(updated));
+    try {
+      localStorage.setItem("psx-dashboard-widgets", JSON.stringify(updated));
+    } catch {}
   };
-
-  const toggleWidget = (id: WidgetId) => {
-    saveWidgets(
-      widgets.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w))
-    );
-  };
-
-  const moveWidget = (id: WidgetId, direction: "up" | "down") => {
+  const toggleWidget = (id: WidgetId) =>
+    saveWidgets(widgets.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w)));
+  const moveWidget = (id: WidgetId, dir: "up" | "down") => {
     const idx = widgets.findIndex((w) => w.id === id);
     if (idx < 0) return;
-    const newIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (newIdx < 0 || newIdx >= widgets.length) return;
-    const updated = [...widgets];
-    [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
-    saveWidgets(updated);
+    const j = dir === "up" ? idx - 1 : idx + 1;
+    if (j < 0 || j >= widgets.length) return;
+    const u = [...widgets];
+    [u[idx], u[j]] = [u[j], u[idx]];
+    saveWidgets(u);
   };
-
-  const isVisible = (id: WidgetId) => widgets.find((w) => w.id === id)?.visible !== false;
+  const isVisible = (id: WidgetId) =>
+    widgets.find((w) => w.id === id)?.visible !== false;
 
   const fetchData = useCallback(async () => {
     setRefreshing(true);
@@ -200,7 +247,6 @@ export default function DashboardPage() {
         fetch("/api/psx"),
         fetch("/api/model-portfolios"),
       ]);
-
       if (kseRes.ok) setKse100(await kseRes.json());
       if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
       if (marketRes.ok) {
@@ -212,7 +258,6 @@ export default function DashboardPage() {
       console.error("Failed to fetch data:", error);
     } finally {
       setRefreshing(false);
-      setInitialLoading(false);
     }
   }, []);
 
@@ -222,14 +267,12 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  // Unique holding symbols (capped to limit history requests)
   const uniqueSymbols = useMemo(() => {
     const set = new Set<string>();
     for (const p of portfolios) for (const h of p.holdings) set.add(h.symbol);
     return Array.from(set).slice(0, 12);
   }, [portfolios]);
 
-  // Fetch per-symbol price history once portfolios load
   useEffect(() => {
     if (uniqueSymbols.length === 0) return;
     let cancelled = false;
@@ -237,7 +280,9 @@ export default function DashboardPage() {
       const results = await Promise.all(
         uniqueSymbols.map(async (sym) => {
           try {
-            const res = await fetch(`/api/psx/history?symbol=${encodeURIComponent(sym)}`);
+            const res = await fetch(
+              `/api/psx/history?symbol=${encodeURIComponent(sym)}`
+            );
             if (!res.ok) return [sym, [] as HistoryPoint[]] as const;
             const data = (await res.json()) as HistoryPoint[];
             return [sym, Array.isArray(data) ? data : []] as const;
@@ -256,73 +301,99 @@ export default function DashboardPage() {
     };
   }, [uniqueSymbols]);
 
-  const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
-
-  const totalInvested = portfolios.reduce(
-    (sum, p) =>
-      sum + p.holdings.reduce((hSum, h) => hSum + h.avgPrice * h.quantity, 0),
-    0
+  const priceMap = useMemo(
+    () => new Map(marketData.map((s) => [s.symbol, s.current])),
+    [marketData]
+  );
+  const companyMap = useMemo(
+    () => new Map(marketData.map((s) => [s.symbol, s.company])),
+    [marketData]
   );
 
+  const totalInvested = portfolios.reduce(
+    (sum, p) => sum + p.holdings.reduce((s, h) => s + h.avgPrice * h.quantity, 0),
+    0
+  );
   const totalCurrentValue = portfolios.reduce(
     (sum, p) =>
       sum +
-      p.holdings.reduce((hSum, h) => {
+      p.holdings.reduce((s, h) => {
         const cp = priceMap.get(h.symbol) || h.avgPrice;
-        return hSum + cp * h.quantity;
+        return s + cp * h.quantity;
       }, 0),
     0
   );
-
   const totalCash = portfolios.reduce((sum, p) => sum + p.cashBalance, 0);
+  const totalValue = totalCurrentValue + totalCash;
   const totalPnL = totalCurrentValue - totalInvested;
-  const totalPnLPercent =
-    totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+  const totalPnLPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
 
-  const sortedByChange = [...marketData]
-    .filter((s) => s.current > 0)
-    .sort((a, b) => b.changePercent - a.changePercent);
-  const topGainers = sortedByChange.slice(0, 5);
-  const topLosers = sortedByChange.slice(-5).reverse();
+  // Today's P&L from live day-change of each holding.
+  const todayPnL = useMemo(() => {
+    let sum = 0;
+    const changeMap = new Map(marketData.map((s) => [s.symbol, s.change]));
+    for (const p of portfolios)
+      for (const h of p.holdings)
+        sum += (changeMap.get(h.symbol) || 0) * h.quantity;
+    return sum;
+  }, [portfolios, marketData]);
+  const todayPnLPct =
+    totalCurrentValue > 0 ? (todayPnL / (totalCurrentValue - todayPnL)) * 100 : 0;
 
-  // Flat list of all holdings (across portfolios)
+  const sortedByChange = useMemo(
+    () =>
+      [...marketData]
+        .filter((s) => s.current > 0)
+        .sort((a, b) => b.changePercent - a.changePercent),
+    [marketData]
+  );
+  const topGainers = sortedByChange.slice(0, 4);
+  const topLosers = sortedByChange.slice(-4).reverse();
+
+  // Sector averages for the KSE strip (live, from market data).
+  const sectorMovers = useMemo(() => {
+    const groups = new Map<string, { sum: number; n: number }>();
+    for (const s of marketData) {
+      if (!s.sector || !Number.isFinite(s.changePercent)) continue;
+      const g = groups.get(s.sector) || { sum: 0, n: 0 };
+      g.sum += s.changePercent;
+      g.n += 1;
+      groups.set(s.sector, g);
+    }
+    return Array.from(groups.entries())
+      .map(([name, g]) => ({ name, pct: g.sum / g.n, count: g.n }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [marketData]);
+
   const allHoldings = useMemo(
     () => portfolios.flatMap((p) => p.holdings),
     [portfolios]
   );
 
-  // ---- Portfolio value-over-time series (weighted by shares) ----
-  const valueSeries = useMemo<{ date: string; value: number }[]>(() => {
+  // Portfolio value-over-time series (weighted by shares + cash).
+  const fullValueSeries = useMemo<{ date: string; value: number }[]>(() => {
     if (allHoldings.length === 0) return [];
-    // Aggregate shares per symbol
     const shares = new Map<string, number>();
     const avg = new Map<string, number>();
     for (const h of allHoldings) {
       shares.set(h.symbol, (shares.get(h.symbol) || 0) + h.quantity);
       if (!avg.has(h.symbol)) avg.set(h.symbol, h.avgPrice);
     }
-
-    // Union of trading dates across all fetched histories
     const dateSet = new Set<string>();
-    for (const sym of shares.keys()) {
+    for (const sym of shares.keys())
       for (const pt of history[sym] || []) dateSet.add(pt.date);
-    }
-    const dates = Array.from(dateSet).sort().slice(-30); // last ~30 trading days
+    const dates = Array.from(dateSet).sort();
     if (dates.length < 2) return [];
-
-    // Per-symbol sorted history for "most recent close on/before date" lookup
     const sortedHist: Record<string, HistoryPoint[]> = {};
-    for (const sym of shares.keys()) {
+    for (const sym of shares.keys())
       sortedHist[sym] = [...(history[sym] || [])].sort((a, b) =>
         a.date.localeCompare(b.date)
       );
-    }
-
     return dates.map((date) => {
       let value = totalCash;
       for (const [sym, qty] of shares) {
         const hist = sortedHist[sym] || [];
-        // most recent close on/before this date
         let close = avg.get(sym) || 0;
         for (let i = hist.length - 1; i >= 0; i--) {
           if (hist[i].date <= date && hist[i].close > 0) {
@@ -336,7 +407,12 @@ export default function DashboardPage() {
     });
   }, [allHoldings, history, totalCash]);
 
-  // ---- Allocation donut data ----
+  const valueSeries = useMemo(() => {
+    const days = RANGE_DAYS[range];
+    return days === Infinity ? fullValueSeries : fullValueSeries.slice(-days);
+  }, [fullValueSeries, range]);
+
+  // Allocation donut.
   const allocationData = useMemo(() => {
     const bySymbol = new Map<string, number>();
     for (const h of allHoldings) {
@@ -349,10 +425,11 @@ export default function DashboardPage() {
     if (totalCash > 0) slices.push({ name: "Cash", value: totalCash });
     const total = slices.reduce((s, x) => s + x.value, 0) || 1;
     return slices.map((s) => ({ ...s, pct: (s.value / total) * 100 }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allHoldings, marketData, totalCash]);
+  }, [allHoldings, priceMap, totalCash]);
 
-  // ---- Holdings table rows (sortable) ----
+  const holdingCount = allHoldings.length;
+
+  // Holdings rows.
   const holdingRows = useMemo(() => {
     const rows = allHoldings.map((h) => {
       const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
@@ -364,19 +441,21 @@ export default function DashboardPage() {
         .map((p) => p.close)
         .filter((n) => n > 0)
         .slice(-20);
-      return { ...h, currentPrice, value, pnl, pnlPercent, trend };
+      return {
+        ...h,
+        company: companyMap.get(h.symbol) || h.companyName,
+        currentPrice,
+        value,
+        pnl,
+        pnlPercent,
+        trend,
+      };
     });
-    rows.sort((a, b) => {
-      const av = sortKey === "value" ? a.value : a.pnl;
-      const bv = sortKey === "value" ? b.value : b.pnl;
-      return sortDir === "desc" ? bv - av : av - bv;
-    });
-    return rows.slice(0, 10);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allHoldings, marketData, history, sortKey, sortDir]);
+    rows.sort((a, b) => b.value - a.value);
+    return rows.slice(0, 8);
+  }, [allHoldings, priceMap, companyMap, history]);
 
-  // Per-model metrics: market value, invested, P&L, stock count, and a
-  // value-over-time trend series (built from the same per-symbol history).
+  // Per-model metrics + trend.
   const modelMetrics = useMemo(() => {
     return modelPortfolios.map((m) => {
       const stocks = m.allocations.filter((a) => a.symbol !== "CASH");
@@ -387,27 +466,25 @@ export default function DashboardPage() {
         invested += a.avgPrice * a.shares;
         marketValue += cur * a.shares;
       }
-      const totalValue = marketValue + m.cashBalance;
+      const total = marketValue + m.cashBalance;
       const pnl = marketValue - invested;
       const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
       const stockCount = stocks.filter((a) => a.shares > 0).length;
+      const cashPct = total > 0 ? (m.cashBalance / total) * 100 : 0;
 
-      // Trend: union of recent dates, sum shares*close (+cash) per date
       const dateSet = new Set<string>();
-      for (const a of stocks) {
+      for (const a of stocks)
         for (const pt of history[a.symbol] || []) dateSet.add(pt.date);
-      }
-      const dates = Array.from(dateSet).sort().slice(-20);
-      const closeOnOrBefore: Record<string, { date: string; close: number }[]> = {};
-      for (const a of stocks) {
-        closeOnOrBefore[a.symbol] = [...(history[a.symbol] || [])].sort((x, y) =>
+      const dates = Array.from(dateSet).sort().slice(-24);
+      const sorted: Record<string, HistoryPoint[]> = {};
+      for (const a of stocks)
+        sorted[a.symbol] = [...(history[a.symbol] || [])].sort((x, y) =>
           x.date < y.date ? -1 : 1
         );
-      }
       const trend = dates.map((d) => {
         let v = m.cashBalance;
         for (const a of stocks) {
-          const hist = closeOnOrBefore[a.symbol] || [];
+          const hist = sorted[a.symbol] || [];
           let close = a.avgPrice;
           for (const pt of hist) {
             if (pt.date <= d && pt.close > 0) close = pt.close;
@@ -418,249 +495,266 @@ export default function DashboardPage() {
         return v;
       });
 
-      return { ...m, totalValue, invested, pnl, pnlPct, stockCount, trend };
+      const bars = stocks
+        .map((a) => ({ symbol: a.symbol, pct: a.percentage }))
+        .sort((x, y) => y.pct - x.pct);
+
+      return { ...m, total, invested, pnl, pnlPct, stockCount, cashPct, trend, bars };
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelPortfolios, marketData, history]);
+  }, [modelPortfolios, priceMap, history]);
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
-  };
+  const heroVal = useCountUp(totalValue);
+  const market = getMarketStatus();
+  const up = totalPnL >= 0;
+  const todayUp = todayPnL >= 0;
 
-  if (initialLoading) {
-    return (
-      <div className="space-y-8 lg:space-y-10">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-44" />
-          <Skeleton className="h-4 w-72" />
-        </div>
-        <Skeleton className="h-64 w-full rounded-xl" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Skeleton className="h-72 rounded-xl" />
-          <Skeleton className="h-72 rounded-xl lg:col-span-2" />
-        </div>
-      </div>
-    );
-  }
-
-  const pnlColor = totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)";
+  const blur = (s: string) => (balancesHidden ? "balance-blur" : s);
 
   return (
-    <div className="space-y-8 lg:space-y-10">
-      {/* Header */}
-      <div className="flex items-end justify-between animate-in-up">
+    <>
+      {/* Page header */}
+      <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-sm lg:text-base mt-1">
-            Your portfolio overview and market summary
-          </p>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            Welcome back{userName ? `, ${userName}` : ""}
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">Dashboard</h1>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
+        <div className="flex items-center gap-2">
+          <button
             onClick={toggleBalances}
-            className="h-8 text-xs gap-1.5"
-            title={balancesHidden ? "Show balances" : "Hide balances"}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
           >
-            {balancesHidden ? (
-              <Eye className="h-3 w-3" />
-            ) : (
-              <EyeOff className="h-3 w-3" />
-            )}
+            {balancesHidden ? <EyeOff className="h-[15px] w-[15px]" /> : <Eye className="h-[15px] w-[15px]" />}
             {balancesHidden ? "Show" : "Hide"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowWidgetSettings(!showWidgetSettings)}
-            className="h-8 text-xs gap-1.5"
+          </button>
+          <button
+            onClick={() => setShowWidgetSettings((v) => !v)}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
           >
-            <Settings2 className="h-3 w-3" />
+            <LayoutGrid className="h-[15px] w-[15px]" />
             Widgets
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
+          </button>
+          <button
             onClick={fetchData}
             disabled={refreshing}
-            className="h-8 text-xs gap-1.5"
+            className="flex h-[38px] items-center gap-2 rounded-[10px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105 disabled:opacity-70"
           >
-            <RefreshCw
-              className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-[15px] w-[15px] ${refreshing ? "animate-spin" : ""}`} />
             Refresh
-          </Button>
+          </button>
         </div>
       </div>
 
-      {/* Widget Settings Panel */}
+      {/* Widget settings */}
       {showWidgetSettings && (
-        <Card className="rounded-xl border border-border bg-card animate-in-up">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Dashboard Widgets
-              </p>
-              <button
-                onClick={() => setShowWidgetSettings(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
+        <div className="mb-[18px] rounded-2xl border border-line bg-card p-[18px] shadow-card">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+              Dashboard Widgets
+            </p>
+            <button
+              onClick={() => setShowWidgetSettings(false)}
+              className="text-[12px] font-medium text-ink-3 hover:text-ink"
+            >
+              Done
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            {widgets.map((w, idx) => (
+              <div
+                key={w.id}
+                className="flex items-center justify-between rounded-[10px] border border-line bg-canvas px-3 py-2"
               >
-                Done
-              </button>
-            </div>
-            <div className="space-y-1.5">
-              {widgets.map((widget, idx) => (
-                <div
-                  key={widget.id}
-                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/40 border border-border"
-                >
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleWidget(widget.id)}
-                      className={`p-1 rounded-md transition-colors ${
-                        widget.visible
-                          ? "text-primary hover:bg-muted"
-                          : "text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      {widget.visible ? (
-                        <Eye className="h-4 w-4" />
-                      ) : (
-                        <EyeOff className="h-4 w-4" />
-                      )}
-                    </button>
-                    <span
-                      className={`text-sm font-medium ${!widget.visible ? "text-muted-foreground line-through" : ""}`}
-                    >
-                      {widget.label}
-                    </span>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => moveWidget(widget.id, "up")}
-                      disabled={idx === 0}
-                      className="p-1 rounded-md hover:bg-muted text-muted-foreground disabled:opacity-30"
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => moveWidget(widget.id, "down")}
-                      disabled={idx === widgets.length - 1}
-                      className="p-1 rounded-md hover:bg-muted text-muted-foreground disabled:opacity-30"
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => toggleWidget(w.id)}
+                    className={`rounded-md p-1 ${w.visible ? "text-brand" : "text-ink-3"} hover:bg-ink/[.04]`}
+                  >
+                    {w.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  </button>
+                  <span
+                    className={`text-sm font-medium ${!w.visible ? "text-ink-3 line-through" : ""}`}
+                  >
+                    {w.label}
+                  </span>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => moveWidget(w.id, "up")}
+                    disabled={idx === 0}
+                    className="rounded-md p-1 text-ink-3 hover:bg-ink/[.04] disabled:opacity-30"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => moveWidget(w.id, "down")}
+                    disabled={idx === widgets.length - 1}
+                    className="rounded-md p-1 text-ink-3 hover:bg-ink/[.04] disabled:opacity-30"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* Hero: portfolio value + value-over-time chart */}
-      {isVisible("stats") && (
-        <div className="card-elevated rounded-xl border border-border overflow-hidden animate-in-up-delay-1">
-          <div className="flex flex-col lg:flex-row">
-            <div className="p-7 lg:p-9 lg:w-[34%] lg:border-r border-border">
-              <div className="flex items-center gap-2 mb-3">
-                <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
-                  Portfolio Value
-                </span>
+      {/* KSE-100 strip */}
+      {isVisible("kse100") && (
+        <div className="mb-[18px] flex items-center gap-6 overflow-x-auto rounded-2xl border border-line bg-card px-[22px] py-3.5 shadow-card">
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="relative h-[9px] w-[9px]">
+              <span className="absolute inset-0 rounded-full bg-gain" />
+              <span className="ping-dot absolute inset-0 rounded-full bg-gain" />
+            </span>
+            <div>
+              <div className="text-[11px] font-semibold tracking-[.04em] text-ink-3">
+                KSE-100 INDEX
               </div>
-              <p
-                className={`text-4xl lg:text-5xl font-semibold font-tabular tracking-tight ${balancesHidden ? "balance-blur" : ""}`}
-              >
-                {formatPKR(totalCurrentValue, { decimals: 0 })}
-              </p>
-              <div className="flex items-center gap-2 mt-3">
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold font-tabular"
-                  style={{
-                    color: pnlColor,
-                    backgroundColor:
-                      totalPnL >= 0
-                        ? "var(--color-profit-bg)"
-                        : "var(--color-loss-bg)",
-                  }}
-                >
-                  {totalPnL >= 0 ? (
-                    <ArrowUpRight className="h-3 w-3" />
-                  ) : (
-                    <ArrowDownRight className="h-3 w-3" />
-                  )}
-                  {totalPnLPercent >= 0 ? "+" : ""}
-                  {totalPnLPercent.toFixed(2)}%
+              <div className="flex items-baseline gap-2.5">
+                <span className="num text-[19px] font-bold tracking-[-.02em]">
+                  {kse100 ? formatPKR(kse100.current, { decimals: 2 }) : "—"}
                 </span>
-                <span
-                  className={`text-xs font-medium font-tabular ${balancesHidden ? "balance-blur" : ""}`}
-                  style={{ color: pnlColor }}
-                >
-                  {totalPnL >= 0 ? "+" : ""}
-                  {formatPKR(totalPnL, { decimals: 0 })}
-                </span>
+                {kse100 && (
+                  <span
+                    className="num text-[12.5px] font-semibold"
+                    style={{ color: kse100.change >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+                  >
+                    {kse100.change >= 0 ? "+" : ""}
+                    {formatPKR(kse100.change, { decimals: 2 })} ({kse100.changePercent >= 0 ? "+" : ""}
+                    {kse100.changePercent.toFixed(2)}%)
+                  </span>
+                )}
               </div>
-              <p className="text-[11px] text-muted-foreground mt-3">
-                Across {portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""}
-              </p>
             </div>
+          </div>
+          {sectorMovers.length > 0 && (
+            <>
+              <div className="h-[34px] w-px shrink-0 bg-line" />
+              <div className="flex shrink-0 gap-5">
+                {sectorMovers.map((s) => (
+                  <div key={s.name} className="flex flex-col gap-0.5">
+                    <span className="text-[11px] font-medium text-ink-3">{s.name}</span>
+                    <span
+                      className="num text-[12.5px] font-semibold"
+                      style={{ color: s.pct >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+                    >
+                      {s.pct >= 0 ? "+" : ""}
+                      {s.pct.toFixed(2)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="flex-1" />
+          <div className="flex shrink-0 flex-col items-end gap-[3px]">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"
+              style={{
+                color: market.status === "open" ? "var(--color-gain)" : "var(--color-ink-2)",
+                background: market.status === "open" ? "var(--color-gain-50)" : "var(--color-line-soft)",
+              }}
+            >
+              <span
+                className="h-[7px] w-[7px] rounded-full"
+                style={{ background: market.status === "open" ? "var(--color-gain)" : "var(--color-ink-3)" }}
+              />
+              {market.label}
+            </span>
+            <span className="text-[10.5px] font-medium text-ink-3">{market.nextEvent}</span>
+          </div>
+        </div>
+      )}
 
-            <div className="flex-1 h-52 lg:h-auto min-h-[240px] px-2 pb-2 pt-4 lg:py-6 lg:pr-6">
+      {/* Hero value + Allocation */}
+      {isVisible("stats") && (
+        <div className="mb-[18px] grid gap-[18px] lg:grid-cols-[1.55fr_1fr]">
+          {/* Portfolio value */}
+          <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="mb-2 text-[13px] font-medium text-ink-2">
+                  Total Portfolio Value
+                </div>
+                <div className={`num whitespace-nowrap text-[42px] font-bold leading-none tracking-[-.035em] ${blur("")}`}>
+                  Rs {formatPKR(heroVal, { decimals: 0 })}
+                </div>
+                <div className="mt-3 flex items-center gap-2.5">
+                  <span
+                    className="num inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-1 text-[13px] font-semibold"
+                    style={{
+                      color: todayUp ? "var(--color-gain)" : "var(--color-loss-strong)",
+                      background: todayUp ? "var(--color-gain-50)" : "var(--color-loss-50)",
+                    }}
+                  >
+                    {todayUp ? "▲" : "▼"}{" "}
+                    <span className={blur("")}>
+                      Rs {formatPKR(Math.abs(todayPnL), { decimals: 0 })}
+                    </span>{" "}
+                    ({todayUp ? "+" : "−"}
+                    {Math.abs(todayPnLPct).toFixed(2)}%)
+                  </span>
+                  <span className="text-[13px] text-ink-3">today</span>
+                </div>
+              </div>
+              <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
+                {RANGES.map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRange(r)}
+                    className={`rounded-lg px-[11px] py-[5px] text-[12px] font-semibold transition-colors ${
+                      range === r ? "bg-brand text-white" : "text-ink-2 hover:text-ink"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="-mx-1.5 -mb-1 mt-3.5 h-[168px]">
               {valueSeries.length >= 2 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={valueSeries} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+                  <AreaChart data={valueSeries} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
                     <defs>
                       <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.22} />
-                        <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#059669" stopOpacity={0.26} />
+                        <stop offset="100%" stopColor="#059669" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <XAxis
-                      dataKey="date"
-                      hide
-                    />
+                    <XAxis dataKey="date" hide />
                     <YAxis domain={["dataMin", "dataMax"]} hide />
                     <Tooltip
-                      cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
+                      cursor={{ stroke: "var(--color-line)", strokeWidth: 1 }}
                       contentStyle={{
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
+                        background: "var(--color-card)",
+                        border: "1px solid var(--color-line)",
+                        borderRadius: 12,
                         fontSize: 12,
-                        padding: "6px 10px",
-                        boxShadow: "none",
-                        color: "var(--foreground)",
+                        color: "var(--color-ink)",
+                        boxShadow: "var(--shadow-pop)",
                       }}
-                      labelStyle={{ color: "var(--muted-foreground)", marginBottom: 2 }}
-                      formatter={(v) => [`PKR ${formatPKR(Number(v), { decimals: 0 })}`, "Value"]}
+                      labelFormatter={() => ""}
+                      formatter={(v) => [`Rs ${formatPKR(Number(v), { decimals: 0 })}`, "Value"]}
                     />
                     <Area
                       type="monotone"
                       dataKey="value"
-                      stroke="var(--primary)"
-                      strokeWidth={2}
+                      stroke="#059669"
+                      strokeWidth={2.2}
                       fill="url(#heroFill)"
                       dot={false}
-                      activeDot={{ r: 3, fill: "var(--primary)" }}
+                      activeDot={{ r: 4, fill: "#059669" }}
+                      isAnimationActive
+                      animationDuration={1100}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full min-h-[150px] flex items-center justify-center">
-                  <p className="text-xs text-muted-foreground">
+                <div className="flex h-full items-center justify-center">
+                  <p className="text-xs text-ink-3">
                     {allHoldings.length === 0
                       ? "Add holdings to see value over time"
                       : "Building price history…"}
@@ -668,461 +762,468 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
-          </div>
+          </section>
+
+          {/* Allocation donut */}
+          <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+            <div className="text-[14px] font-semibold">Allocation</div>
+            <div className="mb-3.5 mt-0.5 text-[12px] text-ink-3">By market value</div>
+            {allocationData.length === 0 ? (
+              <div className="flex h-[140px] items-center justify-center">
+                <p className="text-xs text-ink-3">No allocation yet</p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-[18px]">
+                <div className="relative h-[140px] w-[140px] shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie
+                        data={allocationData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="58%"
+                        outerRadius="100%"
+                        paddingAngle={1.5}
+                        stroke="none"
+                        isAnimationActive
+                        animationDuration={900}
+                      >
+                        {allocationData.map((e, i) => (
+                          <Cell
+                            key={e.name}
+                            fill={e.name === "Cash" ? CASH_COLOR : ALLOC_COLORS[i % ALLOC_COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--color-card)",
+                          border: "1px solid var(--color-line)",
+                          borderRadius: 12,
+                          fontSize: 12,
+                          color: "var(--color-ink)",
+                          boxShadow: "var(--shadow-pop)",
+                        }}
+                        formatter={(v, n) => [`Rs ${formatPKR(Number(v), { decimals: 0 })}`, String(n)]}
+                      />
+                    </RechartsPie>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                    <div>
+                      <div className="text-[11px] text-ink-3">Holdings</div>
+                      <div className="num text-[19px] font-bold">{holdingCount}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col gap-[9px]">
+                  {allocationData.slice(0, 5).map((e, i) => (
+                    <div key={e.name} className="flex items-center gap-[9px]">
+                      <span
+                        className="h-[9px] w-[9px] shrink-0 rounded-[3px]"
+                        style={{
+                          background: e.name === "Cash" ? CASH_COLOR : ALLOC_COLORS[i % ALLOC_COLORS.length],
+                        }}
+                      />
+                      <span className="flex-1 text-[12px] font-medium">{e.name}</span>
+                      <span className="num text-[12px] font-semibold text-ink-2">
+                        {e.pct.toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       )}
 
-      {/* Metric strip */}
+      {/* Stat strip */}
       {isVisible("stats") && (
-        <div className="card-elevated grid grid-cols-2 lg:grid-cols-4 rounded-xl border border-border overflow-hidden divide-x divide-y lg:divide-y-0 divide-border animate-in-up-delay-2">
-          <Metric
-            icon={<Wallet className="h-3.5 w-3.5 text-muted-foreground" />}
-            label="Cash"
-            value={formatPKR(totalCash, { decimals: 0 })}
-            hidden={balancesHidden}
-          />
-          <Metric
-            icon={<Banknote className="h-3.5 w-3.5 text-muted-foreground" />}
+        <div className="mb-[26px] grid grid-cols-2 gap-[18px] lg:grid-cols-4">
+          <StatCard
             label="Invested"
-            value={formatPKR(totalInvested, { decimals: 0 })}
+            value={`Rs ${formatPKR(totalInvested, { decimals: 0 })}`}
+            sub="Cost basis"
+            iconBg="bg-brand/10"
+            iconColor="text-brand"
             hidden={balancesHidden}
-          />
-          <Metric
             icon={
-              totalPnL >= 0 ? (
-                <TrendingUp className="h-3.5 w-3.5" style={{ color: "var(--color-profit)" }} />
-              ) : (
-                <TrendingDown className="h-3.5 w-3.5" style={{ color: "var(--color-loss)" }} />
-              )
+              <path
+                d="M4 7h16v10H4zM4 7l8-4 8 4"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             }
-            label="Total P&L"
-            value={`${totalPnL >= 0 ? "+" : ""}${formatPKR(totalPnL, { decimals: 0 })}`}
-            valueColor={pnlColor}
-            hidden={balancesHidden}
           />
-          {isVisible("kse100") ? (
-            <Metric
-              icon={
-                <span className="relative flex h-1.5 w-1.5">
-                  <span
-                    className="relative inline-flex rounded-full h-1.5 w-1.5"
-                    style={{
-                      background: kse100 && kse100.change >= 0 ? "var(--color-profit)" : "var(--color-loss)",
-                    }}
-                  />
-                </span>
-              }
-              label="KSE-100"
-              value={kse100?.current ? formatPKR(kse100.current, { decimals: 0 }) : "—"}
-              sub={
-                kse100 ? (
-                  <span style={{ color: kse100.change >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}>
-                    {kse100.changePercent >= 0 ? "+" : ""}
-                    {kse100.changePercent.toFixed(2)}%
-                  </span>
-                ) : undefined
-              }
-            />
-          ) : (
-            <Metric
-              icon={<Activity className="h-3.5 w-3.5 text-muted-foreground" />}
-              label="Holdings"
-              value={String(allHoldings.length)}
-            />
-          )}
+          <StatCard
+            label="Cash"
+            value={`Rs ${formatPKR(totalCash, { decimals: 0 })}`}
+            sub="Available"
+            iconBg="bg-[#7C3AED]/10"
+            iconColor="text-[#7C3AED]"
+            hidden={balancesHidden}
+            icon={
+              <path
+                d="M3 7h18v10H3zM3 11h18"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            }
+          />
+          <StatCard
+            label="Today's P&L"
+            value={`${todayUp ? "+" : "−"}Rs ${formatPKR(Math.abs(todayPnL), { decimals: 0 })}`}
+            subNode={
+              <span
+                className="num text-[12px] font-semibold"
+                style={{ color: todayUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+              >
+                {todayUp ? "+" : "−"}
+                {Math.abs(todayPnLPct).toFixed(2)}%
+              </span>
+            }
+            iconBg="bg-gain-50"
+            iconColor="text-gain"
+            hidden={balancesHidden}
+            icon={
+              <path
+                d="M4 16 L10 9 L14 13 L20 6"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            }
+          />
+          <StatCard
+            label="Total Return"
+            value={`${up ? "+" : "−"}${Math.abs(totalPnLPercent).toFixed(2)}%`}
+            valueColor={up ? "var(--color-gain)" : "var(--color-loss-strong)"}
+            subNode={
+              <span className={`num text-[12px] text-ink-3 ${blur("")}`}>
+                {up ? "+" : "−"}Rs {formatPKR(Math.abs(totalPnL), { decimals: 0 })}
+              </span>
+            }
+            iconBg={up ? "bg-gain-50" : "bg-loss-50"}
+            iconColor={up ? "text-gain" : "text-loss-strong"}
+            icon={
+              <path
+                d="M12 3v18M7 8l5-5 5 5"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            }
+          />
         </div>
       )}
 
-      {/* Model Portfolios — highlighted feature section */}
-      {isVisible("models") && modelPortfolios.length > 0 && (
-        <div className="card-elevated rounded-2xl border border-border p-5 lg:p-6 animate-in-up-delay-2">
-          <div className="mb-5 flex items-center justify-between">
+      {/* Model portfolios */}
+      {isVisible("models") && (
+        <>
+          <div className="mb-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-                <Layers className="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold leading-none">Model Portfolios</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Your investment strategies</p>
-              </div>
+              <h2 className="text-[18px] font-bold tracking-[-.02em]">Model Portfolios</h2>
+              <span className="rounded-full bg-brand/10 px-2 py-[3px] text-[11px] font-semibold text-brand">
+                FLAGSHIP
+              </span>
             </div>
             <Link
               href="/models"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex items-center gap-1 text-[13px] font-medium text-brand"
             >
-              View all <ArrowRight className="h-3.5 w-3.5" />
+              {modelMetrics.length > 0 ? "View all" : "New Model"}
+              <Plus className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {modelMetrics.slice(0, 3).map((model) => {
-              const up = model.pnl >= 0;
-              return (
-                <Link key={model.id} href={`/models/${model.id}`}>
-                  <Card className="rounded-xl cursor-pointer hover:border-primary/40 transition-colors h-full">
-                    <CardContent className="pt-4 pb-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-sm truncate">{model.name}</p>
-                          <p className={`text-xl font-semibold font-tabular mt-1 ${balancesHidden ? "balance-blur" : ""}`}>
-                            PKR {formatPKR(model.totalValue, { decimals: 0 })}
-                          </p>
+          {modelMetrics.length === 0 ? (
+            <Link
+              href="/models"
+              className="mb-[26px] flex items-center justify-center rounded-2xl border border-dashed border-line bg-card py-10 text-[13px] font-medium text-ink-3 shadow-card hover:text-ink"
+            >
+              <Plus className="mr-2 h-4 w-4" /> Create your first model portfolio
+            </Link>
+          ) : (
+            <div className="mb-[26px] grid gap-[18px] sm:grid-cols-2 lg:grid-cols-3">
+              {modelMetrics.slice(0, 3).map((m) => {
+                const mUp = m.pnl >= 0;
+                return (
+                  <Link
+                    key={m.id}
+                    href={`/models/${m.id}`}
+                    className="group rounded-2xl border border-line bg-card p-[22px] shadow-card transition hover:-translate-y-[3px] hover:border-brand hover:shadow-[0_12px_34px_rgba(13,18,28,.10)]"
+                  >
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div>
+                        <div className="text-[15.5px] font-bold tracking-[-.02em]">{m.name}</div>
+                        <div className="mt-0.5 text-[12px] text-ink-3">
+                          {m.stockCount} stocks · {m.cashPct.toFixed(0)}% cash
                         </div>
-                        {model.trend.length >= 2 && (
-                          <Sparkline data={model.trend} width={72} height={32} fill />
-                        )}
                       </div>
-                      <div className="flex items-center gap-2 mt-1.5">
+                      <span
+                        className="num rounded-lg px-2.5 py-1 text-[12px] font-semibold"
+                        style={{
+                          color: mUp ? "var(--color-gain)" : "var(--color-loss-strong)",
+                          background: mUp ? "var(--color-gain-50)" : "var(--color-loss-50)",
+                        }}
+                      >
+                        {mUp ? "+" : ""}
+                        {m.pnlPct.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div className={`num mb-0.5 mt-2.5 text-[27px] font-bold tracking-[-.03em] ${blur("")}`}>
+                      Rs {formatPKR(m.total, { decimals: 0 })}
+                    </div>
+                    <div className={`text-[12px] text-ink-2 ${blur("")}`}>
+                      {mUp ? "Up" : "Down"} Rs {formatPKR(Math.abs(m.pnl), { decimals: 0 })}
+                    </div>
+                    <div className="-mx-1 mt-3 h-11">
+                      {m.trend.length >= 2 ? (
+                        <Sparkline
+                          data={m.trend}
+                          width={240}
+                          height={44}
+                          strokeWidth={1.8}
+                          color={mUp ? "var(--color-gain)" : "var(--color-loss-strong)"}
+                          className="h-full w-full"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex h-[5px] overflow-hidden rounded bg-canvas">
+                      {m.bars.map((b, i) => (
                         <span
-                          className="text-xs font-medium font-tabular px-1.5 py-0.5 rounded-md"
+                          key={b.symbol}
                           style={{
-                            color: up ? "var(--color-profit)" : "var(--color-loss)",
-                            backgroundColor: up ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
+                            width: `${b.pct}%`,
+                            background: ALLOC_COLORS[i % ALLOC_COLORS.length],
                           }}
-                        >
-                          {up ? "+" : ""}{formatPKR(model.pnl, { decimals: 0 })} ({up ? "+" : ""}{model.pnlPct.toFixed(1)}%)
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden flex mt-3 mb-2">
-                        {model.allocations.map((a, i) => {
-                          const color =
-                            a.symbol === "CASH"
-                              ? CASH_COLOR
-                              : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length];
-                          return (
-                            <div
-                              key={a.symbol}
-                              className="h-full"
-                              style={{ width: `${a.percentage}%`, background: color }}
-                            />
-                          );
-                        })}
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{model.stockCount} stocks</span>
-                        <span className="font-tabular">
-                          PKR {formatPKR(model.cashBalance, { compact: true })} cash
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
+                        />
+                      ))}
+                      {m.cashPct > 0 && (
+                        <span style={{ width: `${m.cashPct}%`, background: CASH_COLOR }} />
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Allocation donut + Holdings table */}
-      {isVisible("holdings") && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 animate-in-up-delay-3">
-          {/* Allocation donut */}
-          <Card className="border border-border bg-card rounded-xl">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <PieChart className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-sm font-semibold">Allocation</span>
-              </div>
-              {allocationData.length === 0 ? (
-                <div className="h-48 flex items-center justify-center">
-                  <p className="text-xs text-muted-foreground">No allocation yet</p>
-                </div>
-              ) : (
-                <>
-                  <div className="h-44">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RechartsPie>
-                        <Pie
-                          data={allocationData}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius="62%"
-                          outerRadius="92%"
-                          paddingAngle={1.5}
-                          stroke="var(--card)"
-                          strokeWidth={2}
-                        >
-                          {allocationData.map((entry, i) => (
-                            <Cell
-                              key={entry.name}
-                              fill={
-                                entry.name === "Cash"
-                                  ? CASH_COLOR
-                                  : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length]
-                              }
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            background: "var(--card)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 8,
-                            fontSize: 12,
-                            padding: "6px 10px",
-                            boxShadow: "none",
-                            color: "var(--foreground)",
-                          }}
-                          formatter={(v, n) => [
-                            `PKR ${formatPKR(Number(v), { decimals: 0 })}`,
-                            String(n),
-                          ]}
-                        />
-                      </RechartsPie>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-3 space-y-1.5">
-                    {allocationData.slice(0, 6).map((entry, i) => (
-                      <div key={entry.name} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="h-2 w-2 rounded-sm shrink-0"
-                            style={{
-                              background:
-                                entry.name === "Cash"
-                                  ? CASH_COLOR
-                                  : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length],
-                            }}
-                          />
-                          <span className="truncate text-muted-foreground">{entry.name}</span>
-                        </div>
-                        <span className="font-tabular font-semibold">{entry.pct.toFixed(1)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Holdings table */}
-          <Card className="lg:col-span-2 border border-border bg-card rounded-xl">
-            <CardContent className="pt-4 pb-2">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-sm font-semibold">My Holdings</span>
-                </div>
-                <Link href="/portfolio">
-                  <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground hover:text-foreground">
-                    View All
-                  </Button>
+      {/* Holdings + movers */}
+      {(isVisible("holdings") || isVisible("gainers") || isVisible("losers")) && (
+        <div className="grid gap-[18px] lg:grid-cols-[1.7fr_1fr]">
+          {/* Holdings */}
+          {isVisible("holdings") && (
+            <section className="rounded-2xl border border-line bg-card pb-2 shadow-card">
+              <div className="flex items-center justify-between px-[22px] pb-3 pt-[22px]">
+                <h2 className="text-[16px] font-bold tracking-[-.02em]">Holdings</h2>
+                <Link href="/portfolio" className="text-[12px] text-ink-3 hover:text-ink">
+                  {holdingRows.length} position{holdingRows.length !== 1 ? "s" : ""}
                 </Link>
               </div>
-
               {holdingRows.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center mx-auto mb-3">
-                    <Briefcase className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm font-medium text-muted-foreground">No holdings yet</p>
-                  <Link href="/market">
-                    <Button variant="link" size="sm" className="mt-1 text-xs">
-                      Browse market to buy stocks
-                    </Button>
+                <div className="px-[22px] py-12 text-center">
+                  <p className="text-sm font-medium text-ink-3">No holdings yet</p>
+                  <Link href="/market" className="mt-1 inline-block text-[13px] font-medium text-brand">
+                    Browse market to buy stocks
                   </Link>
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        <th className="text-left font-medium py-2 px-1">Stock</th>
-                        <th className="text-center font-medium py-2 px-1 hidden sm:table-cell">Trend</th>
-                        <th
-                          className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
-                          onClick={() => toggleSort("value")}
-                        >
-                          <span className="inline-flex items-center gap-0.5">
-                            Value
-                            <SortCaret active={sortKey === "value"} dir={sortDir} />
-                          </span>
-                        </th>
-                        <th
-                          className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
-                          onClick={() => toggleSort("pnl")}
-                        >
-                          <span className="inline-flex items-center gap-0.5">
-                            P&amp;L
-                            <SortCaret active={sortKey === "pnl"} dir={sortDir} />
-                          </span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {holdingRows.map((h) => {
-                        const c = h.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)";
-                        return (
-                          <tr
-                            key={h.id}
-                            className="border-t border-border hover:bg-muted/40 transition-colors"
+                <>
+                  <div className="grid grid-cols-[2.3fr_1fr_1.1fr_1.1fr] border-b border-line px-[22px] pb-2 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+                    <span>STOCK</span>
+                    <span className="text-right">TREND</span>
+                    <span className="text-right">VALUE</span>
+                    <span className="text-right">P&L</span>
+                  </div>
+                  {holdingRows.map((h, idx) => {
+                    const hUp = h.pnl >= 0;
+                    const c = tint(h.symbol);
+                    const last = idx === holdingRows.length - 1;
+                    return (
+                      <Link
+                        key={h.id}
+                        href={`/stock/${h.symbol}`}
+                        className={`grid grid-cols-[2.3fr_1fr_1.1fr_1.1fr] items-center px-[22px] py-[11px] hover:bg-ink/[.03] ${last ? "" : "border-b border-line-soft"}`}
+                      >
+                        <div className="flex min-w-0 items-center gap-[11px]">
+                          <span
+                            className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-[12px] font-bold"
+                            style={{ background: `${c}22`, color: c }}
                           >
-                            <td className="py-2.5 px-1">
-                              <Link href={`/stock/${h.symbol}`} className="block group">
-                                <p className="font-semibold group-hover:text-primary transition-colors">
-                                  {h.symbol}
-                                </p>
-                                <p className="text-[11px] text-muted-foreground font-tabular">
-                                  {h.quantity} @ {h.avgPrice.toFixed(2)}
-                                </p>
-                              </Link>
-                            </td>
-                            <td className="py-2.5 px-1 hidden sm:table-cell">
-                              <div className="flex justify-center">
-                                <Sparkline data={h.trend} width={72} height={24} fill />
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-1 text-right">
-                              <span className={`font-semibold font-tabular ${balancesHidden ? "balance-blur" : ""}`}>
-                                {formatPKR(h.value, { decimals: 0 })}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-1 text-right">
-                              <span
-                                className={`font-semibold font-tabular ${balancesHidden ? "balance-blur" : ""}`}
-                                style={{ color: c }}
-                              >
-                                {h.pnl >= 0 ? "+" : ""}
-                                {formatPKR(h.pnl, { decimals: 0 })}
-                              </span>
-                              <span className="block text-[11px] font-tabular" style={{ color: c }}>
-                                {h.pnlPercent >= 0 ? "+" : ""}
-                                {h.pnlPercent.toFixed(1)}%
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                            {h.symbol.slice(0, 2)}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-[13.5px] font-semibold">{h.symbol}</div>
+                            <div className="truncate text-[11.5px] text-ink-3">{h.company}</div>
+                          </div>
+                        </div>
+                        <div className="flex justify-end">
+                          <div className="h-7 w-[72px]">
+                            {h.trend.length >= 2 ? (
+                              <Sparkline
+                                data={h.trend}
+                                width={72}
+                                height={28}
+                                strokeWidth={1.8}
+                                color={hUp ? "var(--color-gain)" : "var(--color-loss-strong)"}
+                                className="h-full w-full"
+                              />
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`num text-[13.5px] font-semibold ${blur("")}`}>
+                            Rs {formatPKR(h.value, { decimals: 0 })}
+                          </div>
+                          <div className="num text-[11.5px] text-ink-3">{h.quantity} sh</div>
+                        </div>
+                        <div className="flex items-center justify-end">
+                          <span
+                            className="num rounded-lg px-2.5 py-1 text-[12.5px] font-semibold"
+                            style={{
+                              color: hUp ? "var(--color-gain)" : "var(--color-loss-strong)",
+                              background: hUp ? "var(--color-gain-50)" : "var(--color-loss-50)",
+                            }}
+                          >
+                            {hUp ? "+" : ""}
+                            {h.pnlPercent.toFixed(2)}%
+                          </span>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            </section>
+          )}
 
-      {/* Top Gainers / Top Losers */}
-      {(isVisible("gainers") || isVisible("losers")) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 animate-in-up-delay-4">
-          {isVisible("gainers") && (
-            <MoverList
-              title="Top Gainers"
-              icon={<ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />}
-              stocks={topGainers}
-              positive
-            />
-          )}
-          {isVisible("losers") && (
-            <MoverList
-              title="Top Losers"
-              icon={<ArrowDownRight className="h-3.5 w-3.5 text-muted-foreground" />}
-              stocks={topLosers}
-              positive={false}
-            />
+          {/* Movers */}
+          {(isVisible("gainers") || isVisible("losers")) && (
+            <div className="flex flex-col gap-[18px]">
+              {isVisible("gainers") && (
+                <MoverList title="Top Gainers" stocks={topGainers} positive />
+              )}
+              {isVisible("losers") && (
+                <MoverList title="Top Losers" stocks={topLosers} positive={false} />
+              )}
+            </div>
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-function Metric({
-  icon,
+/* ────────────────────────── sub-components ────────────────────────── */
+
+function StatCard({
   label,
   value,
   sub,
+  subNode,
   valueColor,
+  iconBg,
+  iconColor,
+  icon,
   hidden,
 }: {
-  icon: React.ReactNode;
   label: string;
   value: string;
-  sub?: React.ReactNode;
+  sub?: string;
+  subNode?: React.ReactNode;
   valueColor?: string;
+  iconBg: string;
+  iconColor: string;
+  icon: React.ReactNode;
   hidden?: boolean;
 }) {
   return (
-    <div className="px-6 py-5">
-      <div className="flex items-center gap-1.5 mb-2">
-        {icon}
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
+    <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className={`grid h-[26px] w-[26px] place-items-center rounded-lg ${iconBg} ${iconColor}`}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            {icon}
+          </svg>
         </span>
+        <span className="text-[12.5px] font-medium text-ink-2">{label}</span>
       </div>
-      <p
-        className={`text-2xl font-semibold font-tabular ${hidden ? "balance-blur" : ""}`}
+      <div
+        className={`num text-[23px] font-bold tracking-[-.025em] ${hidden ? "balance-blur" : ""}`}
         style={valueColor ? { color: valueColor } : undefined}
       >
         {value}
-      </p>
-      {sub && <p className="text-xs font-medium font-tabular mt-1">{sub}</p>}
+      </div>
+      {subNode ? (
+        <div className="mt-1">{subNode}</div>
+      ) : (
+        <div className="mt-1 text-[12px] text-ink-3">{sub}</div>
+      )}
     </div>
-  );
-}
-
-function SortCaret({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
-  if (!active) return <ChevronDown className="h-3 w-3 opacity-30" />;
-  return dir === "desc" ? (
-    <ChevronDown className="h-3 w-3" />
-  ) : (
-    <ChevronUp className="h-3 w-3" />
   );
 }
 
 function MoverList({
   title,
-  icon,
   stocks,
   positive,
 }: {
   title: string;
-  icon: React.ReactNode;
   stocks: MarketStock[];
   positive: boolean;
 }) {
-  const color = positive ? "var(--color-profit)" : "var(--color-loss)";
-  const bg = positive ? "var(--color-profit-bg)" : "var(--color-loss-bg)";
+  const color = positive ? "var(--color-gain)" : "var(--color-loss-strong)";
+  const bg = positive ? "var(--color-gain-50)" : "var(--color-loss-50)";
   return (
-    <Card className="border border-border bg-card rounded-xl">
-      <CardContent className="pt-4 pb-3">
-        <div className="flex items-center gap-2 mb-2">
-          {icon}
-          <span className="text-sm font-semibold">{title}</span>
-        </div>
-        <div className="divide-y divide-border">
-          {stocks.map((s, i) => (
-            <Link
-              key={s.symbol}
-              href={`/stock/${s.symbol}`}
-              className="flex items-center justify-between py-2.5 group"
+    <section className="rounded-2xl border border-line bg-card pb-2 shadow-card">
+      <div className="flex items-center gap-2 px-[22px] pb-3 pt-[22px]">
+        {positive ? (
+          <TrendingUp className="h-4 w-4" style={{ color }} />
+        ) : (
+          <TrendingDown className="h-4 w-4" style={{ color }} />
+        )}
+        <h2 className="text-[15px] font-bold">{title}</h2>
+      </div>
+      {stocks.length === 0 ? (
+        <p className="px-[22px] py-6 text-center text-sm text-ink-3">Loading…</p>
+      ) : (
+        stocks.map((s) => (
+          <Link
+            key={s.symbol}
+            href={`/stock/${s.symbol}`}
+            className="flex items-center justify-between px-[22px] py-[9px] hover:bg-ink/[.03]"
+          >
+            <div className="flex items-center gap-2.5">
+              <span
+                className="grid h-8 w-8 place-items-center rounded-[9px] text-[11px] font-bold"
+                style={{ color, background: bg }}
+              >
+                {s.symbol.slice(0, 2)}
+              </span>
+              <div>
+                <div className="text-[13px] font-semibold">{s.symbol}</div>
+                <div className="num text-[11px] text-ink-3">
+                  Rs {formatPKR(s.current, { decimals: 1 })}
+                </div>
+              </div>
+            </div>
+            <span
+              className="num rounded-lg px-2.5 py-1 text-[12px] font-semibold"
+              style={{ color, background: bg }}
             >
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] font-tabular text-muted-foreground w-4 text-right">
-                  {i + 1}
-                </span>
-                <span className="text-sm font-semibold group-hover:text-primary transition-colors">
-                  {s.symbol}
-                </span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm font-tabular text-muted-foreground">
-                  {s.current.toFixed(2)}
-                </span>
-                <span
-                  className="text-[11px] font-semibold font-tabular px-2 py-0.5 rounded-md min-w-[58px] text-center"
-                  style={{ color, backgroundColor: bg }}
-                >
-                  {s.changePercent >= 0 ? "+" : ""}
-                  {s.changePercent.toFixed(2)}%
-                </span>
-              </div>
-            </Link>
-          ))}
-          {stocks.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+              {s.changePercent >= 0 ? "+" : ""}
+              {s.changePercent.toFixed(2)}%
+            </span>
+          </Link>
+        ))
+      )}
+    </section>
   );
 }

@@ -8,10 +8,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh bg-background flex flex-col">
+    <div className="min-h-dvh bg-canvas text-ink">
       <TopNav />
-      <main className="flex-1 px-5 py-8 lg:px-10 lg:py-12 overflow-x-hidden">
-        <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+      <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-[22px]">
+        {children}
       </main>
     </div>
   );
