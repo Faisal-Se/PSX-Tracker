@@ -21,7 +21,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           // Public routes that don't require auth
           const publicRoutes = ["/login", "/register", "/", "/home"];
-          if (!publicRoutes.includes(pathname)) {
+          if (!publicRoutes.includes(pathname) && !pathname.startsWith("/mock")) {
             router.push("/login");
           }
         }
@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Public pages render without requiring auth
   const publicRoutes = ["/login", "/register", "/", "/home"];
-  if (publicRoutes.includes(pathname)) {
+  if (publicRoutes.includes(pathname) || pathname.startsWith("/mock")) {
     return <>{children}</>;
   }
 
