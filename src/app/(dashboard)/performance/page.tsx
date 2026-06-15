@@ -57,7 +57,52 @@ interface MarketStock {
   current: number;
 }
 
+interface ModelAllocation {
+  symbol: string;
+  companyName: string;
+  percentage: number;
+  shares: number;
+  avgPrice: number;
+}
+
+interface ModelTransaction {
+  id?: string;
+  type: string;
+  symbol: string;
+  companyName: string;
+  quantity: number;
+  price: number;
+  total: number;
+  createdAt: string;
+}
+
+interface ModelPortfolio {
+  id: string;
+  name: string;
+  cashBalance: number;
+  allocations: ModelAllocation[];
+  transactions?: ModelTransaction[];
+}
+
 type Period = "1W" | "1M" | "3M" | "6M" | "1Y" | "ALL";
+type Scope = "all" | "personal" | "models";
+
+// Map a model portfolio into the page's Portfolio shape (excluding the CASH pseudo-row)
+function modelToPortfolio(m: ModelPortfolio): Portfolio {
+  return {
+    id: m.id,
+    name: m.name,
+    cashBalance: m.cashBalance,
+    holdings: m.allocations
+      .filter((a) => a.symbol !== "CASH")
+      .map((a) => ({
+        symbol: a.symbol,
+        companyName: a.companyName,
+        quantity: a.shares,
+        avgPrice: a.avgPrice,
+      })),
+  };
+}
 
 const chartTooltipStyle = {
   background: "var(--popover)",
@@ -69,22 +114,29 @@ const chartTooltipStyle = {
 
 export default function PerformancePage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState<Period>("1M");
+  const [scope, setScope] = useState<Scope>("all");
   const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [portfolioRes, txRes, marketRes] = await Promise.all([
+      const [portfolioRes, modelRes, txRes, marketRes] = await Promise.all([
         fetch("/api/portfolios"),
+        fetch("/api/model-portfolios"),
         fetch("/api/transactions"),
         fetch("/api/psx"),
       ]);
 
       if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
+      if (modelRes.ok) {
+        const data = await modelRes.json();
+        setModelPortfolios(Array.isArray(data) ? data : []);
+      }
       if (txRes.ok) setTransactions(await txRes.json());
       if (marketRes.ok) {
         const data = await marketRes.json();
@@ -105,13 +157,41 @@ export default function PerformancePage() {
     [marketData]
   );
 
+  // Derived portfolios based on the selected scope
+  const activePortfolios = useMemo<Portfolio[]>(() => {
+    const mapped = modelPortfolios.map(modelToPortfolio);
+    if (scope === "personal") return portfolios;
+    if (scope === "models") return mapped;
+    return [...portfolios, ...mapped];
+  }, [scope, portfolios, modelPortfolios]);
+
+  // Derived transactions based on the selected scope (models synthesize portfolioId)
+  const activeTransactions = useMemo<Transaction[]>(() => {
+    const modelTx: Transaction[] = modelPortfolios.flatMap((m) =>
+      (m.transactions ?? []).map((t) => ({
+        id: t.id ?? `${m.id}-${t.symbol}-${t.createdAt}`,
+        type: t.type,
+        symbol: t.symbol,
+        companyName: t.companyName,
+        quantity: t.quantity,
+        price: t.price,
+        total: t.total,
+        createdAt: t.createdAt,
+        portfolioId: m.id,
+      }))
+    );
+    if (scope === "personal") return transactions;
+    if (scope === "models") return modelTx;
+    return [...transactions, ...modelTx];
+  }, [scope, transactions, modelPortfolios]);
+
   // Calculate current portfolio metrics
-  const totalInvested = portfolios.reduce(
+  const totalInvested = activePortfolios.reduce(
     (sum, p) =>
       sum + p.holdings.reduce((hSum, h) => hSum + h.avgPrice * h.quantity, 0),
     0
   );
-  const totalCurrentValue = portfolios.reduce(
+  const totalCurrentValue = activePortfolios.reduce(
     (sum, p) =>
       sum +
       p.holdings.reduce((hSum, h) => {
@@ -120,16 +200,16 @@ export default function PerformancePage() {
       }, 0),
     0
   );
-  const totalCash = portfolios.reduce((sum, p) => sum + p.cashBalance, 0);
+  const totalCash = activePortfolios.reduce((sum, p) => sum + p.cashBalance, 0);
   const totalPnL = totalCurrentValue - totalInvested;
   const totalPnLPct = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
   const netWorth = totalCurrentValue + totalCash;
 
   // Build cumulative P&L chart data from transactions
   const chartData = useMemo(() => {
-    if (transactions.length === 0) return [];
+    if (activeTransactions.length === 0) return [];
 
-    const sorted = [...transactions].sort(
+    const sorted = [...activeTransactions].sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
@@ -197,11 +277,11 @@ export default function PerformancePage() {
         buys: data.buys,
         sells: data.sells,
       }));
-  }, [transactions, period]);
+  }, [activeTransactions, period]);
 
   // Per-stock P&L breakdown
   const stockPnL = useMemo(() => {
-    const allHoldings = portfolios.flatMap((p) => p.holdings);
+    const allHoldings = activePortfolios.flatMap((p) => p.holdings);
     const grouped = new Map<
       string,
       { symbol: string; companyName: string; invested: number; current: number }
@@ -230,9 +310,14 @@ export default function PerformancePage() {
         pnlPct: s.invested > 0 ? ((s.current - s.invested) / s.invested) * 100 : 0,
       }))
       .sort((a, b) => b.pnl - a.pnl);
-  }, [portfolios, priceMap]);
+  }, [activePortfolios, priceMap]);
 
   const periods: Period[] = ["1W", "1M", "3M", "6M", "1Y", "ALL"];
+  const scopes: { value: Scope; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "personal", label: "Personal" },
+    { value: "models", label: "Models" },
+  ];
 
   if (initialLoading) return <PageSkeleton />;
 
@@ -266,18 +351,35 @@ export default function PerformancePage() {
             Track your portfolio returns and P&L over time
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchData}
-          disabled={refreshing}
-          className="h-8 text-xs gap-1.5 rounded-lg"
-        >
-          <RefreshCw
-            className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
-          />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-0.5 rounded-lg border border-border p-0.5">
+            {scopes.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setScope(s.value)}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  scope === s.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchData}
+            disabled={refreshing}
+            className="h-8 text-xs gap-1.5 rounded-lg"
+          >
+            <RefreshCw
+              className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Summary Hero Strip */}

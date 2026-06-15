@@ -74,7 +74,7 @@ interface ModelPortfolio {
   id: string;
   name: string;
   cashBalance: number;
-  allocations: { symbol: string; companyName: string; percentage: number; shares: number }[];
+  allocations: { symbol: string; companyName: string; percentage: number; shares: number; avgPrice: number }[];
 }
 
 interface HistoryPoint {
@@ -373,6 +373,54 @@ export default function DashboardPage() {
     return rows.slice(0, 10);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allHoldings, marketData, history, sortKey, sortDir]);
+
+  // Per-model metrics: market value, invested, P&L, stock count, and a
+  // value-over-time trend series (built from the same per-symbol history).
+  const modelMetrics = useMemo(() => {
+    return modelPortfolios.map((m) => {
+      const stocks = m.allocations.filter((a) => a.symbol !== "CASH");
+      let invested = 0;
+      let marketValue = 0;
+      for (const a of stocks) {
+        const cur = priceMap.get(a.symbol) || a.avgPrice;
+        invested += a.avgPrice * a.shares;
+        marketValue += cur * a.shares;
+      }
+      const totalValue = marketValue + m.cashBalance;
+      const pnl = marketValue - invested;
+      const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+      const stockCount = stocks.filter((a) => a.shares > 0).length;
+
+      // Trend: union of recent dates, sum shares*close (+cash) per date
+      const dateSet = new Set<string>();
+      for (const a of stocks) {
+        for (const pt of history[a.symbol] || []) dateSet.add(pt.date);
+      }
+      const dates = Array.from(dateSet).sort().slice(-20);
+      const closeOnOrBefore: Record<string, { date: string; close: number }[]> = {};
+      for (const a of stocks) {
+        closeOnOrBefore[a.symbol] = [...(history[a.symbol] || [])].sort((x, y) =>
+          x.date < y.date ? -1 : 1
+        );
+      }
+      const trend = dates.map((d) => {
+        let v = m.cashBalance;
+        for (const a of stocks) {
+          const hist = closeOnOrBefore[a.symbol] || [];
+          let close = a.avgPrice;
+          for (const pt of hist) {
+            if (pt.date <= d && pt.close > 0) close = pt.close;
+            else if (pt.date > d) break;
+          }
+          v += close * a.shares;
+        }
+        return v;
+      });
+
+      return { ...m, totalValue, invested, pnl, pnlPct, stockCount, trend };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelPortfolios, marketData, history]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -888,38 +936,62 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {modelPortfolios.slice(0, 3).map((model) => (
-              <Link key={model.id} href={`/models/${model.id}`}>
-                <Card className="border border-border bg-card rounded-xl cursor-pointer hover:border-primary/40 transition-colors h-full">
-                  <CardContent className="pt-4 pb-4">
-                    <p className="font-semibold text-sm">{model.name}</p>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden flex mt-3 mb-2">
-                      {model.allocations.map((a, i) => {
-                        const color =
-                          a.symbol === "CASH"
-                            ? CASH_COLOR
-                            : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length];
-                        return (
-                          <div
-                            key={a.symbol}
-                            className="h-full"
-                            style={{ width: `${a.percentage}%`, background: color }}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {model.allocations.filter((a) => a.symbol !== "CASH" && a.shares > 0).length} stocks
-                      </span>
-                      <span className="font-tabular font-semibold text-foreground">
-                        PKR {formatPKR(model.cashBalance, { compact: true })} cash
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+            {modelMetrics.slice(0, 3).map((model) => {
+              const up = model.pnl >= 0;
+              return (
+                <Link key={model.id} href={`/models/${model.id}`}>
+                  <Card className="border border-border bg-card rounded-xl cursor-pointer hover:border-primary/40 transition-colors h-full">
+                    <CardContent className="pt-4 pb-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm truncate">{model.name}</p>
+                          <p className={`text-xl font-semibold font-tabular mt-1 ${balancesHidden ? "balance-blur" : ""}`}>
+                            PKR {formatPKR(model.totalValue, { decimals: 0 })}
+                          </p>
+                        </div>
+                        {model.trend.length >= 2 && (
+                          <Sparkline data={model.trend} width={72} height={32} fill />
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span
+                          className="text-xs font-medium font-tabular px-1.5 py-0.5 rounded-md"
+                          style={{
+                            color: up ? "var(--color-profit)" : "var(--color-loss)",
+                            backgroundColor: up ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
+                          }}
+                        >
+                          {up ? "+" : ""}{formatPKR(model.pnl, { decimals: 0 })} ({up ? "+" : ""}{model.pnlPct.toFixed(1)}%)
+                        </span>
+                      </div>
+
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden flex mt-3 mb-2">
+                        {model.allocations.map((a, i) => {
+                          const color =
+                            a.symbol === "CASH"
+                              ? CASH_COLOR
+                              : ALLOCATION_PALETTE[i % ALLOCATION_PALETTE.length];
+                          return (
+                            <div
+                              key={a.symbol}
+                              className="h-full"
+                              style={{ width: `${a.percentage}%`, background: color }}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{model.stockCount} stocks</span>
+                        <span className="font-tabular">
+                          PKR {formatPKR(model.cashBalance, { compact: true })} cash
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

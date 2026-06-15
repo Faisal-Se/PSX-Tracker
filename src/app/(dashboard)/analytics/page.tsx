@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -51,6 +51,41 @@ interface MarketStock {
   current: number;
 }
 
+interface ModelAllocation {
+  symbol: string;
+  companyName: string;
+  percentage: number;
+  shares: number;
+  avgPrice: number;
+}
+
+interface ModelPortfolio {
+  id: string;
+  name: string;
+  cashBalance: number;
+  allocations: ModelAllocation[];
+}
+
+type Scope = "all" | "personal" | "models";
+
+// Map a model portfolio into the page's Portfolio shape (excluding the CASH pseudo-row)
+function modelToPortfolio(m: ModelPortfolio): Portfolio {
+  return {
+    id: m.id,
+    name: m.name,
+    cashBalance: m.cashBalance,
+    holdings: m.allocations
+      .filter((a) => a.symbol !== "CASH")
+      .map((a) => ({
+        id: `${m.id}-${a.symbol}`,
+        symbol: a.symbol,
+        companyName: a.companyName,
+        quantity: a.shares,
+        avgPrice: a.avgPrice,
+      })),
+  };
+}
+
 // Indigo-family chart palette (Linear aesthetic)
 const COLORS = [
   "var(--chart-1)",
@@ -75,16 +110,23 @@ const tooltipFormatPnL = (value: any) => [`PKR ${Number(value).toLocaleString()}
 
 export default function AnalyticsPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
+  const [scope, setScope] = useState<Scope>("all");
   const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
-    const [portfolioRes, marketRes] = await Promise.all([
+    const [portfolioRes, modelRes, marketRes] = await Promise.all([
       fetch("/api/portfolios"),
+      fetch("/api/model-portfolios"),
       fetch("/api/psx"),
     ]);
 
     if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
+    if (modelRes.ok) {
+      const data = await modelRes.json();
+      setModelPortfolios(Array.isArray(data) ? data : []);
+    }
     if (marketRes.ok) {
       const data = await marketRes.json();
       setMarketData(Array.isArray(data) ? data : []);
@@ -96,10 +138,24 @@ export default function AnalyticsPage() {
     fetchData();
   }, [fetchData]);
 
+  // Derived portfolios based on the selected scope
+  const activePortfolios = useMemo<Portfolio[]>(() => {
+    const mapped = modelPortfolios.map(modelToPortfolio);
+    if (scope === "personal") return portfolios;
+    if (scope === "models") return mapped;
+    return [...portfolios, ...mapped];
+  }, [scope, portfolios, modelPortfolios]);
+
+  const scopes: { value: Scope; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "personal", label: "Personal" },
+    { value: "models", label: "Models" },
+  ];
+
   const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
   const sectorMap = new Map(marketData.map((s) => [s.symbol, s.sector]));
 
-  const allHoldings = portfolios.flatMap((p) => p.holdings);
+  const allHoldings = activePortfolios.flatMap((p) => p.holdings);
 
   // Holdings allocation by value
   const holdingValues = allHoldings.map((h) => {
@@ -150,7 +206,7 @@ export default function AnalyticsPage() {
     const price = priceMap.get(h.symbol) || h.avgPrice;
     return sum + price * h.quantity;
   }, 0);
-  const totalCash = portfolios.reduce((sum, p) => sum + p.cashBalance, 0);
+  const totalCash = activePortfolios.reduce((sum, p) => sum + p.cashBalance, 0);
   const totalPnL = totalCurrent - totalInvested;
 
   // Asset allocation (cash vs stocks)
@@ -191,7 +247,22 @@ export default function AnalyticsPage() {
             Portfolio performance and allocation analysis
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-0.5 rounded-lg border border-border p-0.5">
+            {scopes.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setScope(s.value)}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  scope === s.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
           <Button
             variant="outline"
             size="sm"
