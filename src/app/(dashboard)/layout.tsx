@@ -61,7 +61,7 @@ export default function DashboardLayout({
 
       <div className="flex-1 lg:ml-[260px] flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 h-14 border-b border-border/60 bg-background/80 backdrop-blur-xl flex items-center px-4 lg:px-8 gap-3">
+        <header className="sticky top-0 z-30 h-16 border-b border-border/60 bg-background/80 backdrop-blur-xl flex items-center px-5 lg:px-10 gap-3">
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden p-1.5 rounded-lg hover:bg-muted transition-colors"
@@ -70,7 +70,9 @@ export default function DashboardLayout({
           </button>
           <MarketStatusBar />
         </header>
-        <main className="flex-1 p-4 lg:p-8 overflow-x-hidden">{children}</main>
+        <main className="flex-1 px-5 py-8 lg:px-10 lg:py-12 overflow-x-hidden">
+          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+        </main>
       </div>
     </div>
   );

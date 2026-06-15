@@ -433,7 +433,7 @@ export default function DashboardPage() {
 
   if (initialLoading) {
     return (
-      <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
+      <div className="space-y-8 lg:space-y-10">
         <div className="space-y-2">
           <Skeleton className="h-8 w-44" />
           <Skeleton className="h-4 w-72" />
@@ -456,12 +456,12 @@ export default function DashboardPage() {
   const pnlColor = totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)";
 
   return (
-    <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
+    <div className="space-y-8 lg:space-y-10">
       {/* Header */}
       <div className="flex items-end justify-between animate-in-up">
         <div>
-          <h1 className="text-xl lg:text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
+          <h1 className="text-2xl lg:text-3xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground text-sm lg:text-base mt-1">
             Your portfolio overview and market summary
           </p>
         </div>
@@ -573,15 +573,15 @@ export default function DashboardPage() {
       {isVisible("stats") && (
         <div className="rounded-xl border border-border bg-card overflow-hidden animate-in-up-delay-1">
           <div className="flex flex-col lg:flex-row">
-            <div className="p-5 lg:p-6 lg:w-[34%] lg:border-r border-border">
-              <div className="flex items-center gap-2 mb-2.5">
-                <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
+            <div className="p-7 lg:p-9 lg:w-[34%] lg:border-r border-border">
+              <div className="flex items-center gap-2 mb-3">
+                <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
                   Portfolio Value
                 </span>
               </div>
               <p
-                className={`text-3xl lg:text-4xl font-semibold font-tabular tracking-tight ${balancesHidden ? "balance-blur" : ""}`}
+                className={`text-4xl lg:text-5xl font-semibold font-tabular tracking-tight ${balancesHidden ? "balance-blur" : ""}`}
               >
                 {formatPKR(totalCurrentValue, { decimals: 0 })}
               </p>
@@ -617,7 +617,7 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <div className="flex-1 h-44 lg:h-auto min-h-[176px] px-2 pb-2 pt-4 lg:py-4 lg:pr-4">
+            <div className="flex-1 h-52 lg:h-auto min-h-[240px] px-2 pb-2 pt-4 lg:py-6 lg:pr-6">
               {valueSeries.length >= 2 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={valueSeries} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
@@ -1037,20 +1037,20 @@ function Metric({
   hidden?: boolean;
 }) {
   return (
-    <div className="px-4 py-3.5">
-      <div className="flex items-center gap-1.5 mb-1.5">
+    <div className="px-6 py-5">
+      <div className="flex items-center gap-1.5 mb-2">
         {icon}
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </span>
       </div>
       <p
-        className={`text-lg font-semibold font-tabular ${hidden ? "balance-blur" : ""}`}
+        className={`text-2xl font-semibold font-tabular ${hidden ? "balance-blur" : ""}`}
         style={valueColor ? { color: valueColor } : undefined}
       >
         {value}
       </p>
-      {sub && <p className="text-[11px] font-medium font-tabular mt-0.5">{sub}</p>}
+      {sub && <p className="text-xs font-medium font-tabular mt-1">{sub}</p>}
     </div>
   );
 }
