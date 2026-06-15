@@ -19,7 +19,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(data.user);
         } else {
           setUser(null);
-          if (pathname !== "/login" && pathname !== "/register") {
+          // Public routes that don't require auth
+          const publicRoutes = ["/login", "/register", "/", "/home"];
+          if (!publicRoutes.includes(pathname)) {
             router.push("/login");
           }
         }
@@ -43,8 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Don't show sidebar on auth pages
-  if (pathname === "/login" || pathname === "/register") {
+  // Public pages render without requiring auth
+  const publicRoutes = ["/login", "/register", "/", "/home"];
+  if (publicRoutes.includes(pathname)) {
     return <>{children}</>;
   }
 
