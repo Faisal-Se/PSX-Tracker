@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Info,
@@ -16,12 +15,12 @@ import {
 } from "lucide-react";
 
 const features = [
-  { label: "Portfolio Management", icon: Briefcase, color: "emerald" },
-  { label: "Model Portfolios", icon: Layers, color: "violet" },
-  { label: "Market Data", icon: TrendingUp, color: "blue" },
-  { label: "Watchlist", icon: Eye, color: "amber" },
-  { label: "Analytics", icon: BarChart3, color: "cyan" },
-  { label: "Transaction History", icon: ArrowLeftRight, color: "rose" },
+  { label: "Portfolio Management", icon: Briefcase },
+  { label: "Model Portfolios", icon: Layers },
+  { label: "Market Data", icon: TrendingUp },
+  { label: "Watchlist", icon: Eye },
+  { label: "Analytics", icon: BarChart3 },
+  { label: "Transaction History", icon: ArrowLeftRight },
 ];
 
 const techStack = [
@@ -38,149 +37,111 @@ const techStack = [
   "Google OAuth 2.0",
 ];
 
-const colorMap: Record<string, { iconBg: string; iconText: string }> = {
-  emerald: { iconBg: "icon-bg-emerald", iconText: "text-emerald-500" },
-  violet: { iconBg: "bg-violet-500/10", iconText: "text-violet-500" },
-  blue: { iconBg: "icon-bg-blue", iconText: "text-blue-500" },
-  amber: { iconBg: "bg-amber-500/10", iconText: "text-amber-500" },
-  cyan: { iconBg: "bg-cyan-500/10", iconText: "text-cyan-500" },
-  rose: { iconBg: "bg-rose-500/10", iconText: "text-rose-500" },
-};
-
 export default function AboutPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-3xl">
       {/* Page Header */}
-      <div className="flex items-end justify-between animate-in-up">
+      <div className="flex items-center gap-3 animate-in-up">
+        <div className="flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card">
+          <Info className="h-4.5 w-4.5 text-primary" />
+        </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">About</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Learn more about PSX Tracker
           </p>
         </div>
       </div>
 
       {/* App Info */}
-      <Card className="border-border/50 shadow-sm rounded-2xl animate-in-up-delay-1">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <TrendingUp className="h-6 w-6 text-white" strokeWidth={2.5} />
-            </div>
-            <div>
-              <CardTitle className="text-xl">PSX Tracker</CardTitle>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge
-                  variant="secondary"
-                  className="text-[10px] font-semibold"
-                >
-                  v1.0.0
-                </Badge>
-              </div>
+      <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-1">
+        <div className="flex items-center gap-3.5">
+          <div className="h-12 w-12 rounded-xl border border-border bg-card flex items-center justify-center">
+            <TrendingUp className="h-6 w-6 text-primary" strokeWidth={2.25} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-semibold tracking-tight">
+                PSX Tracker
+              </h2>
+              <Badge variant="secondary" className="text-[10px] font-semibold">
+                v1.0.0
+              </Badge>
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            A comprehensive Pakistan Stock Exchange portfolio tracker for
-            managing investments, model portfolios, and market analysis.
-          </p>
-        </CardContent>
-      </Card>
+        </div>
+        <p className="text-sm text-muted-foreground leading-relaxed mt-4">
+          A comprehensive Pakistan Stock Exchange portfolio tracker for managing
+          investments, model portfolios, and market analysis.
+        </p>
+      </div>
 
       {/* Features */}
-      <Card className="border-border/50 shadow-sm rounded-2xl animate-in-up-delay-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl icon-bg-emerald flex items-center justify-center">
-              <Star className="h-5 w-5 text-emerald-500" />
+      <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-2">
+        <div className="flex items-center gap-2 mb-4">
+          <Star className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold">Features</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          {features.map((feature) => (
+            <div
+              key={feature.label}
+              className="flex items-center gap-2.5 p-3 rounded-lg border border-border"
+            >
+              <feature.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-sm font-medium">{feature.label}</span>
             </div>
-            <CardTitle className="text-base">Features</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {features.map((feature) => {
-              const colors = colorMap[feature.color];
-              return (
-                <div
-                  key={feature.label}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-muted/50 border border-border/50"
-                >
-                  <div
-                    className={`h-9 w-9 rounded-lg ${colors.iconBg} flex items-center justify-center shrink-0`}
-                  >
-                    <feature.icon
-                      className={`h-4.5 w-4.5 ${colors.iconText}`}
-                    />
-                  </div>
-                  <span className="text-sm font-medium">{feature.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+          ))}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Developer */}
-        <Card className="border-border/50 shadow-sm rounded-2xl animate-in-up-delay-3">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                <Code2 className="h-5 w-5 text-violet-500" />
-              </div>
-              <CardTitle className="text-base">Developer</CardTitle>
+        <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-3">
+          <div className="flex items-center gap-2 mb-4">
+            <Code2 className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">Developer</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl border border-border bg-card flex items-center justify-center text-primary font-bold text-lg shrink-0">
+              F
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-400/25 to-cyan-400/25 flex items-center justify-center text-emerald-500 font-bold text-lg shrink-0">
-                F
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">Faisal Qayyum</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Full-Stack & Mobile Developer
-                </p>
-                <a
-                  href="https://www.instagram.com/faisiheree/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-pink-500 hover:text-pink-400 transition-colors"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Instagram
-                </a>
-              </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Faisal Qayyum</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Full-Stack &amp; Mobile Developer
+              </p>
+              <a
+                href="https://www.instagram.com/faisiheree/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-primary hover:underline transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Instagram
+              </a>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Tech Stack */}
-        <Card className="border-border/50 shadow-sm rounded-2xl animate-in-up-delay-3">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl icon-bg-blue flex items-center justify-center">
-                <Info className="h-5 w-5 text-blue-500" />
-              </div>
-              <CardTitle className="text-base">Tech Stack</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {techStack.map((tech) => (
-                <Badge
-                  key={tech}
-                  variant="secondary"
-                  className="px-3 py-1.5 text-xs font-medium"
-                >
-                  {tech}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-3">
+          <div className="flex items-center gap-2 mb-4">
+            <Info className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">Tech Stack</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {techStack.map((tech) => (
+              <Badge
+                key={tech}
+                variant="secondary"
+                className="px-3 py-1.5 text-xs font-medium"
+              >
+                {tech}
+              </Badge>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

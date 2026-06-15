@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -19,12 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import {
   Plus,
@@ -34,7 +27,7 @@ import {
   ShoppingCart,
   Settings,
   Trash2,
-  PieChart,
+  PieChart as PieIcon,
   BarChart3,
   ArrowUpRight,
   ArrowDownRight,
@@ -42,12 +35,22 @@ import {
   PackageOpen,
   CircleDollarSign,
   Pencil,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { TradeDialog } from "@/components/TradeDialog";
 import { StockSearch } from "@/components/StockSearch";
 import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { Sparkline } from "@/components/Sparkline";
+import {
+  ResponsiveContainer,
+  Tooltip,
+  PieChart as RechartsPie,
+  Pie,
+  Cell,
+} from "recharts";
 
 interface Holding {
   id: string;
@@ -74,6 +77,30 @@ interface MarketStock {
   changePercent: number;
 }
 
+interface HistoryPoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+type SortKey = "value" | "pnl" | "symbol";
+
+// Indigo-family allocation palette (Linear-style, no rainbow)
+const ALLOCATION_PALETTE = [
+  "var(--primary)",
+  "#6366f1",
+  "#818cf8",
+  "#a5b4fc",
+  "#4f46e5",
+  "#7c3aed",
+  "#c7d2fe",
+  "#3730a3",
+];
+const CASH_COLOR = "var(--muted-foreground)";
+
 export default function PortfolioPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [marketData, setMarketData] = useState<Map<string, MarketStock>>(
@@ -99,6 +126,11 @@ export default function PortfolioPage() {
   const [addCashAmount, setAddCashAmount] = useState("");
   const [removeCashAmount, setRemoveCashAmount] = useState("");
   const [editLoading, setEditLoading] = useState(false);
+
+  // Holdings table sorting + price history (for sparklines)
+  const [sortKey, setSortKey] = useState<SortKey>("value");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
 
   const fetchData = useCallback(async () => {
     const [portfolioRes, marketRes] = await Promise.all([
@@ -149,6 +181,46 @@ export default function PortfolioPage() {
   };
 
   const activePortfolio = portfolios.find((p) => p.id === activeTab);
+
+  // Symbols held in the active portfolio (capped) for sparkline history
+  const activeSymbols = useMemo(() => {
+    if (!activePortfolio) return [] as string[];
+    return Array.from(new Set(activePortfolio.holdings.map((h) => h.symbol))).slice(0, 12);
+  }, [activePortfolio]);
+
+  // Fetch per-symbol price history for the active portfolio's holdings
+  useEffect(() => {
+    if (activeSymbols.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const missing = activeSymbols.filter((s) => !history[s]);
+      if (missing.length === 0) return;
+      const results = await Promise.all(
+        missing.map(async (sym) => {
+          try {
+            const res = await fetch(
+              `/api/psx/history?symbol=${encodeURIComponent(sym)}`
+            );
+            if (!res.ok) return [sym, [] as HistoryPoint[]] as const;
+            const data = (await res.json()) as HistoryPoint[];
+            return [sym, Array.isArray(data) ? data : []] as const;
+          } catch {
+            return [sym, [] as HistoryPoint[]] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      setHistory((prev) => {
+        const next = { ...prev };
+        for (const [sym, data] of results) next[sym] = data;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSymbols]);
 
   const openEditDialog = () => {
     if (!activePortfolio) return;
@@ -209,73 +281,140 @@ export default function PortfolioPage() {
     }
   };
 
-  const typeColors: Record<string, string> = {
-    Personal: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-    Trading: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-    Family: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-    Business: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "symbol" ? "asc" : "desc");
+    }
   };
+
+  // ---- Derived data for the active portfolio ----
+  const totalInvested = activePortfolio
+    ? activePortfolio.holdings.reduce((s, h) => s + h.avgPrice * h.quantity, 0)
+    : 0;
+  const totalCurrent = activePortfolio
+    ? activePortfolio.holdings.reduce((s, h) => {
+        const price = marketData.get(h.symbol)?.current || h.avgPrice;
+        return s + price * h.quantity;
+      }, 0)
+    : 0;
+  const pnl = totalCurrent - totalInvested;
+  const pnlPercent = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
+  const totalValue = (activePortfolio?.cashBalance || 0) + totalCurrent;
+  const pnlColor = pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)";
+
+  // Sortable holding rows for the active portfolio
+  const holdingRows = useMemo(() => {
+    if (!activePortfolio) return [];
+    const rows = activePortfolio.holdings.map((h) => {
+      const currentPrice = marketData.get(h.symbol)?.current || h.avgPrice;
+      const value = currentPrice * h.quantity;
+      const hPnl = (currentPrice - h.avgPrice) * h.quantity;
+      const hPnlPercent =
+        h.avgPrice > 0 ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100 : 0;
+      const trend = (history[h.symbol] || [])
+        .map((p) => p.close)
+        .filter((n) => n > 0)
+        .slice(-20);
+      return { ...h, currentPrice, value, pnl: hPnl, pnlPercent: hPnlPercent, trend };
+    });
+    rows.sort((a, b) => {
+      if (sortKey === "symbol") {
+        return sortDir === "desc"
+          ? b.symbol.localeCompare(a.symbol)
+          : a.symbol.localeCompare(b.symbol);
+      }
+      const av = sortKey === "value" ? a.value : a.pnl;
+      const bv = sortKey === "value" ? b.value : b.pnl;
+      return sortDir === "desc" ? bv - av : av - bv;
+    });
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePortfolio, marketData, history, sortKey, sortDir]);
+
+  // Allocation donut (holdings + cash)
+  const allocationData = useMemo(() => {
+    if (!activePortfolio) return [];
+    const slices = activePortfolio.holdings
+      .map((h) => {
+        const cp = marketData.get(h.symbol)?.current || h.avgPrice;
+        return { name: h.symbol, value: cp * h.quantity };
+      })
+      .filter((s) => s.value > 0)
+      .sort((a, b) => b.value - a.value);
+    if (activePortfolio.cashBalance > 0)
+      slices.push({ name: "Cash", value: activePortfolio.cashBalance });
+    const total = slices.reduce((s, x) => s + x.value, 0) || 1;
+    return slices.map((s) => ({ ...s, pct: (s.value / total) * 100 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePortfolio, marketData]);
 
   if (initialLoading) return <PageSkeleton />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between animate-in-up">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Portfolio</h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <h1 className="text-xl lg:text-2xl font-semibold tracking-tight">
+            Portfolio
+          </h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
             Manage your investment portfolios and track performance
           </p>
         </div>
-        <Button
-          onClick={() => setShowCreate(true)}
-          className="rounded-xl shadow-sm"
-        >
-          <Plus className="h-4 w-4 mr-2" />
+        <Button onClick={() => setShowCreate(true)} size="sm" className="h-8 text-xs gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
           New Portfolio
         </Button>
       </div>
 
       {portfolios.length === 0 ? (
-        <Card className="stat-card rounded-xl shadow-sm border">
+        <Card className="border border-border bg-card rounded-xl animate-in-up-delay-1">
           <CardContent className="py-16 text-center">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-              <Briefcase className="h-8 w-8 text-muted-foreground" />
+            <div className="mx-auto w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-4">
+              <Briefcase className="h-6 w-6 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">No portfolios yet</h3>
+            <h3 className="text-base font-semibold mb-2">No portfolios yet</h3>
             <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
-              Create your first portfolio to start tracking investments, managing
-              cash, and monitoring your returns.
+              Create your first portfolio to start tracking investments,
+              managing cash, and monitoring your returns.
             </p>
-            <Button
-              onClick={() => setShowCreate(true)}
-              className="rounded-xl"
-            >
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={() => setShowCreate(true)} size="sm" className="h-8 text-xs gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
               Create Your First Portfolio
             </Button>
           </CardContent>
         </Card>
       ) : (
-        <Tabs value={activeTab} onValueChange={(v) => v && setActiveTab(v)}>
-          <div className="flex items-center gap-3">
-            <TabsList className="rounded-xl">
-              {portfolios.map((p) => (
-                <TabsTrigger
-                  key={p.id}
-                  value={p.id}
-                  className="rounded-lg"
-                >
-                  {p.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+        <>
+          {/* Portfolio selector tabs (flat, Linear-style) */}
+          <div className="flex items-center gap-2 animate-in-up-delay-1">
+            <div className="flex items-center gap-1 p-1 rounded-lg border border-border bg-card overflow-x-auto">
+              {portfolios.map((p) => {
+                const active = p.id === activeTab;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setActiveTab(p.id)}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+                      active
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
             {activePortfolio && (
               <Button
                 variant="outline"
                 size="icon"
-                className="rounded-xl h-9 w-9 shadow-sm"
+                className="h-9 w-9 shrink-0"
                 onClick={openEditDialog}
               >
                 <Settings className="h-4 w-4" />
@@ -283,347 +422,380 @@ export default function PortfolioPage() {
             )}
           </div>
 
-          {portfolios.map((portfolio) => {
-            const totalInvested = portfolio.holdings.reduce(
-              (sum, h) => sum + h.avgPrice * h.quantity,
-              0
-            );
-            const totalCurrent = portfolio.holdings.reduce((sum, h) => {
-              const stock = marketData.get(h.symbol);
-              const price = stock?.current || h.avgPrice;
-              return sum + price * h.quantity;
-            }, 0);
-            const pnl = totalCurrent - totalInvested;
-            const pnlPercent =
-              totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
-            const totalValue = portfolio.cashBalance + totalCurrent;
-
-            return (
-              <TabsContent key={portfolio.id} value={portfolio.id}>
-                <div className="space-y-5">
-                  {/* Portfolio Type Badge */}
-                  <div className="flex items-center gap-3">
-                    <Badge
-                      variant="outline"
-                      className={`rounded-lg px-3 py-1 text-xs font-medium ${
-                        typeColors[portfolio.type] || ""
-                      }`}
-                    >
-                      {portfolio.type}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {portfolio._count.transactions} transactions
-                    </span>
-                  </div>
-
-                  {/* Stat Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                    <Card className="stat-card rounded-xl shadow-sm border">
-                      <CardContent className="pt-5 pb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            Total Value
-                          </p>
-                          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                            <PieChart className="h-4 w-4 text-primary" />
-                          </div>
-                        </div>
-                        <p className="text-xl font-bold font-tabular">
-                          {formatPKR(totalValue, { decimals: 0 })}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Cash + Holdings
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="stat-card rounded-xl shadow-sm border">
-                      <CardContent className="pt-5 pb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            Cash Balance
-                          </p>
-                          <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                            <Wallet className="h-4 w-4 text-blue-500" />
-                          </div>
-                        </div>
-                        <p className="text-xl font-bold font-tabular">
-                          {formatPKR(portfolio.cashBalance, { decimals: 0 })}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Available to invest
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="stat-card rounded-xl shadow-sm border">
-                      <CardContent className="pt-5 pb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            Invested
-                          </p>
-                          <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                            <BarChart3 className="h-4 w-4 text-amber-500" />
-                          </div>
-                        </div>
-                        <p className="text-xl font-bold font-tabular">
-                          {formatPKR(totalInvested, { decimals: 0 })}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Cost basis
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="stat-card rounded-xl shadow-sm border">
-                      <CardContent className="pt-5 pb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            Market Value
-                          </p>
-                          <div className="h-8 w-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-                            <CircleDollarSign className="h-4 w-4 text-cyan-500" />
-                          </div>
-                        </div>
-                        <p className="text-xl font-bold font-tabular">
-                          {formatPKR(totalCurrent, { decimals: 0 })}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Current holdings value
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="stat-card rounded-xl shadow-sm border">
-                      <CardContent className="pt-5 pb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            P&L
-                          </p>
-                          <div
-                            className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                              pnl >= 0
-                                ? "bg-emerald-500/10"
-                                : "bg-red-500/10"
-                            }`}
-                          >
-                            {pnl >= 0 ? (
-                              <TrendingUp className="h-4 w-4 text-emerald-500" />
-                            ) : (
-                              <TrendingDown className="h-4 w-4 text-red-500" />
-                            )}
-                          </div>
-                        </div>
-                        <p
-                          className={`text-xl font-bold font-tabular ${
+          {activePortfolio && (
+            <div className="space-y-6 lg:space-y-8">
+              {/* Hero: total value + P&L summary */}
+              <div className="rounded-xl border border-border bg-card overflow-hidden animate-in-up-delay-1">
+                <div className="flex flex-col lg:flex-row">
+                  <div className="p-5 lg:p-6 lg:w-[40%] lg:border-r border-border">
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
+                        Total Value
+                      </span>
+                    </div>
+                    <p className="text-3xl lg:text-4xl font-semibold font-tabular tracking-tight">
+                      {formatPKR(totalValue, { decimals: 0 })}
+                    </p>
+                    <div className="flex items-center gap-2 mt-3">
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold font-tabular"
+                        style={{
+                          color: pnlColor,
+                          backgroundColor:
                             pnl >= 0
-                              ? "text-[var(--color-profit)]"
-                              : "text-[var(--color-loss)]"
-                          }`}
-                        >
-                          {pnl >= 0 ? "+" : ""}
-                          {formatPKR(pnl, { decimals: 0 })}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          <span
-                            className={
-                              pnlPercent >= 0
-                                ? "text-[var(--color-profit)]"
-                                : "text-[var(--color-loss)]"
-                            }
-                          >
-                            {pnlPercent >= 0 ? "+" : ""}
-                            {pnlPercent.toFixed(2)}%
-                          </span>{" "}
-                          return
-                        </p>
-                      </CardContent>
-                    </Card>
+                              ? "var(--color-profit-bg)"
+                              : "var(--color-loss-bg)",
+                        }}
+                      >
+                        {pnl >= 0 ? (
+                          <ArrowUpRight className="h-3 w-3" />
+                        ) : (
+                          <ArrowDownRight className="h-3 w-3" />
+                        )}
+                        {pnlPercent >= 0 ? "+" : ""}
+                        {pnlPercent.toFixed(2)}%
+                      </span>
+                      <span
+                        className="text-xs font-medium font-tabular"
+                        style={{ color: pnlColor }}
+                      >
+                        {pnl >= 0 ? "+" : ""}
+                        {formatPKR(pnl, { decimals: 0 })}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-3 text-[11px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted font-medium text-foreground">
+                        {activePortfolio.type}
+                      </span>
+                      <span>
+                        {activePortfolio._count.transactions} transactions
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Quick Trade */}
-                  <Card className="stat-card rounded-xl shadow-sm border">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                        <ShoppingCart className="h-4 w-4 text-primary" />
-                        Quick Trade
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <StockSearch
-                        onSelect={(stock) =>
-                          setTradeStock({
-                            symbol: stock.symbol,
-                            company: stock.company,
-                            price: stock.current,
-                          })
-                        }
-                        placeholder="Search a stock to buy or sell..."
-                      />
-                    </CardContent>
-                  </Card>
-
-                  {/* Holdings Table */}
-                  <Card className="stat-card rounded-xl shadow-sm border">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-sm font-semibold">
-                          Holdings
-                        </CardTitle>
-                        {portfolio.holdings.length > 0 && (
-                          <Badge
-                            variant="secondary"
-                            className="rounded-lg text-xs"
-                          >
-                            {portfolio.holdings.length} stock
-                            {portfolio.holdings.length !== 1 ? "s" : ""}
-                          </Badge>
-                        )}
+                  {/* Allocation donut */}
+                  <div className="flex-1 p-5 lg:p-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PieIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
+                        Allocation
+                      </span>
+                    </div>
+                    {allocationData.length === 0 ? (
+                      <div className="h-32 flex items-center justify-center">
+                        <p className="text-xs text-muted-foreground">
+                          No allocation yet
+                        </p>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      {portfolio.holdings.length === 0 ? (
-                        <div className="text-center py-12">
-                          <div className="mx-auto w-12 h-12 rounded-xl bg-muted/50 flex items-center justify-center mb-3">
-                            <PackageOpen className="h-6 w-6 text-muted-foreground" />
-                          </div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">
-                            No holdings yet
-                          </p>
-                          <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-                            Use the Quick Trade section above to search and buy
-                            your first stock in this portfolio.
-                          </p>
+                    ) : (
+                      <div className="flex items-center gap-5">
+                        <div className="h-36 w-36 shrink-0">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPie>
+                              <Pie
+                                data={allocationData}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius="62%"
+                                outerRadius="92%"
+                                paddingAngle={1.5}
+                                stroke="var(--card)"
+                                strokeWidth={2}
+                              >
+                                {allocationData.map((entry, i) => (
+                                  <Cell
+                                    key={entry.name}
+                                    fill={
+                                      entry.name === "Cash"
+                                        ? CASH_COLOR
+                                        : ALLOCATION_PALETTE[
+                                            i % ALLOCATION_PALETTE.length
+                                          ]
+                                    }
+                                  />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                contentStyle={{
+                                  background: "var(--card)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 8,
+                                  fontSize: 12,
+                                  padding: "6px 10px",
+                                  boxShadow: "none",
+                                  color: "var(--foreground)",
+                                }}
+                                formatter={(v, n) => [
+                                  `PKR ${formatPKR(Number(v), { decimals: 0 })}`,
+                                  String(n),
+                                ]}
+                              />
+                            </RechartsPie>
+                          </ResponsiveContainer>
                         </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-3 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                  Stock
-                                </th>
-                                <th className="text-right py-3 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                  Qty
-                                </th>
-                                <th className="text-right py-3 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                  Avg Price
-                                </th>
-                                <th className="text-right py-3 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                  Current
-                                </th>
-                                <th className="text-right py-3 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                  Value
-                                </th>
-                                <th className="text-right py-3 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                  P&L
-                                </th>
-                                <th className="text-right py-3 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                                  Actions
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {portfolio.holdings.map((h) => {
-                                const stock = marketData.get(h.symbol);
-                                const currentPrice =
-                                  stock?.current || h.avgPrice;
-                                const value = currentPrice * h.quantity;
-                                const holdingPnl =
-                                  (currentPrice - h.avgPrice) * h.quantity;
-                                const holdingPnlPercent =
-                                  h.avgPrice > 0
-                                    ? ((currentPrice - h.avgPrice) /
-                                        h.avgPrice) *
-                                      100
-                                    : 0;
-
-                                return (
-                                  <tr
-                                    key={h.id}
-                                    className="table-row-hover border-b last:border-0 transition-colors"
-                                  >
-                                    <td className="py-3 px-2">
-                                      <Link
-                                        href={`/stock/${h.symbol}`}
-                                        className="group"
-                                      >
-                                        <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                                          {h.symbol}
-                                        </span>
-                                        <br />
-                                        <span className="text-xs text-muted-foreground line-clamp-1">
-                                          {h.companyName}
-                                        </span>
-                                      </Link>
-                                    </td>
-                                    <td className="text-right py-3 px-2 font-tabular font-medium">
-                                      {h.quantity.toLocaleString()}
-                                    </td>
-                                    <td className="text-right py-3 px-2 font-tabular text-muted-foreground">
-                                      {formatPKR(h.avgPrice)}
-                                    </td>
-                                    <td className="text-right py-3 px-2 font-tabular font-medium">
-                                      {formatPKR(currentPrice)}
-                                    </td>
-                                    <td className="text-right py-3 px-2 font-tabular font-semibold">
-                                      {formatPKR(value, { decimals: 0 })}
-                                    </td>
-                                    <td className="text-right py-3 px-2">
-                                      <div
-                                        className={`font-tabular font-medium ${
-                                          holdingPnl >= 0
-                                            ? "text-[var(--color-profit)]"
-                                            : "text-[var(--color-loss)]"
-                                        }`}
-                                      >
-                                        <span className="flex items-center justify-end gap-1">
-                                          {holdingPnl >= 0 ? (
-                                            <ArrowUpRight className="h-3 w-3" />
-                                          ) : (
-                                            <ArrowDownRight className="h-3 w-3" />
-                                          )}
-                                          {formatPKR(Math.abs(holdingPnl), {
-                                            decimals: 0,
-                                          })}
-                                        </span>
-                                        <span className="text-xs opacity-80">
-                                          {holdingPnlPercent >= 0 ? "+" : ""}
-                                          {holdingPnlPercent.toFixed(2)}%
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td className="text-right py-3 px-2">
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="text-xs h-7 rounded-lg shadow-sm"
-                                        onClick={() =>
-                                          setTradeStock({
-                                            symbol: h.symbol,
-                                            company: h.companyName,
-                                            price: currentPrice,
-                                            portfolioId: portfolio.id,
-                                          })
-                                        }
-                                      >
-                                        Trade
-                                      </Button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          {allocationData.slice(0, 6).map((entry, i) => (
+                            <div
+                              key={entry.name}
+                              className="flex items-center justify-between text-xs"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className="h-2 w-2 rounded-sm shrink-0"
+                                  style={{
+                                    background:
+                                      entry.name === "Cash"
+                                        ? CASH_COLOR
+                                        : ALLOCATION_PALETTE[
+                                            i % ALLOCATION_PALETTE.length
+                                          ],
+                                  }}
+                                />
+                                <span className="truncate text-muted-foreground">
+                                  {entry.name}
+                                </span>
+                              </div>
+                              <span className="font-tabular font-semibold">
+                                {entry.pct.toFixed(1)}%
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </TabsContent>
-            );
-          })}
-        </Tabs>
+              </div>
+
+              {/* Metric strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 rounded-xl border border-border bg-card overflow-hidden divide-x divide-y lg:divide-y-0 divide-border animate-in-up-delay-2">
+                <Metric
+                  icon={<Wallet className="h-3.5 w-3.5 text-muted-foreground" />}
+                  label="Cash Balance"
+                  value={formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
+                />
+                <Metric
+                  icon={<BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />}
+                  label="Invested"
+                  value={formatPKR(totalInvested, { decimals: 0 })}
+                />
+                <Metric
+                  icon={
+                    <CircleDollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                  }
+                  label="Market Value"
+                  value={formatPKR(totalCurrent, { decimals: 0 })}
+                />
+                <Metric
+                  icon={
+                    pnl >= 0 ? (
+                      <TrendingUp
+                        className="h-3.5 w-3.5"
+                        style={{ color: "var(--color-profit)" }}
+                      />
+                    ) : (
+                      <TrendingDown
+                        className="h-3.5 w-3.5"
+                        style={{ color: "var(--color-loss)" }}
+                      />
+                    )
+                  }
+                  label="Total P&L"
+                  value={`${pnl >= 0 ? "+" : ""}${formatPKR(pnl, { decimals: 0 })}`}
+                  valueColor={pnlColor}
+                />
+              </div>
+
+              {/* Quick Trade */}
+              <Card className="border border-border bg-card rounded-xl animate-in-up-delay-2">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground" />
+                    Quick Trade
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <StockSearch
+                    onSelect={(stock) =>
+                      setTradeStock({
+                        symbol: stock.symbol,
+                        company: stock.company,
+                        price: stock.current,
+                      })
+                    }
+                    placeholder="Search a stock to buy or sell..."
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Holdings Table */}
+              <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
+                <CardContent className="pt-4 pb-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm font-semibold">Holdings</span>
+                    </div>
+                    {activePortfolio.holdings.length > 0 && (
+                      <span className="text-[11px] font-tabular text-muted-foreground">
+                        {activePortfolio.holdings.length} stock
+                        {activePortfolio.holdings.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+
+                  {activePortfolio.holdings.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="mx-auto w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-3">
+                        <PackageOpen className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <p className="text-sm font-medium text-muted-foreground mb-1">
+                        No holdings yet
+                      </p>
+                      <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                        Use the Quick Trade section above to search and buy your
+                        first stock in this portfolio.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto -mx-1">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            <th
+                              className="text-left font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
+                              onClick={() => toggleSort("symbol")}
+                            >
+                              <span className="inline-flex items-center gap-0.5">
+                                Stock
+                                <SortCaret active={sortKey === "symbol"} dir={sortDir} />
+                              </span>
+                            </th>
+                            <th className="text-center font-medium py-2 px-1 hidden md:table-cell">
+                              Trend
+                            </th>
+                            <th className="text-right font-medium py-2 px-1 hidden sm:table-cell">
+                              Qty
+                            </th>
+                            <th className="text-right font-medium py-2 px-1 hidden sm:table-cell">
+                              Avg
+                            </th>
+                            <th className="text-right font-medium py-2 px-1">
+                              Current
+                            </th>
+                            <th
+                              className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
+                              onClick={() => toggleSort("value")}
+                            >
+                              <span className="inline-flex items-center justify-end gap-0.5">
+                                Value
+                                <SortCaret active={sortKey === "value"} dir={sortDir} />
+                              </span>
+                            </th>
+                            <th
+                              className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
+                              onClick={() => toggleSort("pnl")}
+                            >
+                              <span className="inline-flex items-center justify-end gap-0.5">
+                                P&amp;L
+                                <SortCaret active={sortKey === "pnl"} dir={sortDir} />
+                              </span>
+                            </th>
+                            <th className="text-right font-medium py-2 px-1" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {holdingRows.map((h) => {
+                            const c =
+                              h.pnl >= 0
+                                ? "var(--color-profit)"
+                                : "var(--color-loss)";
+                            return (
+                              <tr
+                                key={h.id}
+                                className="border-t border-border hover:bg-muted/40 transition-colors"
+                              >
+                                <td className="py-2.5 px-1">
+                                  <Link
+                                    href={`/stock/${h.symbol}`}
+                                    className="block group"
+                                  >
+                                    <p className="font-semibold group-hover:text-primary transition-colors">
+                                      {h.symbol}
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground line-clamp-1">
+                                      {h.companyName}
+                                    </p>
+                                  </Link>
+                                </td>
+                                <td className="py-2.5 px-1 hidden md:table-cell">
+                                  <div className="flex justify-center">
+                                    <Sparkline
+                                      data={h.trend}
+                                      width={72}
+                                      height={24}
+                                      fill
+                                    />
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-1 text-right font-tabular text-muted-foreground hidden sm:table-cell">
+                                  {h.quantity.toLocaleString()}
+                                </td>
+                                <td className="py-2.5 px-1 text-right font-tabular text-muted-foreground hidden sm:table-cell">
+                                  {formatPKR(h.avgPrice)}
+                                </td>
+                                <td className="py-2.5 px-1 text-right font-tabular font-medium">
+                                  {formatPKR(h.currentPrice)}
+                                </td>
+                                <td className="py-2.5 px-1 text-right font-tabular font-semibold">
+                                  {formatPKR(h.value, { decimals: 0 })}
+                                </td>
+                                <td className="py-2.5 px-1 text-right">
+                                  <span
+                                    className="font-semibold font-tabular"
+                                    style={{ color: c }}
+                                  >
+                                    {h.pnl >= 0 ? "+" : ""}
+                                    {formatPKR(h.pnl, { decimals: 0 })}
+                                  </span>
+                                  <span
+                                    className="block text-[11px] font-tabular"
+                                    style={{ color: c }}
+                                  >
+                                    {h.pnlPercent >= 0 ? "+" : ""}
+                                    {h.pnlPercent.toFixed(2)}%
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-1 text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs h-7"
+                                    onClick={() =>
+                                      setTradeStock({
+                                        symbol: h.symbol,
+                                        company: h.companyName,
+                                        price: h.currentPrice,
+                                        portfolioId: activePortfolio.id,
+                                      })
+                                    }
+                                  >
+                                    Trade
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </>
       )}
 
       {/* Create Portfolio Dialog */}
@@ -646,10 +818,7 @@ export default function PortfolioPage() {
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Type</Label>
-              <Select
-                value={newType}
-                onValueChange={(v) => v && setNewType(v)}
-              >
+              <Select value={newType} onValueChange={(v) => v && setNewType(v)}>
                 <SelectTrigger className="rounded-xl">
                   <SelectValue />
                 </SelectTrigger>
@@ -810,5 +979,49 @@ export default function PortfolioPage() {
         />
       )}
     </div>
+  );
+}
+
+function Metric({
+  icon,
+  label,
+  value,
+  valueColor,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="px-4 py-3.5">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon}
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+      </div>
+      <p
+        className="text-lg font-semibold font-tabular"
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SortCaret({
+  active,
+  dir,
+}: {
+  active: boolean;
+  dir: "asc" | "desc";
+}) {
+  if (!active) return <ChevronDown className="h-3 w-3 opacity-30" />;
+  return dir === "desc" ? (
+    <ChevronDown className="h-3 w-3" />
+  ) : (
+    <ChevronUp className="h-3 w-3" />
   );
 }

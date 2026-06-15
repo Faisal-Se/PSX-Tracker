@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -17,9 +16,6 @@ import {
   ArrowUpDown,
   Eye,
   ShoppingCart,
-  TrendingUp,
-  BarChart3,
-  Activity,
 } from "lucide-react";
 import Link from "next/link";
 import { TradeDialog } from "@/components/TradeDialog";
@@ -48,10 +44,10 @@ interface Portfolio {
 
 function ShimmerRow() {
   return (
-    <tr className="border-b border-border/40">
+    <tr className="border-b border-border/60">
       {Array.from({ length: 7 }).map((_, i) => (
-        <td key={i} className="py-3.5 px-3">
-          <div className="h-4 rounded-md bg-muted/60 animate-pulse" />
+        <td key={i} className="py-2.5 px-3">
+          <div className="h-3.5 rounded bg-muted animate-pulse" />
         </td>
       ))}
     </tr>
@@ -163,46 +159,65 @@ export default function MarketPage() {
 
   if (initialLoading) return <PageSkeleton />;
 
+  // ── Sortable column header helper ───────────────────────────────
+  const toggleSort = (col: "symbol" | "change" | "volume") => {
+    if (sortBy === col) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortBy(col);
+      setSortDir("desc");
+    }
+  };
+
+  const sortIndicator = (col: "symbol" | "change" | "volume") =>
+    sortBy === col ? (
+      <span className="text-primary">{sortDir === "desc" ? "↓" : "↑"}</span>
+    ) : (
+      <ArrowUpDown className="h-3 w-3 opacity-40" />
+    );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-end justify-between animate-in-up">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Market</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Market</h1>
           <p className="text-muted-foreground text-sm mt-1">
             Browse all PSX listed stocks
           </p>
         </div>
-        <Badge variant="outline" className="gap-1.5 px-3 py-1.5 text-sm font-medium border-emerald-500/30 bg-emerald-500/5">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground border border-border bg-card rounded-lg px-3 py-1.5">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-profit)] opacity-75" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--color-profit)]" />
           </span>
-          <span className="font-tabular font-semibold text-emerald-600">{activeStocks.length}</span> active stocks
-        </Badge>
+          <span className="font-tabular font-semibold text-foreground">
+            {activeStocks.length}
+          </span>{" "}
+          active
+        </div>
       </div>
 
       {/* Quick Stats */}
       {!isLoading && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-in-up-delay-1">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 animate-in-up-delay-1">
           {topGainers.length > 0 && (
-            <Card className="stat-card stat-card-emerald rounded-2xl border-emerald-500/20 bg-gradient-to-br from-emerald-500/8 to-cyan-500/5 overflow-hidden">
-              <CardContent className="pt-4 pb-4 relative">
-                <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/10 rounded-full blur-2xl" />
-                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 mb-2">
-                  <div className="h-5 w-5 rounded bg-emerald-500/15 flex items-center justify-center">
-                    <TrendingUp className="h-3 w-3" />
-                  </div>
+            <Card className="border border-border bg-card rounded-xl">
+              <CardContent className="py-4">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   Top Gainer
-                </div>
-                <div className="flex items-baseline justify-between">
+                </p>
+                <div className="flex items-baseline justify-between mt-2">
                   <Link
                     href={`/stock/${topGainers[0].symbol}`}
-                    className="font-bold text-sm hover:text-emerald-600 transition-colors"
+                    className="font-semibold text-sm hover:text-primary transition-colors"
                   >
                     {topGainers[0].symbol}
                   </Link>
-                  <span className="font-tabular text-lg font-bold text-emerald-600">
+                  <span
+                    className="font-tabular text-lg font-semibold"
+                    style={{ color: "var(--color-profit)" }}
+                  >
                     +{topGainers[0].changePercent.toFixed(2)}%
                   </span>
                 </div>
@@ -213,22 +228,22 @@ export default function MarketPage() {
             </Card>
           )}
           {topGainers.length > 1 && (
-            <Card className="stat-card stat-card-emerald rounded-2xl border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 overflow-hidden">
-              <CardContent className="pt-4 pb-4">
-                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 mb-2">
-                  <div className="h-5 w-5 rounded bg-emerald-500/15 flex items-center justify-center">
-                    <TrendingUp className="h-3 w-3" />
-                  </div>
+            <Card className="border border-border bg-card rounded-xl">
+              <CardContent className="py-4">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   2nd Gainer
-                </div>
-                <div className="flex items-baseline justify-between">
+                </p>
+                <div className="flex items-baseline justify-between mt-2">
                   <Link
                     href={`/stock/${topGainers[1].symbol}`}
-                    className="font-bold text-sm hover:text-emerald-600 transition-colors"
+                    className="font-semibold text-sm hover:text-primary transition-colors"
                   >
                     {topGainers[1].symbol}
                   </Link>
-                  <span className="font-tabular text-lg font-bold text-emerald-600">
+                  <span
+                    className="font-tabular text-lg font-semibold"
+                    style={{ color: "var(--color-profit)" }}
+                  >
                     +{topGainers[1].changePercent.toFixed(2)}%
                   </span>
                 </div>
@@ -239,23 +254,19 @@ export default function MarketPage() {
             </Card>
           )}
           {topVolume && (
-            <Card className="stat-card stat-card-blue rounded-2xl border-blue-500/20 bg-gradient-to-br from-blue-500/8 to-violet-500/5 overflow-hidden">
-              <CardContent className="pt-4 pb-4 relative">
-                <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl" />
-                <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 mb-2">
-                  <div className="h-5 w-5 rounded bg-blue-500/15 flex items-center justify-center">
-                    <BarChart3 className="h-3 w-3" />
-                  </div>
+            <Card className="border border-border bg-card rounded-xl">
+              <CardContent className="py-4">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   Highest Volume
-                </div>
-                <div className="flex items-baseline justify-between">
+                </p>
+                <div className="flex items-baseline justify-between mt-2">
                   <Link
                     href={`/stock/${topVolume.symbol}`}
-                    className="font-bold text-sm hover:text-blue-600 transition-colors"
+                    className="font-semibold text-sm hover:text-primary transition-colors"
                   >
                     {topVolume.symbol}
                   </Link>
-                  <span className="font-tabular text-lg font-bold text-blue-600">
+                  <span className="font-tabular text-lg font-semibold text-foreground">
                     {formatPKR(topVolume.volume, { compact: true })}
                   </span>
                 </div>
@@ -268,114 +279,126 @@ export default function MarketPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <Card className="rounded-2xl animate-in-up-delay-2">
-        <CardContent className="pt-5 pb-5">
-          <div className="flex flex-wrap gap-3 items-center">
-            <div className="relative flex-1 min-w-[240px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by symbol or company name..."
-                className="pl-10 h-10 rounded-lg bg-muted/40 border-transparent focus:border-primary/30 focus:bg-background transition-colors"
-              />
-            </div>
-            <Select
-              value={sectorFilter}
-              onValueChange={(v) => v && setSectorFilter(v)}
-            >
-              <SelectTrigger className="w-[200px] h-10 rounded-lg">
-                <SelectValue placeholder="All Sectors">
-                  {(value: string | null) => (!value || value === "all") ? "All Sectors" : value}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Sectors</SelectItem>
-                {sectors.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={`${sortBy}-${sortDir}`}
-              onValueChange={(v) => {
-                if (!v) return;
-                const [by, dir] = v.split("-") as [
-                  "symbol" | "change" | "volume",
-                  "asc" | "desc",
-                ];
-                setSortBy(by);
-                setSortDir(dir);
+      {/* Toolbar */}
+      <div className="animate-in-up-delay-2 flex flex-wrap gap-2.5 items-center">
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by symbol or company name..."
+            className="pl-10 h-9 rounded-lg border border-border bg-card focus:border-primary/40 transition-colors"
+          />
+        </div>
+        <Select
+          value={sectorFilter}
+          onValueChange={(v) => v && setSectorFilter(v)}
+        >
+          <SelectTrigger className="w-[200px] h-9 rounded-lg border border-border bg-card">
+            <SelectValue placeholder="All Sectors">
+              {(value: string | null) => (!value || value === "all") ? "All Sectors" : value}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sectors</SelectItem>
+            {sectors.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={`${sortBy}-${sortDir}`}
+          onValueChange={(v) => {
+            if (!v) return;
+            const [by, dir] = v.split("-") as [
+              "symbol" | "change" | "volume",
+              "asc" | "desc",
+            ];
+            setSortBy(by);
+            setSortDir(dir);
+          }}
+        >
+          <SelectTrigger className="w-[180px] h-9 rounded-lg border border-border bg-card">
+            <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
+            <SelectValue>
+              {(value: string | null) => {
+                const labels: Record<string, string> = {
+                  "volume-desc": "Volume (High)", "volume-asc": "Volume (Low)",
+                  "change-desc": "Gainers", "change-asc": "Losers",
+                  "symbol-asc": "Symbol (A-Z)", "symbol-desc": "Symbol (Z-A)",
+                };
+                return value ? (labels[value] || value) : "Sort by";
               }}
-            >
-              <SelectTrigger className="w-[180px] h-10 rounded-lg">
-                <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
-                <SelectValue>
-                  {(value: string | null) => {
-                    const labels: Record<string, string> = {
-                      "volume-desc": "Volume (High)", "volume-asc": "Volume (Low)",
-                      "change-desc": "Gainers", "change-asc": "Losers",
-                      "symbol-asc": "Symbol (A-Z)", "symbol-desc": "Symbol (Z-A)",
-                    };
-                    return value ? (labels[value] || value) : "Sort by";
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="volume-desc">Volume (High)</SelectItem>
-                <SelectItem value="volume-asc">Volume (Low)</SelectItem>
-                <SelectItem value="change-desc">Gainers</SelectItem>
-                <SelectItem value="change-asc">Losers</SelectItem>
-                <SelectItem value="symbol-asc">Symbol (A-Z)</SelectItem>
-                <SelectItem value="symbol-desc">Symbol (Z-A)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {!isLoading && (
-            <p className="text-xs text-muted-foreground mt-3">
-              Showing{" "}
-              <span className="font-tabular font-medium text-foreground">
-                {Math.min(filteredStocks.length, 100)}
-              </span>{" "}
-              of{" "}
-              <span className="font-tabular font-medium text-foreground">
-                {filteredStocks.length}
-              </span>{" "}
-              results
-            </p>
-          )}
-        </CardContent>
-      </Card>
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="volume-desc">Volume (High)</SelectItem>
+            <SelectItem value="volume-asc">Volume (Low)</SelectItem>
+            <SelectItem value="change-desc">Gainers</SelectItem>
+            <SelectItem value="change-asc">Losers</SelectItem>
+            <SelectItem value="symbol-asc">Symbol (A-Z)</SelectItem>
+            <SelectItem value="symbol-desc">Symbol (Z-A)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {!isLoading && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          Showing{" "}
+          <span className="font-tabular font-medium text-foreground">
+            {Math.min(filteredStocks.length, 100)}
+          </span>{" "}
+          of{" "}
+          <span className="font-tabular font-medium text-foreground">
+            {filteredStocks.length}
+          </span>{" "}
+          results
+        </p>
+      )}
 
       {/* Stock Table */}
-      <Card className="rounded-2xl overflow-hidden animate-in-up-delay-3">
+      <Card className="border border-border bg-card rounded-xl overflow-hidden animate-in-up-delay-3">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border/60 bg-muted/30">
-                  <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Symbol
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="text-left py-2.5 px-4">
+                    <button
+                      onClick={() => toggleSort("symbol")}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Symbol {sortIndicator("symbol")}
+                    </button>
                   </th>
-                  <th className="text-left py-3 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="text-left py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Sector
                   </th>
-                  <th className="text-right py-3 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="text-right py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Price
                   </th>
-                  <th className="text-right py-3 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Change
+                  <th className="text-right py-2.5 px-3">
+                    <button
+                      onClick={() => toggleSort("change")}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Change {sortIndicator("change")}
+                    </button>
                   </th>
-                  <th className="text-right py-3 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="text-right py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     High / Low
                   </th>
-                  <th className="text-right py-3 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Volume
+                  <th className="text-right py-2.5 px-3">
+                    <button
+                      onClick={() => toggleSort("volume")}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors ml-auto"
+                    >
+                      Volume {sortIndicator("volume")}
+                    </button>
                   </th>
-                  <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="text-right py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Actions
                   </th>
                 </tr>
@@ -388,9 +411,9 @@ export default function MarketPage() {
                   : filteredStocks.slice(0, 100).map((s) => (
                       <tr
                         key={s.symbol}
-                        className="table-row-hover border-b border-border/30 last:border-0 transition-colors"
+                        className="table-row-hover border-b border-border/60 last:border-0 transition-colors"
                       >
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-4">
                           <Link
                             href={`/stock/${s.symbol}`}
                             className="group inline-block"
@@ -404,50 +427,55 @@ export default function MarketPage() {
                             </span>
                           </Link>
                         </td>
-                        <td className="py-3 px-3">
-                          <span className="inline-block text-xs text-muted-foreground bg-muted/50 rounded-md px-2 py-0.5">
+                        <td className="py-2.5 px-3">
+                          <span className="inline-block text-xs text-muted-foreground border border-border rounded-md px-2 py-0.5">
                             {s.sector}
                           </span>
                         </td>
-                        <td className="text-right py-3 px-3">
+                        <td className="text-right py-2.5 px-3">
                           <span className="font-tabular font-semibold">
                             {formatPKR(s.current, { decimals: 2 })}
                           </span>
                         </td>
-                        <td className="text-right py-3 px-3">
-                          <Badge
-                            variant="secondary"
-                            className={`font-tabular text-xs font-medium ${
-                              s.change >= 0
-                                ? "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15"
-                                : "bg-red-500/10 text-red-500 hover:bg-red-500/15"
-                            }`}
+                        <td className="text-right py-2.5 px-3">
+                          <span
+                            className="inline-flex font-tabular text-xs font-semibold rounded-md px-2 py-0.5"
+                            style={{
+                              color:
+                                s.change >= 0
+                                  ? "var(--color-profit)"
+                                  : "var(--color-loss)",
+                              backgroundColor:
+                                s.change >= 0
+                                  ? "var(--color-profit-bg)"
+                                  : "var(--color-loss-bg)",
+                            }}
                           >
                             {s.change >= 0 ? "+" : ""}
                             {s.changePercent.toFixed(2)}%
-                          </Badge>
+                          </span>
                         </td>
-                        <td className="text-right py-3 px-3">
+                        <td className="text-right py-2.5 px-3">
                           <span className="font-tabular text-xs text-muted-foreground">
                             {formatPKR(s.high, { decimals: 2 })}
                             {" / "}
                             {formatPKR(s.low, { decimals: 2 })}
                           </span>
                         </td>
-                        <td className="text-right py-3 px-3">
+                        <td className="text-right py-2.5 px-3">
                           <span className="font-tabular font-medium">
                             {formatPKR(s.volume, { compact: true })}
                           </span>
                         </td>
-                        <td className="text-right py-3 px-4">
+                        <td className="text-right py-2.5 px-4">
                           <div className="flex gap-1.5 justify-end">
                             <Button
                               size="sm"
                               variant="ghost"
                               className={`h-8 w-8 p-0 rounded-lg transition-colors ${
                                 watchedSymbols.has(s.symbol)
-                                  ? "bg-amber-500/10 text-amber-500"
-                                  : "hover:bg-amber-500/10 hover:text-amber-500 text-muted-foreground"
+                                  ? "bg-primary/10 text-primary"
+                                  : "hover:bg-muted text-muted-foreground"
                               }`}
                               onClick={() =>
                                 handleAddToWatchlist(s.symbol, s.company)
@@ -462,7 +490,7 @@ export default function MarketPage() {
                             </Button>
                             <Button
                               size="sm"
-                              className="h-8 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white px-3 text-xs font-semibold gap-1.5 shadow-sm"
+                              className="h-8 rounded-lg px-3 text-xs font-semibold gap-1.5"
                               onClick={() => setTradeStock(s)}
                             >
                               <ShoppingCart className="h-3.5 w-3.5" />

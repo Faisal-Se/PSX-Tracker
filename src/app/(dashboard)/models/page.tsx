@@ -298,17 +298,6 @@ export default function ModelsPage() {
     if (res.ok) fetchData();
   };
 
-  const stockColors = [
-    "bg-violet-500",
-    "bg-blue-500",
-    "bg-cyan-500",
-    "bg-emerald-500",
-    "bg-amber-500",
-    "bg-rose-500",
-    "bg-indigo-500",
-    "bg-teal-500",
-  ];
-
   if (initialLoading) return <PageSkeleton />;
 
   return (
@@ -316,7 +305,7 @@ export default function ModelsPage() {
       {/* Header */}
       <div className="flex items-end justify-between animate-in-up">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-2xl font-semibold tracking-tight">
             Model Portfolios
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -325,7 +314,7 @@ export default function ModelsPage() {
         </div>
         <Button
           onClick={openCreateEditor}
-          className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-lg shadow-violet-500/20"
+          className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
         >
           <Plus className="h-4 w-4 mr-2" />
           New Model
@@ -334,12 +323,12 @@ export default function ModelsPage() {
 
       {/* Model Portfolio Cards */}
       {!loading && models.length === 0 && !showEditor ? (
-        <Card className="rounded-2xl animate-in-up-delay-1">
+        <Card className="border border-border bg-card rounded-xl animate-in-up-delay-1">
           <CardContent className="py-16 text-center">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500/10 to-purple-500/10 flex items-center justify-center mb-4">
-              <Layers className="h-8 w-8 text-violet-500" />
+            <div className="mx-auto w-12 h-12 rounded-xl border border-border bg-muted/40 flex items-center justify-center mb-4">
+              <Layers className="h-6 w-6 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">
+            <h3 className="text-base font-semibold mb-2">
               No model portfolios yet
             </h3>
             <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
@@ -348,7 +337,7 @@ export default function ModelsPage() {
             </p>
             <Button
               onClick={openCreateEditor}
-              className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700"
+              className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-4 w-4 mr-2" />
               Create Your First Model
@@ -365,15 +354,15 @@ export default function ModelsPage() {
             return (
               <Card
                 key={model.id}
-                className="stat-card stat-card-violet rounded-2xl border-violet-500/15 cursor-pointer"
+                className="border border-border bg-card rounded-xl cursor-pointer transition-colors hover:border-primary/40"
                 onClick={() => router.push(`/models/${model.id}`)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="text-base font-bold flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg icon-bg-violet flex items-center justify-center">
-                          <PieChart className="h-3.5 w-3.5 text-violet-500" />
+                      <CardTitle className="text-base font-semibold flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg border border-border bg-muted/40 flex items-center justify-center">
+                          <PieChart className="h-3.5 w-3.5 text-muted-foreground" />
                         </div>
                         {model.name}
                       </CardTitle>
@@ -387,7 +376,7 @@ export default function ModelsPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                         onClick={(e) => handleDelete(e, model.id)}
                         title="Delete"
                       >
@@ -399,31 +388,28 @@ export default function ModelsPage() {
                 <CardContent className="space-y-4">
                   {/* Allocation Bars */}
                   <div className="space-y-2">
-                    {model.allocations.map((alloc, i) => {
-                      const barColor =
-                        alloc.symbol === "CASH"
-                          ? "bg-slate-400"
-                          : stockColors[i % stockColors.length];
+                    {model.allocations.map((alloc) => {
+                      const isCash = alloc.symbol === "CASH";
                       return (
                         <div key={alloc.symbol} className="group">
-                          <div className="flex items-center justify-between text-xs mb-0.5">
-                            <span className="font-semibold">
-                              {alloc.symbol === "CASH"
-                                ? "Cash"
-                                : alloc.symbol}
-                              {alloc.symbol !== "CASH" && alloc.shares > 0 && (
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-medium">
+                              {isCash ? "Cash" : alloc.symbol}
+                              {!isCash && alloc.shares > 0 && (
                                 <span className="text-muted-foreground font-normal ml-1.5">
                                   {alloc.shares} shares
                                 </span>
                               )}
                             </span>
-                            <span className="font-bold font-tabular">
+                            <span className="font-tabular font-semibold">
                               {alloc.percentage.toFixed(1)}%
                             </span>
                           </div>
-                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                             <div
-                              className={`h-full rounded-full ${barColor} transition-all`}
+                              className={`h-full rounded-full transition-all ${
+                                isCash ? "bg-muted-foreground/40" : "bg-primary"
+                              }`}
                               style={{ width: `${alloc.percentage}%` }}
                             />
                           </div>
@@ -433,10 +419,10 @@ export default function ModelsPage() {
                   </div>
 
                   {/* Stats */}
-                  <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Wallet className="h-3 w-3" />
+                      <span className="flex items-center gap-1.5">
+                        <Wallet className="h-3.5 w-3.5" />
                         <span className="font-tabular font-semibold text-foreground">
                           PKR {formatPKR(model.cashBalance, { decimals: 0 })}
                         </span>
@@ -448,9 +434,9 @@ export default function ModelsPage() {
                         stocks
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-violet-500 font-semibold">
+                    <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
                       View
-                      <ArrowRight className="h-3 w-3" />
+                      <ArrowRight className="h-3.5 w-3.5" />
                     </div>
                   </div>
                 </CardContent>
@@ -464,12 +450,12 @@ export default function ModelsPage() {
       {/* Create Model Editor                */}
       {/* ═══════════════════════════════════ */}
       {showEditor && (
-        <Card className="rounded-2xl border-violet-500/20 animate-scale-in">
+        <Card className="border border-border bg-card rounded-xl animate-scale-in">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <div className="h-7 w-7 rounded-lg icon-bg-violet flex items-center justify-center">
-                  <Target className="h-4 w-4 text-violet-500" />
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <div className="h-7 w-7 rounded-lg border border-border bg-muted/40 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-muted-foreground" />
                 </div>
                 Create Model Portfolio
               </CardTitle>
@@ -487,27 +473,27 @@ export default function ModelsPage() {
             {/* Name, Description, Cash */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label className="text-xs font-semibold">Model Name</Label>
+                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Model Name</Label>
                 <Input
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. Blue Chip Mix"
-                  className="rounded-xl"
+                  className="rounded-lg"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-semibold">
+                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Description (optional)
                 </Label>
                 <Input
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   placeholder="Strategy description"
-                  className="rounded-xl"
+                  className="rounded-lg"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-semibold">
+                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Starting Cash (PKR)
                 </Label>
                 <Input
@@ -516,21 +502,21 @@ export default function ModelsPage() {
                   value={formCash}
                   onChange={(e) => setFormCash(e.target.value)}
                   placeholder="e.g. 100000"
-                  className="rounded-xl font-tabular"
+                  className="rounded-lg font-tabular"
                 />
               </div>
             </div>
 
             {/* Stock Search */}
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Add Stocks</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Add Stocks</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={stockQuery}
                   onChange={(e) => setStockQuery(e.target.value)}
                   placeholder="Search stocks to add..."
-                  className="pl-9 rounded-xl"
+                  className="pl-9 rounded-lg"
                 />
               </div>
               {stockResults.length > 0 && (
@@ -538,11 +524,11 @@ export default function ModelsPage() {
                   {stockResults.map((stock) => (
                     <button
                       key={stock.symbol}
-                      className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/40 hover:bg-violet-500/10 border border-border/50 hover:border-violet-500/30 transition-all text-left group"
+                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 transition-colors text-left group"
                       onClick={() => handleAddStock(stock)}
                     >
                       <div className="min-w-0">
-                        <span className="font-semibold text-sm group-hover:text-violet-600 transition-colors">
+                        <span className="font-semibold text-sm group-hover:text-primary transition-colors">
                           {stock.symbol}
                         </span>
                         <p className="text-[11px] text-muted-foreground truncate">
@@ -553,7 +539,7 @@ export default function ModelsPage() {
                         <p className="text-xs font-tabular font-semibold">
                           PKR {formatPKR(stock.current)}
                         </p>
-                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-violet-500 ml-auto" />
+                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary ml-auto" />
                       </div>
                     </button>
                   ))}
@@ -568,14 +554,14 @@ export default function ModelsPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Label className="text-xs font-semibold">Allocations</Label>
+                  <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Allocations</Label>
                   <div className="flex items-center bg-muted rounded-lg p-0.5">
                     <button
                       type="button"
                       onClick={() => setAllocMode("percent")}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
                         allocMode === "percent"
-                          ? "bg-background text-foreground shadow-sm"
+                          ? "bg-background text-foreground"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -601,7 +587,7 @@ export default function ModelsPage() {
                       }}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
                         allocMode === "shares"
-                          ? "bg-background text-foreground shadow-sm"
+                          ? "bg-background text-foreground"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -611,34 +597,35 @@ export default function ModelsPage() {
                   </div>
                 </div>
                 <span
-                  className={`text-xs font-bold font-tabular ${
-                    Math.abs(totalPct - 100) < 1
-                      ? "text-emerald-600"
-                      : "text-amber-500"
-                  }`}
+                  className="text-xs font-semibold font-tabular"
+                  style={{
+                    color:
+                      Math.abs(totalPct - 100) < 1
+                        ? "var(--color-profit)"
+                        : undefined,
+                  }}
                 >
                   {totalPct.toFixed(1)}% / 100%
                 </span>
               </div>
 
               {/* Progress bar */}
-              <div className="h-3 bg-muted rounded-full overflow-hidden flex">
+              <div className="h-2 bg-muted rounded-full overflow-hidden flex">
                 {allocations
                   .filter((a) => a.percentage > 0)
-                  .map((a, i) => {
-                    const color =
-                      a.symbol === "CASH"
-                        ? "bg-slate-400"
-                        : stockColors[i % stockColors.length];
-                    return (
-                      <div
-                        key={a.symbol}
-                        className={`h-full ${color} transition-all`}
-                        style={{ width: `${a.percentage}%` }}
-                        title={`${a.symbol}: ${a.percentage}%`}
-                      />
-                    );
-                  })}
+                  .map((a) => (
+                    <div
+                      key={a.symbol}
+                      className={`h-full transition-all ${
+                        a.symbol === "CASH" ? "bg-muted-foreground/40" : "bg-primary"
+                      }`}
+                      style={{
+                        width: `${a.percentage}%`,
+                        opacity: a.symbol === "CASH" ? 1 : undefined,
+                      }}
+                      title={`${a.symbol}: ${a.percentage}%`}
+                    />
+                  ))}
               </div>
 
               <div className="space-y-2">
@@ -655,7 +642,7 @@ export default function ModelsPage() {
                   return (
                     <div
                       key={alloc.symbol}
-                      className="p-3 rounded-xl bg-muted/30 border border-border/50"
+                      className="p-3 rounded-lg bg-card border border-border"
                     >
                       <div className="flex items-center gap-3">
                         <div className="flex-1 min-w-0">
@@ -719,7 +706,7 @@ export default function ModelsPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                               onClick={() => handleRemoveAlloc(alloc.symbol)}
                             >
                               <X className="h-3.5 w-3.5" />
@@ -814,7 +801,7 @@ export default function ModelsPage() {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                className="rounded-xl"
+                className="rounded-lg"
                 onClick={() => setShowEditor(false)}
               >
                 Cancel
@@ -827,7 +814,7 @@ export default function ModelsPage() {
                   Math.abs(totalPct - 100) > 1 ||
                   cashAmount <= 0
                 }
-                className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? "Creating..." : allocMode === "shares" ? "Create & Buy Shares" : "Create & Buy Stocks"}
               </Button>

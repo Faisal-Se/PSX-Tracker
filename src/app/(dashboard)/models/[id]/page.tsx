@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -815,27 +814,15 @@ export default function ModelDetailPage() {
     }
   };
 
-  const stockColors = [
-    "from-violet-500 to-purple-500",
-    "from-blue-500 to-cyan-500",
-    "from-emerald-500 to-teal-500",
-    "from-amber-500 to-orange-500",
-    "from-rose-500 to-pink-500",
-    "from-indigo-500 to-blue-500",
-    "from-cyan-500 to-sky-500",
-    "from-teal-500 to-emerald-500",
+  // Indigo / neutral chart palette (CSS-var driven, calm Linear tones)
+  const CHART_COLORS = [
+    "var(--chart-1)",
+    "var(--chart-2)",
+    "var(--chart-3)",
+    "var(--chart-4)",
+    "var(--chart-5)",
   ];
-
-  const barColors = [
-    "bg-violet-500",
-    "bg-blue-500",
-    "bg-cyan-500",
-    "bg-emerald-500",
-    "bg-amber-500",
-    "bg-rose-500",
-    "bg-indigo-500",
-    "bg-teal-500",
-  ];
+  const CASH_COLOR = "var(--muted-foreground)";
 
   return (
     <div className="space-y-6">
@@ -850,11 +837,11 @@ export default function ModelDetailPage() {
             Back to Models
           </button>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl icon-bg-violet flex items-center justify-center shrink-0">
-              <PieChart className="h-5 w-5 text-violet-500" />
+            <div className="h-10 w-10 rounded-xl border border-border bg-muted/40 flex items-center justify-center shrink-0">
+              <PieChart className="h-5 w-5 text-muted-foreground" />
             </div>
             <div>
-              <h1 className="text-xl lg:text-2xl font-bold tracking-tight flex items-center gap-2">
+              <h1 className="text-xl lg:text-2xl font-semibold tracking-tight flex items-center gap-2">
                 {model.name}
                 <button
                   onClick={() => {
@@ -862,7 +849,7 @@ export default function ModelDetailPage() {
                     setEditDescription(model.description);
                     setShowEditInfo(true);
                   }}
-                  className="text-muted-foreground hover:text-violet-500 transition-colors"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Pencil className="h-4 w-4" />
                 </button>
@@ -878,7 +865,7 @@ export default function ModelDetailPage() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            className="rounded-xl"
+            className="rounded-lg"
             onClick={() => setShowAddCash(true)}
           >
             <Plus className="h-4 w-4 mr-1.5" />
@@ -886,7 +873,7 @@ export default function ModelDetailPage() {
           </Button>
           <Button
             variant="outline"
-            className="rounded-xl"
+            className="rounded-lg"
             onClick={() => setShowWithdrawCash(true)}
           >
             <Minus className="h-4 w-4 mr-1.5" />
@@ -894,7 +881,7 @@ export default function ModelDetailPage() {
           </Button>
           <Button
             variant="outline"
-            className="rounded-xl"
+            className="rounded-lg"
             onClick={openBulkTrade}
           >
             <ShoppingCart className="h-4 w-4 mr-1.5" />
@@ -902,14 +889,14 @@ export default function ModelDetailPage() {
           </Button>
           <Button
             variant="outline"
-            className="rounded-xl border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700"
+            className="rounded-lg"
             onClick={openSip}
           >
             <Sparkles className="h-4 w-4 mr-1.5" />
             SIP
           </Button>
           <Button
-            className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+            className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
             onClick={openRebalance}
           >
             <RefreshCw className="h-4 w-4 mr-1.5" />
@@ -918,76 +905,80 @@ export default function ModelDetailPage() {
         </div>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 animate-in-up-delay-1">
-        <Card className="stat-card stat-card-violet rounded-2xl">
-          <CardContent className="pt-4 pb-3">
+      {/* Value / P&L Hero + Metric Strip */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-in-up-delay-1">
+        {/* Hero: Total Value + P&L */}
+        <Card className="border border-border bg-card rounded-xl lg:col-span-1">
+          <CardContent className="pt-5 pb-5">
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
               Total Value
             </p>
-            <p className="text-xl font-bold font-tabular mt-1">
+            <p className="text-3xl font-semibold font-tabular mt-1.5">
               PKR {formatPKR(totalValue, { decimals: 0 })}
             </p>
+            <div className="flex items-center gap-2 mt-3">
+              <span
+                className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm font-tabular font-semibold"
+                style={{
+                  color: totalPnl >= 0 ? "var(--color-profit)" : "var(--color-loss)",
+                  backgroundColor: totalPnl >= 0 ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
+                }}
+              >
+                {totalPnl >= 0 ? (
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                ) : (
+                  <ArrowDownRight className="h-3.5 w-3.5" />
+                )}
+                {totalPnl >= 0 ? "+" : ""}
+                {formatPKR(totalPnl, { decimals: 0 })}
+              </span>
+              <span
+                className="text-sm font-tabular font-semibold"
+                style={{ color: totalPnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
+              >
+                {totalPnlPct >= 0 ? "+" : ""}
+                {totalPnlPct.toFixed(2)}%
+              </span>
+            </div>
           </CardContent>
         </Card>
-        <Card className="stat-card stat-card-emerald rounded-2xl">
-          <CardContent className="pt-4 pb-3">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Cash Balance
-            </p>
-            <p className="text-xl font-bold font-tabular mt-1">
-              PKR {formatPKR(model.cashBalance, { decimals: 0 })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="stat-card stat-card-blue rounded-2xl">
-          <CardContent className="pt-4 pb-3">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Invested
-            </p>
-            <p className="text-xl font-bold font-tabular mt-1">
-              PKR {formatPKR(investedValue, { decimals: 0 })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="stat-card stat-card-cyan rounded-2xl">
-          <CardContent className="pt-4 pb-3">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Market Value
-            </p>
-            <p className="text-xl font-bold font-tabular mt-1">
-              PKR {formatPKR(marketValue, { decimals: 0 })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`stat-card rounded-2xl ${totalPnl >= 0 ? "stat-card-emerald" : "stat-card-rose"}`}
-        >
-          <CardContent className="pt-4 pb-3">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              P&L
-            </p>
-            <p
-              className={`text-xl font-bold font-tabular mt-1 ${totalPnl >= 0 ? "text-emerald-600" : "text-red-500"}`}
-            >
-              {totalPnl >= 0 ? "+" : ""}
-              {formatPKR(totalPnl, { decimals: 0 })}
-            </p>
-            <p
-              className={`text-xs font-tabular ${totalPnl >= 0 ? "text-emerald-600" : "text-red-500"}`}
-            >
-              {totalPnlPct >= 0 ? "+" : ""}
-              {totalPnlPct.toFixed(2)}%
-            </p>
+
+        {/* Metric strip */}
+        <Card className="border border-border bg-card rounded-xl lg:col-span-2">
+          <CardContent className="py-5 grid grid-cols-3 divide-x divide-border">
+            <div className="px-2">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                Cash Balance
+              </p>
+              <p className="text-lg font-semibold font-tabular mt-1.5">
+                PKR {formatPKR(model.cashBalance, { decimals: 0 })}
+              </p>
+            </div>
+            <div className="px-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                Invested
+              </p>
+              <p className="text-lg font-semibold font-tabular mt-1.5">
+                PKR {formatPKR(investedValue, { decimals: 0 })}
+              </p>
+            </div>
+            <div className="px-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                Market Value
+              </p>
+              <p className="text-lg font-semibold font-tabular mt-1.5">
+                PKR {formatPKR(marketValue, { decimals: 0 })}
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Holdings Table */}
-      <Card className="rounded-2xl animate-in-up-delay-2">
+      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-2">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-violet-500" />
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+            <TrendingUp className="h-4 w-4" />
             Holdings
           </CardTitle>
         </CardHeader>
@@ -1000,7 +991,7 @@ export default function ModelDetailPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-xs text-muted-foreground border-b">
+                  <tr className="text-[11px] text-muted-foreground uppercase tracking-wide border-b border-border">
                     <th className="text-left py-2 px-2 font-semibold">
                       Stock
                     </th>
@@ -1023,7 +1014,7 @@ export default function ModelDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {stockAllocations.map((alloc, i) => {
+                  {stockAllocations.map((alloc) => {
                     const currentPrice =
                       marketPrices[alloc.symbol] || alloc.avgPrice;
                     const currentValue = alloc.shares * currentPrice;
@@ -1035,13 +1026,11 @@ export default function ModelDetailPage() {
                     return (
                       <tr
                         key={alloc.symbol}
-                        className="border-b border-border/30 hover:bg-muted/30 transition-colors"
+                        className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors"
                       >
                         <td className="py-3 px-2">
                           <div className="flex items-center gap-2.5">
-                            <div
-                              className={`h-8 w-8 rounded-lg bg-gradient-to-br ${stockColors[i % stockColors.length]} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}
-                            >
+                            <div className="h-8 w-8 rounded-lg border border-border bg-muted/40 flex items-center justify-center text-[10px] font-semibold text-muted-foreground shrink-0">
                               {alloc.symbol.slice(0, 3)}
                             </div>
                             <div>
@@ -1049,7 +1038,7 @@ export default function ModelDetailPage() {
                                 {alloc.symbol}
                                 <button
                                   onClick={() => openEditHolding(alloc)}
-                                  className="text-muted-foreground hover:text-violet-500 transition-colors"
+                                  className="text-muted-foreground hover:text-foreground transition-colors"
                                   title="Edit avg price / shares"
                                 >
                                   <Pencil className="h-3 w-3" />
@@ -1062,12 +1051,9 @@ export default function ModelDetailPage() {
                           </div>
                         </td>
                         <td className="text-right py-3 px-2">
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] font-tabular px-1.5 py-0 rounded-md"
-                          >
+                          <span className="inline-block text-[10px] font-tabular font-semibold px-1.5 py-0.5 rounded-md border border-border bg-muted/40 text-muted-foreground">
                             {livePct(alloc.symbol).toFixed(1)}%
-                          </Badge>
+                          </span>
                         </td>
                         <td className="text-right py-3 px-2 font-tabular font-semibold">
                           {alloc.shares}
@@ -1083,7 +1069,8 @@ export default function ModelDetailPage() {
                         </td>
                         <td className="text-right py-3 px-2">
                           <div
-                            className={`font-tabular font-semibold ${pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}
+                            className="font-tabular font-semibold"
+                            style={{ color: pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                           >
                             <span className="flex items-center justify-end gap-0.5">
                               {pnl >= 0 ? (
@@ -1109,40 +1096,40 @@ export default function ModelDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Allocation Pie Visual */}
-      <Card className="rounded-2xl animate-in-up-delay-3">
+      {/* Allocation Breakdown */}
+      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-violet-500" />
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+            <BarChart3 className="h-4 w-4" />
             Allocation Breakdown
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-4 bg-muted rounded-full overflow-hidden flex mb-4">
+          <div className="h-3 bg-muted rounded-full overflow-hidden flex mb-4">
             {allocationBreakdown.map((a, i) => {
               const color =
                 a.symbol === "CASH"
-                  ? "bg-slate-400"
-                  : barColors[i % barColors.length];
+                  ? CASH_COLOR
+                  : CHART_COLORS[i % CHART_COLORS.length];
               return (
                 <div
                   key={a.symbol}
-                  className={`h-full ${color} transition-all`}
-                  style={{ width: `${a.pct}%` }}
+                  className="h-full transition-all"
+                  style={{ width: `${a.pct}%`, backgroundColor: color }}
                   title={`${a.label}: ${a.pct.toFixed(1)}%`}
                 />
               );
             })}
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
             {allocationBreakdown.map((a, i) => {
               const color =
                 a.symbol === "CASH"
-                  ? "bg-slate-400"
-                  : barColors[i % barColors.length];
+                  ? CASH_COLOR
+                  : CHART_COLORS[i % CHART_COLORS.length];
               return (
                 <div key={a.symbol} className="flex items-center gap-1.5">
-                  <div className={`h-2.5 w-2.5 rounded-full ${color}`} />
+                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
                   <span className="text-xs font-medium">{a.label}</span>
                   <span className="text-xs text-muted-foreground font-tabular">
                     {a.pct.toFixed(1)}%
@@ -1181,18 +1168,19 @@ export default function ModelDetailPage() {
             : []),
         ];
 
+        // Indigo-family palette for charts (calm, Linear)
         const PIE_COLORS = [
-          "#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b",
-          "#ef4444", "#6366f1", "#14b8a6", "#f97316", "#ec4899",
+          "var(--chart-1)", "var(--chart-2)", "var(--chart-3)",
+          "var(--chart-4)", "var(--chart-5)",
         ];
 
         return (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in-up-delay-3">
             {/* P&L by Stock */}
-            <Card className="rounded-2xl">
+            <Card className="border border-border bg-card rounded-xl">
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-violet-500" />
+                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+                  <Activity className="h-4 w-4" />
                   P&L by Stock
                 </CardTitle>
               </CardHeader>
@@ -1229,7 +1217,7 @@ export default function ModelDetailPage() {
                           return (
                             <div className="bg-popover border border-border rounded-xl px-3 py-2 shadow-lg text-sm">
                               <p className="font-semibold">{d.symbol}</p>
-                              <p className={d.pnl >= 0 ? "text-emerald-600" : "text-red-500"}>
+                              <p style={{ color: d.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}>
                                 P&L: {d.pnl >= 0 ? "+" : ""}PKR {formatPKR(d.pnl, { decimals: 0 })}
                               </p>
                               <p className="text-muted-foreground text-xs">
@@ -1243,7 +1231,7 @@ export default function ModelDetailPage() {
                         {stockPnlData.map((entry, i) => (
                           <Cell
                             key={i}
-                            fill={entry.pnl >= 0 ? "#10b981" : "#ef4444"}
+                            fill={entry.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)"}
                           />
                         ))}
                       </Bar>
@@ -1254,10 +1242,10 @@ export default function ModelDetailPage() {
             </Card>
 
             {/* Portfolio Composition Pie */}
-            <Card className="rounded-2xl">
+            <Card className="border border-border bg-card rounded-xl">
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <PieChart className="h-4 w-4 text-violet-500" />
+                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+                  <PieChart className="h-4 w-4" />
                   Portfolio Composition
                 </CardTitle>
               </CardHeader>
@@ -1279,7 +1267,7 @@ export default function ModelDetailPage() {
                             key={i}
                             fill={
                               pieData[i].name === "Cash"
-                                ? "#94a3b8"
+                                ? CASH_COLOR
                                 : PIE_COLORS[i % PIE_COLORS.length]
                             }
                           />
@@ -1314,7 +1302,7 @@ export default function ModelDetailPage() {
                         style={{
                           backgroundColor:
                             d.name === "Cash"
-                              ? "#94a3b8"
+                              ? CASH_COLOR
                               : PIE_COLORS[i % PIE_COLORS.length],
                         }}
                       />
@@ -1332,10 +1320,10 @@ export default function ModelDetailPage() {
             </Card>
 
             {/* Stock Returns */}
-            <Card className="rounded-2xl lg:col-span-2">
+            <Card className="border border-border bg-card rounded-xl lg:col-span-2">
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-violet-500" />
+                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+                  <TrendingUp className="h-4 w-4" />
                   Stock Returns
                 </CardTitle>
               </CardHeader>
@@ -1346,7 +1334,7 @@ export default function ModelDetailPage() {
                     .map((stock) => (
                       <div
                         key={stock.symbol}
-                        className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30"
+                        className="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-card"
                       >
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold">{stock.symbol}</p>
@@ -1357,27 +1345,24 @@ export default function ModelDetailPage() {
                         </div>
                         <div className="text-right">
                           <p
-                            className={`text-sm font-bold font-tabular ${
-                              stock.pnl >= 0 ? "text-emerald-600" : "text-red-500"
-                            }`}
+                            className="text-sm font-semibold font-tabular"
+                            style={{ color: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                           >
                             {stock.pnl >= 0 ? "+" : ""}PKR {formatPKR(stock.pnl, { decimals: 0 })}
                           </p>
                           <p
-                            className={`text-xs font-tabular ${
-                              stock.pnl >= 0 ? "text-emerald-600" : "text-red-500"
-                            }`}
+                            className="text-xs font-tabular"
+                            style={{ color: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                           >
                             {stock.pnlPct >= 0 ? "+" : ""}{stock.pnlPct.toFixed(2)}%
                           </p>
                         </div>
                         <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${
-                              stock.pnl >= 0 ? "bg-emerald-500" : "bg-red-500"
-                            }`}
+                            className="h-full rounded-full"
                             style={{
                               width: `${Math.min(100, Math.abs(stock.pnlPct))}%`,
+                              backgroundColor: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)",
                             }}
                           />
                         </div>
@@ -1391,10 +1376,10 @@ export default function ModelDetailPage() {
       })()}
 
       {/* Transaction History */}
-      <Card className="rounded-2xl animate-in-up-delay-4">
+      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-4">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Wallet className="h-4 w-4 text-violet-500" />
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+            <Wallet className="h-4 w-4" />
             Transaction History
           </CardTitle>
         </CardHeader>
@@ -1404,28 +1389,21 @@ export default function ModelDetailPage() {
               No transactions yet.
             </p>
           ) : (
-            <div className="space-y-1.5">
+            <div className="divide-y divide-border">
               {model.transactions.map((tx) => {
                 const isBuy = tx.type === "BUY";
                 const isSell = tx.type === "SELL";
                 const isCash =
                   tx.type === "CASH_IN" || tx.type === "CASH_OUT";
+                const isOut = isBuy || tx.type === "CASH_OUT";
 
                 return (
                   <div
                     key={tx.id}
-                    className="flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-muted/30 transition-colors"
+                    className="flex items-center justify-between py-2.5 px-2 hover:bg-muted/40 transition-colors first:rounded-t-lg last:rounded-b-lg"
                   >
                     <div className="flex items-center gap-3">
-                      <div
-                        className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                          isBuy
-                            ? "bg-emerald-500/10 text-emerald-600"
-                            : isSell
-                              ? "bg-red-500/10 text-red-500"
-                              : "bg-blue-500/10 text-blue-500"
-                        }`}
-                      >
+                      <div className="h-8 w-8 rounded-lg border border-border bg-muted/40 flex items-center justify-center text-muted-foreground">
                         {isBuy ? (
                           <ArrowUpRight className="h-4 w-4" />
                         ) : isSell ? (
@@ -1452,13 +1430,10 @@ export default function ModelDetailPage() {
                       </div>
                     </div>
                     <span
-                      className={`font-tabular font-semibold text-sm ${
-                        isBuy || tx.type === "CASH_OUT"
-                          ? "text-red-500"
-                          : "text-emerald-600"
-                      }`}
+                      className="font-tabular font-semibold text-sm"
+                      style={{ color: isOut ? "var(--color-loss)" : "var(--color-profit)" }}
                     >
-                      {isBuy || tx.type === "CASH_OUT" ? "-" : "+"}PKR{" "}
+                      {isOut ? "-" : "+"}PKR{" "}
                       {formatPKR(tx.total, { decimals: 0 })}
                     </span>
                   </div>
@@ -1473,23 +1448,23 @@ export default function ModelDetailPage() {
       {/* Add Cash Dialog                    */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showAddCash} onOpenChange={setShowAddCash}>
-        <DialogContent className="sm:max-w-sm rounded-2xl">
+        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-emerald-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
               Add Cash
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Amount (PKR)</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Amount (PKR)</Label>
               <Input
                 type="number"
                 min="0"
                 value={addCashAmount}
                 onChange={(e) => setAddCashAmount(e.target.value)}
                 placeholder="e.g. 50000"
-                className="rounded-xl font-tabular text-lg"
+                className="rounded-lg font-tabular text-lg"
               />
               <p className="text-[11px] text-muted-foreground">
                 Current balance:{" "}
@@ -1505,7 +1480,7 @@ export default function ModelDetailPage() {
                 !addCashAmount ||
                 parseFloat(addCashAmount) <= 0
               }
-              className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
             >
               {addCashLoading ? "Adding..." : "Add Cash"}
             </Button>
@@ -1517,16 +1492,16 @@ export default function ModelDetailPage() {
       {/* Withdraw Cash Dialog               */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showWithdrawCash} onOpenChange={setShowWithdrawCash}>
-        <DialogContent className="sm:max-w-sm rounded-2xl">
+        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Minus className="h-5 w-5 text-red-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <Minus className="h-5 w-5 text-muted-foreground" />
               Withdraw Cash
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Amount (PKR)</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Amount (PKR)</Label>
               <Input
                 type="number"
                 min="0"
@@ -1534,7 +1509,7 @@ export default function ModelDetailPage() {
                 value={withdrawCashAmount}
                 onChange={(e) => setWithdrawCashAmount(e.target.value)}
                 placeholder="e.g. 50000"
-                className="rounded-xl font-tabular text-lg"
+                className="rounded-lg font-tabular text-lg"
               />
               <p className="text-[11px] text-muted-foreground">
                 Available:{" "}
@@ -1543,7 +1518,7 @@ export default function ModelDetailPage() {
                 </span>
               </p>
               {parseFloat(withdrawCashAmount) > model.cashBalance && (
-                <p className="text-[11px] text-red-500 font-semibold">
+                <p className="text-[11px] font-semibold" style={{ color: "var(--color-loss)" }}>
                   Amount exceeds available cash balance
                 </p>
               )}
@@ -1556,7 +1531,7 @@ export default function ModelDetailPage() {
                 parseFloat(withdrawCashAmount) <= 0 ||
                 parseFloat(withdrawCashAmount) > model.cashBalance
               }
-              className="w-full rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold"
+              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
             >
               {withdrawCashLoading ? "Withdrawing..." : "Withdraw Cash"}
             </Button>
@@ -1568,31 +1543,31 @@ export default function ModelDetailPage() {
       {/* Edit Info Dialog                   */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showEditInfo} onOpenChange={setShowEditInfo}>
-        <DialogContent className="sm:max-w-sm rounded-2xl">
+        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
           <DialogHeader>
-            <DialogTitle>Edit Model Info</DialogTitle>
+            <DialogTitle className="text-base font-semibold">Edit Model Info</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Name</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Name</Label>
               <Input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="rounded-xl"
+                className="rounded-lg"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Description</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Description</Label>
               <Input
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                className="rounded-xl"
+                className="rounded-lg"
               />
             </div>
             <Button
               onClick={handleEditInfo}
               disabled={!editName.trim()}
-              className="w-full rounded-xl"
+              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
             >
               Save
             </Button>
@@ -1604,10 +1579,10 @@ export default function ModelDetailPage() {
       {/* Edit Holding Dialog                */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showEditHolding} onOpenChange={setShowEditHolding}>
-        <DialogContent className="sm:max-w-sm rounded-2xl">
+        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-5 w-5 text-violet-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <Pencil className="h-5 w-5 text-muted-foreground" />
               Edit {editHoldingSymbol}
             </DialogTitle>
           </DialogHeader>
@@ -1620,36 +1595,36 @@ export default function ModelDetailPage() {
               . Cash and transaction history are not affected.
             </p>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Average Price (PKR)</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Average Price (PKR)</Label>
               <Input
                 type="number"
                 min="0"
                 step="0.01"
                 value={editHoldingAvg}
                 onChange={(e) => setEditHoldingAvg(e.target.value)}
-                className="rounded-xl font-tabular text-lg"
+                className="rounded-lg font-tabular text-lg"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Shares</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Shares</Label>
               <Input
                 type="number"
                 min="0"
                 step="1"
                 value={editHoldingShares}
                 onChange={(e) => setEditHoldingShares(e.target.value)}
-                className="rounded-xl font-tabular text-lg"
+                className="rounded-lg font-tabular text-lg"
               />
             </div>
             {editHoldingError && (
-              <p className="text-[11px] text-red-500 font-semibold">
+              <p className="text-[11px] font-semibold" style={{ color: "var(--color-loss)" }}>
                 {editHoldingError}
               </p>
             )}
             <Button
               onClick={handleEditHoldingSubmit}
               disabled={editHoldingLoading}
-              className="w-full rounded-xl bg-violet-500 hover:bg-violet-600 text-white font-semibold"
+              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
             >
               {editHoldingLoading ? "Saving..." : "Save Changes"}
             </Button>
@@ -1661,10 +1636,10 @@ export default function ModelDetailPage() {
       {/* Rebalance Dialog                   */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showRebalance} onOpenChange={setShowRebalance}>
-        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RefreshCw className="h-5 w-5 text-violet-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <RefreshCw className="h-5 w-5 text-muted-foreground" />
               Rebalance Portfolio
             </DialogTitle>
           </DialogHeader>
@@ -1672,14 +1647,14 @@ export default function ModelDetailPage() {
           <div className="space-y-5 pt-2">
             {/* Add stocks search */}
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Add New Stock</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Add New Stock</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={stockQuery}
                   onChange={(e) => setStockQuery(e.target.value)}
                   placeholder="Search stocks..."
-                  className="pl-9 rounded-xl"
+                  className="pl-9 rounded-lg"
                 />
               </div>
               {stockResults.length > 0 && (
@@ -1687,11 +1662,11 @@ export default function ModelDetailPage() {
                   {stockResults.map((stock) => (
                     <button
                       key={stock.symbol}
-                      className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/40 hover:bg-violet-500/10 border border-border/50 hover:border-violet-500/30 transition-all text-left group"
+                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 transition-colors text-left group"
                       onClick={() => handleRebalanceAddStock(stock)}
                     >
                       <div className="min-w-0">
-                        <span className="font-semibold text-sm group-hover:text-violet-600">
+                        <span className="font-semibold text-sm group-hover:text-primary">
                           {stock.symbol}
                         </span>
                         <span className="text-[11px] text-muted-foreground ml-2">
@@ -1702,7 +1677,7 @@ export default function ModelDetailPage() {
                         <span className="text-xs font-tabular">
                           PKR {formatPKR(stock.current)}
                         </span>
-                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-violet-500" />
+                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
                       </div>
                     </button>
                   ))}
@@ -1717,14 +1692,14 @@ export default function ModelDetailPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Label className="text-xs font-semibold">Allocations</Label>
+                  <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Allocations</Label>
                   <div className="flex items-center bg-muted rounded-lg p-0.5">
                     <button
                       type="button"
                       onClick={() => setRebalanceMode("percent")}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
                         rebalanceMode === "percent"
-                          ? "bg-background text-foreground shadow-sm"
+                          ? "bg-background text-foreground"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -1749,7 +1724,7 @@ export default function ModelDetailPage() {
                       }}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
                         rebalanceMode === "shares"
-                          ? "bg-background text-foreground shadow-sm"
+                          ? "bg-background text-foreground"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -1759,30 +1734,32 @@ export default function ModelDetailPage() {
                   </div>
                 </div>
                 <span
-                  className={`text-xs font-bold font-tabular ${
-                    Math.abs(rebalanceTotalPct - 100) < 1
-                      ? "text-emerald-600"
-                      : "text-amber-500"
-                  }`}
+                  className="text-xs font-semibold font-tabular"
+                  style={{
+                    color:
+                      Math.abs(rebalanceTotalPct - 100) < 1
+                        ? "var(--color-profit)"
+                        : undefined,
+                  }}
                 >
                   {rebalanceTotalPct.toFixed(1)}% / 100%
                 </span>
               </div>
 
               {/* Progress bar */}
-              <div className="h-3 bg-muted rounded-full overflow-hidden flex">
+              <div className="h-2 bg-muted rounded-full overflow-hidden flex">
                 {rebalanceAllocations
                   .filter((a) => a.percentage > 0)
                   .map((a, i) => {
                     const color =
                       a.symbol === "CASH"
-                        ? "bg-slate-400"
-                        : barColors[i % barColors.length];
+                        ? CASH_COLOR
+                        : CHART_COLORS[i % CHART_COLORS.length];
                     return (
                       <div
                         key={a.symbol}
-                        className={`h-full ${color} transition-all`}
-                        style={{ width: `${a.percentage}%` }}
+                        className="h-full transition-all"
+                        style={{ width: `${a.percentage}%`, backgroundColor: color }}
                       />
                     );
                   })}
@@ -1815,7 +1792,7 @@ export default function ModelDetailPage() {
                   return (
                     <div
                       key={alloc.symbol}
-                      className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 border border-border/50"
+                      className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate">
@@ -1836,7 +1813,8 @@ export default function ModelDetailPage() {
                             </span>
                             {diff !== 0 && (
                               <span
-                                className={`ml-1.5 font-semibold ${diff > 0 ? "text-emerald-600" : "text-red-500"}`}
+                                className="ml-1.5 font-semibold"
+                                style={{ color: diff > 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                               >
                                 ({diff > 0 ? "+" : ""}
                                 {diff} = {diff > 0 ? "BUY" : "SELL"})
@@ -1894,7 +1872,7 @@ export default function ModelDetailPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                             onClick={() =>
                               handleRebalanceRemove(alloc.symbol)
                             }
@@ -1910,7 +1888,10 @@ export default function ModelDetailPage() {
             </div>
 
             {rebalanceError && (
-              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+              <div
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+              >
                 {rebalanceError}
               </div>
             )}
@@ -1918,7 +1899,7 @@ export default function ModelDetailPage() {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                className="rounded-xl"
+                className="rounded-lg"
                 onClick={() => setShowRebalance(false)}
               >
                 Cancel
@@ -1929,7 +1910,7 @@ export default function ModelDetailPage() {
                   rebalanceLoading ||
                   Math.abs(rebalanceTotalPct - 100) > 1
                 }
-                className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {rebalanceLoading
                   ? "Rebalancing..."
@@ -1944,10 +1925,10 @@ export default function ModelDetailPage() {
       {/* Rebalance Confirm Prices Dialog    */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showRebalanceConfirm} onOpenChange={setShowRebalanceConfirm}>
-        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-violet-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
               Confirm Trade Prices
             </DialogTitle>
           </DialogHeader>
@@ -1978,26 +1959,21 @@ export default function ModelDetailPage() {
               return (
                 <div
                   key={trade.symbol}
-                  className={`p-3 rounded-xl border ${
-                    trade.type === "SELL"
-                      ? "bg-red-500/5 border-red-500/20"
-                      : "bg-emerald-500/5 border-emerald-500/20"
-                  }`}
+                  className="p-3 rounded-lg border border-border bg-card"
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] px-1.5 py-0 ${
-                          trade.type === "SELL"
-                            ? "border-red-500/40 text-red-600"
-                            : "border-emerald-500/40 text-emerald-600"
-                        }`}
+                      <span
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                        style={{
+                          color: trade.type === "SELL" ? "var(--color-loss)" : "var(--color-profit)",
+                          backgroundColor: trade.type === "SELL" ? "var(--color-loss-bg)" : "var(--color-profit-bg)",
+                        }}
                       >
                         {trade.type}
-                      </Badge>
-                      <span className="text-sm font-bold">{trade.symbol}</span>
+                      </span>
+                      <span className="text-sm font-semibold">{trade.symbol}</span>
                     </div>
                     <span className="text-xs text-muted-foreground">
                       {trade.shares} shares
@@ -2049,11 +2025,14 @@ export default function ModelDetailPage() {
                       <span className="font-tabular">PKR {formatPKR(totalCost, { decimals: 0 })}</span>
                     </div>
                     {trade.type === "SELL" && trade.avgPrice > 0 && (
-                      <div className="flex justify-between font-bold pt-1 border-t border-border/50">
-                        <span className={pnl >= 0 ? "text-emerald-600" : "text-red-500"}>
+                      <div className="flex justify-between font-semibold pt-1 border-t border-border">
+                        <span style={{ color: pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}>
                           {pnl >= 0 ? "Profit" : "Loss"}
                         </span>
-                        <span className={`font-tabular ${pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                        <span
+                          className="font-tabular"
+                          style={{ color: pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
+                        >
                           {pnl >= 0 ? "+" : ""}PKR {formatPKR(pnl, { decimals: 0 })}
                           <span className="text-[10px] ml-1 opacity-70">
                             ({((tradePrice - trade.avgPrice) / trade.avgPrice * 100).toFixed(1)}%)
@@ -2062,7 +2041,7 @@ export default function ModelDetailPage() {
                       </div>
                     )}
                     {trade.type === "BUY" && (
-                      <div className="flex justify-between pt-1 border-t border-border/50">
+                      <div className="flex justify-between pt-1 border-t border-border">
                         <span className="text-muted-foreground">New Avg Price</span>
                         <span className="font-tabular font-semibold">
                           PKR {formatPKR(newAvg)}
@@ -2075,7 +2054,10 @@ export default function ModelDetailPage() {
             })}
 
             {rebalanceError && (
-              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+              <div
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+              >
                 {rebalanceError}
               </div>
             )}
@@ -2083,7 +2065,7 @@ export default function ModelDetailPage() {
             <div className="flex gap-3 pt-2">
               <Button
                 variant="outline"
-                className="rounded-xl"
+                className="rounded-lg"
                 onClick={() => setShowRebalanceConfirm(false)}
               >
                 Back
@@ -2091,7 +2073,7 @@ export default function ModelDetailPage() {
               <Button
                 onClick={() => handleRebalanceSubmit()}
                 disabled={rebalanceLoading}
-                className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {rebalanceLoading
                   ? "Executing..."
@@ -2106,10 +2088,10 @@ export default function ModelDetailPage() {
       {/* SIP Dialog                          */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showSip} onOpenChange={setShowSip}>
-        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-emerald-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <Sparkles className="h-5 w-5 text-muted-foreground" />
               SIP — Smart Investment Plan
             </DialogTitle>
           </DialogHeader>
@@ -2126,28 +2108,28 @@ export default function ModelDetailPage() {
 
             {/* Amount input */}
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Investment Amount (PKR)</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Investment Amount (PKR)</Label>
               <Input
                 type="number"
                 min="0"
                 value={sipAmount}
                 onChange={(e) => setSipAmount(e.target.value)}
                 placeholder="e.g. 30000"
-                className="rounded-xl font-tabular"
+                className="rounded-lg font-tabular"
                 autoFocus
               />
             </div>
 
             {/* Basis toggle */}
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Distribute by</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Distribute by</Label>
               <div className="flex items-center bg-muted rounded-lg p-0.5 w-fit">
                 <button
                   type="button"
                   onClick={() => setSipBasis("current")}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     sipBasis === "current"
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-background text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -2158,7 +2140,7 @@ export default function ModelDetailPage() {
                   onClick={() => setSipBasis("target")}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     sipBasis === "target"
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-background text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -2177,7 +2159,7 @@ export default function ModelDetailPage() {
               const leftover = amount - totalCost;
               return (
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold">Plan</Label>
+                  <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Plan</Label>
                   <div className="space-y-1.5">
                     {sipPlan.map((item) => {
                       const price = parseFloat(item.price) || item.marketPrice;
@@ -2185,7 +2167,7 @@ export default function ModelDetailPage() {
                       return (
                         <div
                           key={item.symbol}
-                          className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 border border-border/50"
+                          className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border"
                         >
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold truncate">
@@ -2196,7 +2178,7 @@ export default function ModelDetailPage() {
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm font-bold font-tabular text-emerald-600">
+                            <p className="text-sm font-semibold font-tabular">
                               {item.shares} shares
                             </p>
                             <p className="text-[11px] text-muted-foreground font-tabular">
@@ -2208,13 +2190,13 @@ export default function ModelDetailPage() {
                       );
                     })}
                   </div>
-                  <div className="flex items-center justify-between pt-2 text-xs border-t border-border/50">
+                  <div className="flex items-center justify-between pt-2 text-xs border-t border-border">
                     <span className="text-muted-foreground">
                       Invested: PKR {formatPKR(totalCost, { decimals: 0 })}
                     </span>
                     <span className="text-muted-foreground">
                       Leftover cash:{" "}
-                      <span className="font-bold text-emerald-600 font-tabular">
+                      <span className="font-semibold text-foreground font-tabular">
                         PKR {formatPKR(leftover, { decimals: 0 })}
                       </span>
                     </span>
@@ -2224,13 +2206,16 @@ export default function ModelDetailPage() {
             })()}
 
             {sipAmount && parseFloat(sipAmount) > 0 && sipPlan.length === 0 && (
-              <div className="text-sm text-amber-600 bg-amber-500/10 px-3 py-2 rounded-lg">
+              <div className="text-sm text-muted-foreground border border-border bg-muted/40 px-3 py-2 rounded-lg">
                 Amount is too small to buy even 1 share of any stock, or no stocks in portfolio.
               </div>
             )}
 
             {sipError && (
-              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+              <div
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+              >
                 {sipError}
               </div>
             )}
@@ -2238,7 +2223,7 @@ export default function ModelDetailPage() {
             <div className="flex gap-3 pt-1">
               <Button
                 variant="outline"
-                className="rounded-xl"
+                className="rounded-lg"
                 onClick={() => setShowSip(false)}
               >
                 Cancel
@@ -2246,7 +2231,7 @@ export default function ModelDetailPage() {
               <Button
                 onClick={handleSipNext}
                 disabled={!sipAmount || parseFloat(sipAmount) <= 0 || sipPlan.length === 0}
-                className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white"
+                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 Review & Confirm
               </Button>
@@ -2259,10 +2244,10 @@ export default function ModelDetailPage() {
       {/* SIP Confirm Prices Dialog           */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showSipConfirm} onOpenChange={setShowSipConfirm}>
-        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-emerald-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
               Confirm Buy Prices
             </DialogTitle>
           </DialogHeader>
@@ -2281,7 +2266,7 @@ export default function ModelDetailPage() {
                 return (
                   <div
                     key={item.symbol}
-                    className="p-3 rounded-xl bg-muted/30 border border-border/50"
+                    className="p-3 rounded-lg bg-card border border-border"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div>
@@ -2290,9 +2275,12 @@ export default function ModelDetailPage() {
                           {item.companyName}
                         </p>
                       </div>
-                      <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                      <span
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                        style={{ color: "var(--color-profit)", backgroundColor: "var(--color-profit-bg)" }}
+                      >
                         BUY {item.shares}
-                      </Badge>
+                      </span>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-1.5">
@@ -2331,7 +2319,10 @@ export default function ModelDetailPage() {
             </div>
 
             {sipError && (
-              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+              <div
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+              >
                 {sipError}
               </div>
             )}
@@ -2339,7 +2330,7 @@ export default function ModelDetailPage() {
             <div className="flex gap-3 pt-1">
               <Button
                 variant="outline"
-                className="rounded-xl"
+                className="rounded-lg"
                 onClick={() => setShowSipConfirm(false)}
               >
                 Back
@@ -2347,7 +2338,7 @@ export default function ModelDetailPage() {
               <Button
                 onClick={handleSipSubmit}
                 disabled={sipLoading}
-                className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white"
+                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {sipLoading ? "Executing..." : "Execute SIP"}
               </Button>
@@ -2360,10 +2351,10 @@ export default function ModelDetailPage() {
       {/* Bulk Trade Dialog                  */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showBulkTrade} onOpenChange={setShowBulkTrade}>
-        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-emerald-500" />
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
               Bulk Trade
             </DialogTitle>
           </DialogHeader>
@@ -2372,7 +2363,7 @@ export default function ModelDetailPage() {
             {/* Quick add from existing holdings */}
             {stockAllocations.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs font-semibold">Quick Sell Holdings</Label>
+                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Quick Sell Holdings</Label>
                 <div className="flex flex-wrap gap-1.5">
                   {stockAllocations
                     .filter((a) => !bulkTrades.some((t) => t.symbol === a.symbol))
@@ -2380,7 +2371,7 @@ export default function ModelDetailPage() {
                       <button
                         key={a.symbol}
                         onClick={() => handleBulkTradeAddHolding(a)}
-                        className="px-2.5 py-1 rounded-lg bg-muted/40 hover:bg-red-500/10 border border-border/50 hover:border-red-500/30 text-xs font-semibold transition-all"
+                        className="px-2.5 py-1 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 text-xs font-semibold transition-colors"
                       >
                         {a.symbol} ({a.shares})
                       </button>
@@ -2391,14 +2382,14 @@ export default function ModelDetailPage() {
 
             {/* Search to add buy */}
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Add Stock to Buy</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Add Stock to Buy</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={stockQuery}
                   onChange={(e) => setStockQuery(e.target.value)}
                   placeholder="Search stocks..."
-                  className="pl-9 rounded-xl"
+                  className="pl-9 rounded-lg"
                 />
               </div>
               {stockResults.length > 0 && (
@@ -2406,11 +2397,11 @@ export default function ModelDetailPage() {
                   {stockResults.map((stock) => (
                     <button
                       key={stock.symbol}
-                      className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/40 hover:bg-emerald-500/10 border border-border/50 hover:border-emerald-500/30 transition-all text-left group"
+                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 transition-colors text-left group"
                       onClick={() => handleBulkTradeAddStock(stock)}
                     >
                       <div>
-                        <span className="font-semibold text-sm group-hover:text-emerald-600">
+                        <span className="font-semibold text-sm group-hover:text-primary">
                           {stock.symbol}
                         </span>
                         <span className="text-[11px] text-muted-foreground ml-2">
@@ -2421,7 +2412,7 @@ export default function ModelDetailPage() {
                         <span className="text-xs font-tabular">
                           PKR {formatPKR(stock.current)}
                         </span>
-                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-emerald-500" />
+                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
                       </div>
                     </button>
                   ))}
@@ -2432,7 +2423,7 @@ export default function ModelDetailPage() {
             {/* Trade list */}
             {bulkTrades.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs font-semibold">
+                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Trades ({bulkTrades.length})
                 </Label>
                 {bulkTrades.map((trade) => {
@@ -2443,7 +2434,7 @@ export default function ModelDetailPage() {
                   return (
                     <div
                       key={trade.symbol}
-                      className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 border border-border/50"
+                      className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold">{trade.symbol}</p>
@@ -2496,7 +2487,7 @@ export default function ModelDetailPage() {
                             prev.filter((t) => t.symbol !== trade.symbol)
                           )
                         }
-                        className="p-1 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
+                        className="p-1 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -2515,7 +2506,10 @@ export default function ModelDetailPage() {
             </p>
 
             {bulkTradeError && (
-              <div className="text-sm text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">
+              <div
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+              >
                 {bulkTradeError}
               </div>
             )}
@@ -2523,7 +2517,7 @@ export default function ModelDetailPage() {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                className="rounded-xl"
+                className="rounded-lg"
                 onClick={() => setShowBulkTrade(false)}
               >
                 Cancel
@@ -2534,7 +2528,7 @@ export default function ModelDetailPage() {
                   bulkTradeLoading ||
                   bulkTrades.filter((t) => parseInt(t.quantity) > 0).length === 0
                 }
-                className="flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
               >
                 {bulkTradeLoading
                   ? "Executing..."

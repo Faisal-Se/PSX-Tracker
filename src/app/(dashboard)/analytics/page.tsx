@@ -51,18 +51,22 @@ interface MarketStock {
   current: number;
 }
 
+// Indigo-family chart palette (Linear aesthetic)
 const COLORS = [
-  "#10b981",
-  "#3b82f6",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#06b6d4",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#6366f1",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
+
+const chartTooltipStyle = {
+  backgroundColor: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: "0.5rem",
+  fontSize: "12px",
+  color: "var(--popover-foreground)",
+} as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const tooltipFormatPKR = (value: any) => [`PKR ${Number(value).toLocaleString()}`];
@@ -159,15 +163,28 @@ export default function AnalyticsPage() {
 
   if (initialLoading) return <PageSkeleton />;
 
+  const summaryStats = [
+    {
+      label: "Total Portfolio",
+      icon: Wallet,
+      value: `PKR ${formatPKR(totalCurrent + totalCash, { decimals: 0 })}`,
+    },
+    {
+      label: "Invested",
+      icon: Banknote,
+      value: `PKR ${formatPKR(totalInvested, { decimals: 0 })}`,
+    },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 animate-in-up">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2.5">
-            <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-violet-500/10">
-              <BarChart3 className="h-5 w-5 text-violet-500" />
-            </div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Portfolio
+          </p>
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1">
             Analytics
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -178,7 +195,7 @@ export default function AnalyticsPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs gap-1.5 rounded-xl"
+            className="h-8 text-xs gap-1.5 rounded-lg"
             onClick={() => window.open("/api/export?type=portfolios&format=csv")}
           >
             <Download className="h-3 w-3" />
@@ -187,7 +204,7 @@ export default function AnalyticsPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs gap-1.5 rounded-xl"
+            className="h-8 text-xs gap-1.5 rounded-lg"
             onClick={() => window.open("/api/export?type=model-portfolios&format=csv")}
           >
             <Download className="h-3 w-3" />
@@ -196,7 +213,7 @@ export default function AnalyticsPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs gap-1.5 rounded-xl"
+            className="h-8 text-xs gap-1.5 rounded-lg"
             onClick={() => window.open("/api/export?type=transactions&format=csv")}
           >
             <Download className="h-3 w-3" />
@@ -206,9 +223,9 @@ export default function AnalyticsPage() {
       </div>
 
       {!hasData ? (
-        <Card className="rounded-xl shadow-sm border-border/50">
+        <Card className="border border-border bg-card rounded-xl">
           <CardContent className="py-16 text-center">
-            <div className="flex items-center justify-center h-14 w-14 rounded-2xl bg-muted/50 mb-4 mx-auto">
+            <div className="flex items-center justify-center h-14 w-14 rounded-xl border border-border mb-4 mx-auto">
               <BarChart3 className="h-7 w-7 text-muted-foreground/50" />
             </div>
             <p className="text-sm font-medium text-muted-foreground">
@@ -221,103 +238,67 @@ export default function AnalyticsPage() {
         </Card>
       ) : (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="stat-card rounded-xl shadow-sm border-border/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-blue-500/10">
-                    <Wallet className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Total Portfolio
-                    </p>
-                    <p className="text-xl font-bold font-tabular mt-0.5">
-                      PKR {formatPKR(totalCurrent + totalCash, { decimals: 0 })}
+          {/* Summary Hero Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border border-border bg-border animate-in-up-delay-1">
+            {summaryStats.map((s) => {
+              const Icon = s.icon;
+              return (
+                <div key={s.label} className="bg-card p-5">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Icon className="h-4 w-4" />
+                    <p className="text-[11px] font-semibold uppercase tracking-wide">
+                      {s.label}
                     </p>
                   </div>
+                  <p className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none">
+                    {s.value}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
+              );
+            })}
 
-            <Card className="stat-card rounded-xl shadow-sm border-border/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-amber-500/10">
-                    <Banknote className="h-5 w-5 text-amber-500" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Invested
-                    </p>
-                    <p className="text-xl font-bold font-tabular mt-0.5">
-                      PKR {formatPKR(totalInvested, { decimals: 0 })}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Total P&L */}
+            <div className="bg-card p-5">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                {totalPnL >= 0 ? (
+                  <TrendingUp className="h-4 w-4" />
+                ) : (
+                  <TrendingDown className="h-4 w-4" />
+                )}
+                <p className="text-[11px] font-semibold uppercase tracking-wide">
+                  Total P&amp;L
+                </p>
+              </div>
+              <p
+                className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none"
+                style={{ color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
+              >
+                {totalPnL >= 0 ? "+" : ""}PKR{" "}
+                {formatPKR(totalPnL, { decimals: 0 })}
+              </p>
+            </div>
 
-            <Card className="stat-card rounded-xl shadow-sm border-border/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex items-center justify-center h-10 w-10 rounded-xl ${
-                      totalPnL >= 0 ? "bg-emerald-500/10" : "bg-red-500/10"
-                    }`}
-                  >
-                    {totalPnL >= 0 ? (
-                      <TrendingUp className="h-5 w-5 text-emerald-500" />
-                    ) : (
-                      <TrendingDown className="h-5 w-5 text-red-500" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Total P&L
-                    </p>
-                    <p
-                      className={`text-xl font-bold font-tabular mt-0.5 ${
-                        totalPnL >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-red-600 dark:text-red-400"
-                      }`}
-                    >
-                      {totalPnL >= 0 ? "+" : ""}PKR{" "}
-                      {formatPKR(totalPnL, { decimals: 0 })}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="stat-card rounded-xl shadow-sm border-border/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-violet-500/10">
-                    <Layers className="h-5 w-5 text-violet-500" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Holdings
-                    </p>
-                    <p className="text-xl font-bold font-tabular mt-0.5">
-                      {allHoldings.length}{" "}
-                      <span className="text-sm font-normal text-muted-foreground">
-                        stocks
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Holdings count */}
+            <div className="bg-card p-5">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Layers className="h-4 w-4" />
+                <p className="text-[11px] font-semibold uppercase tracking-wide">
+                  Holdings
+                </p>
+              </div>
+              <p className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none">
+                {allHoldings.length}{" "}
+                <span className="text-sm font-normal text-muted-foreground">
+                  stocks
+                </span>
+              </p>
+            </div>
           </div>
 
           {/* Charts Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in-up-delay-2">
             {/* Asset Allocation */}
-            <Card className="rounded-xl shadow-sm border-border/50">
+            <Card className="border border-border bg-card rounded-xl">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                   <PieChart className="h-4 w-4" />
@@ -346,12 +327,7 @@ export default function AnalyticsPage() {
                     </Pie>
                     <Tooltip
                       formatter={tooltipFormatPKR}
-                      contentStyle={{
-                        backgroundColor: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                      }}
+                      contentStyle={chartTooltipStyle}
                     />
                   </RePieChart>
                 </ResponsiveContainer>
@@ -360,7 +336,7 @@ export default function AnalyticsPage() {
                     <div key={item.name} className="flex items-center gap-2">
                       <div
                         className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: COLORS[i] }}
+                        style={{ backgroundColor: COLORS[i % COLORS.length] }}
                       />
                       <span className="text-sm font-tabular">
                         {item.name}: PKR {item.value.toLocaleString()}
@@ -372,7 +348,7 @@ export default function AnalyticsPage() {
             </Card>
 
             {/* Sector Allocation */}
-            <Card className="rounded-xl shadow-sm border-border/50">
+            <Card className="border border-border bg-card rounded-xl">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                   <PieChart className="h-4 w-4" />
@@ -401,12 +377,7 @@ export default function AnalyticsPage() {
                     </Pie>
                     <Tooltip
                       formatter={tooltipFormatPKR}
-                      contentStyle={{
-                        backgroundColor: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                      }}
+                      contentStyle={chartTooltipStyle}
                     />
                   </RePieChart>
                 </ResponsiveContainer>
@@ -415,7 +386,7 @@ export default function AnalyticsPage() {
                     <div key={item.name} className="flex items-center gap-1.5">
                       <div
                         className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: COLORS[i] }}
+                        style={{ backgroundColor: COLORS[i % COLORS.length] }}
                       />
                       <span className="text-xs">{item.name}</span>
                     </div>
@@ -426,7 +397,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* P&L Per Stock */}
-          <Card className="rounded-xl shadow-sm border-border/50">
+          <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
@@ -437,36 +408,31 @@ export default function AnalyticsPage() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={pnlData}>
                   <CartesianGrid
-                    strokeDasharray="3 3"
+                    vertical={false}
                     stroke="var(--border)"
-                    strokeOpacity={0.5}
                   />
                   <XAxis
                     dataKey="symbol"
-                    tick={{ fontSize: 11 }}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fontSize: 11 }}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     axisLine={false}
                     tickLine={false}
                     tickFormatter={(v) => formatPKR(v, { compact: true, decimals: 0 })}
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--card)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "12px",
-                      fontSize: "12px",
-                    }}
+                    contentStyle={chartTooltipStyle}
+                    cursor={{ fill: "var(--border)", opacity: 0.3 }}
                     formatter={tooltipFormatPnL}
                   />
                   <Bar dataKey="pnl" radius={[6, 6, 0, 0]}>
                     {pnlData.map((entry, index) => (
                       <Cell
                         key={index}
-                        fill={entry.pnl >= 0 ? "#10b981" : "#ef4444"}
+                        fill={entry.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)"}
                       />
                     ))}
                   </Bar>
@@ -476,7 +442,7 @@ export default function AnalyticsPage() {
           </Card>
 
           {/* Holdings Breakdown Table */}
-          <Card className="rounded-xl shadow-sm border-border/50">
+          <Card className="border border-border bg-card rounded-xl animate-in-up-delay-4">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -492,20 +458,20 @@ export default function AnalyticsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-border/50">
-                      <th className="text-left py-3 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                         Stock
                       </th>
-                      <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                         Value
                       </th>
-                      <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                         Weight
                       </th>
-                      <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                         P&L
                       </th>
-                      <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                         P&L %
                       </th>
                     </tr>
@@ -524,7 +490,7 @@ export default function AnalyticsPage() {
                       return (
                         <tr
                           key={item.symbol}
-                          className="table-row-hover border-b border-border/30 last:border-0"
+                          className="table-row-hover border-b border-border last:border-0"
                         >
                           <td className="py-3 px-2">
                             <Link
@@ -547,7 +513,7 @@ export default function AnalyticsPage() {
                             <div className="flex items-center justify-end gap-2">
                               <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
                                 <div
-                                  className="h-full rounded-full bg-primary/60"
+                                  className="h-full rounded-full bg-primary"
                                   style={{ width: `${Math.min(weight, 100)}%` }}
                                 />
                               </div>
@@ -557,27 +523,23 @@ export default function AnalyticsPage() {
                             </div>
                           </td>
                           <td
-                            className={`text-right py-3 px-2 font-tabular font-semibold ${
-                              item.pnl >= 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-red-600 dark:text-red-400"
-                            }`}
+                            className="text-right py-3 px-2 font-tabular font-semibold"
+                            style={{ color: item.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                           >
                             {item.pnl >= 0 ? "+" : ""}
                             {item.pnl.toLocaleString()}
                           </td>
                           <td className="text-right py-3 px-2">
-                            <Badge
-                              variant="secondary"
-                              className={`text-[11px] font-semibold font-tabular px-1.5 py-0.5 rounded-md ${
-                                item.pnlPercent >= 0
-                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                  : "bg-red-500/10 text-red-600 dark:text-red-400"
-                              }`}
+                            <span
+                              className="inline-block text-[11px] font-semibold font-tabular px-1.5 py-0.5 rounded-md"
+                              style={{
+                                color: item.pnlPercent >= 0 ? "var(--color-profit)" : "var(--color-loss)",
+                                background: item.pnlPercent >= 0 ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
+                              }}
                             >
                               {item.pnlPercent >= 0 ? "+" : ""}
                               {item.pnlPercent.toFixed(2)}%
-                            </Badge>
+                            </span>
                           </td>
                         </tr>
                       );

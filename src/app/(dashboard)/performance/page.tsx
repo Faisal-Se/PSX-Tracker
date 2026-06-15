@@ -5,12 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   TrendingUp,
-  TrendingDown,
   BarChart3,
   RefreshCw,
   ArrowUpRight,
   ArrowDownRight,
-  Wallet,
   Activity,
 } from "lucide-react";
 import {
@@ -60,6 +58,14 @@ interface MarketStock {
 }
 
 type Period = "1W" | "1M" | "3M" | "6M" | "1Y" | "ALL";
+
+const chartTooltipStyle = {
+  background: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: "0.5rem",
+  fontSize: "12px",
+  color: "var(--popover-foreground)",
+} as const;
 
 export default function PerformancePage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -230,12 +236,30 @@ export default function PerformancePage() {
 
   if (initialLoading) return <PageSkeleton />;
 
+  const stats = [
+    {
+      label: "Net Worth",
+      value: formatPKR(netWorth, { decimals: 0 }),
+    },
+    {
+      label: "Invested",
+      value: formatPKR(totalInvested, { decimals: 0 }),
+    },
+    {
+      label: "Cash",
+      value: formatPKR(totalCash, { decimals: 0 }),
+    },
+  ];
+
   return (
     <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
       {/* Header */}
       <div className="flex items-end justify-between animate-in-up">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Portfolio
+          </p>
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1">
             Performance
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -247,7 +271,7 @@ export default function PerformancePage() {
           size="sm"
           onClick={fetchData}
           disabled={refreshing}
-          className="h-8 text-xs gap-1.5 rounded-xl"
+          className="h-8 text-xs gap-1.5 rounded-lg"
         >
           <RefreshCw
             className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
@@ -256,77 +280,67 @@ export default function PerformancePage() {
         </Button>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-in-up-delay-1">
-        <Card className="stat-card stat-card-violet rounded-2xl">
-          <CardContent className="pt-4 pb-3">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Net Worth
-            </p>
-            <p className="text-xl lg:text-2xl font-bold font-tabular mt-1">
-              {formatPKR(netWorth, { decimals: 0 })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="stat-card stat-card-blue rounded-2xl">
-          <CardContent className="pt-4 pb-3">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Invested
-            </p>
-            <p className="text-xl lg:text-2xl font-bold font-tabular mt-1">
-              {formatPKR(totalInvested, { decimals: 0 })}
-            </p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`stat-card rounded-2xl ${totalPnL >= 0 ? "stat-card-emerald" : "stat-card-rose"}`}
-        >
-          <CardContent className="pt-4 pb-3">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Total P&L
-            </p>
+      {/* Summary Hero Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border border-border bg-border animate-in-up-delay-1">
+        {/* Total P&L — featured */}
+        <div className="bg-card p-5 col-span-2 lg:col-span-1 flex flex-col justify-between">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+            Total P&amp;L
+          </p>
+          <div className="mt-2">
             <p
-              className={`text-xl lg:text-2xl font-bold font-tabular mt-1 ${totalPnL >= 0 ? "text-emerald-600" : "text-red-500"}`}
+              className="text-2xl lg:text-3xl font-semibold font-tabular leading-none"
+              style={{ color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
             >
               {totalPnL >= 0 ? "+" : ""}
               {formatPKR(totalPnL, { decimals: 0 })}
             </p>
-            <p
-              className={`text-xs font-tabular ${totalPnL >= 0 ? "text-emerald-600" : "text-red-500"}`}
+            <span
+              className="inline-flex items-center gap-0.5 mt-2 px-1.5 py-0.5 rounded-md text-xs font-semibold font-tabular"
+              style={{
+                color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)",
+                background: totalPnL >= 0 ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
+              }}
             >
+              {totalPnL >= 0 ? (
+                <ArrowUpRight className="h-3 w-3" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3" />
+              )}
               {totalPnLPct >= 0 ? "+" : ""}
               {totalPnLPct.toFixed(2)}%
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="stat-card stat-card-emerald rounded-2xl">
-          <CardContent className="pt-4 pb-3">
+            </span>
+          </div>
+        </div>
+
+        {stats.map((s) => (
+          <div key={s.label} className="bg-card p-5 flex flex-col justify-between">
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Cash
+              {s.label}
             </p>
-            <p className="text-xl lg:text-2xl font-bold font-tabular mt-1">
-              {formatPKR(totalCash, { decimals: 0 })}
+            <p className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none">
+              {s.value}
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        ))}
       </div>
 
       {/* Investment Timeline Chart */}
-      <Card className="rounded-2xl animate-in-up-delay-2">
+      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-2">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4 text-violet-500" />
+              <Activity className="h-4 w-4 text-primary" />
               Investment Timeline
             </CardTitle>
-            <div className="flex gap-1 bg-muted rounded-lg p-0.5">
+            <div className="flex gap-1 rounded-lg border border-border p-0.5">
               {periods.map((p) => (
                 <button
                   key={p}
                   onClick={() => setPeriod(p)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                     period === p
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -357,31 +371,28 @@ export default function PerformancePage() {
                   >
                     <stop
                       offset="5%"
-                      stopColor="hsl(262, 80%, 55%)"
-                      stopOpacity={0.3}
+                      stopColor="var(--chart-1)"
+                      stopOpacity={0.28}
                     />
                     <stop
                       offset="95%"
-                      stopColor="hsl(262, 80%, 55%)"
+                      stopColor="var(--chart-1)"
                       stopOpacity={0}
                     />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--border))"
-                  opacity={0.3}
+                  vertical={false}
+                  stroke="var(--border)"
                 />
                 <XAxis
                   dataKey="label"
-                  tick={{ fontSize: 11 }}
-                  stroke="hsl(var(--muted-foreground))"
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 11 }}
-                  stroke="hsl(var(--muted-foreground))"
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) =>
@@ -393,12 +404,8 @@ export default function PerformancePage() {
                   }
                 />
                 <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "12px",
-                    fontSize: "12px",
-                  }}
+                  contentStyle={chartTooltipStyle}
+                  cursor={{ stroke: "var(--border)" }}
                   formatter={(value) => [
                     `PKR ${formatPKR(Number(value), { decimals: 0 })}`,
                     "Net Invested",
@@ -407,7 +414,7 @@ export default function PerformancePage() {
                 <Area
                   type="monotone"
                   dataKey="invested"
-                  stroke="hsl(262, 80%, 55%)"
+                  stroke="var(--chart-1)"
                   fill="url(#investedGradient)"
                   strokeWidth={2}
                 />
@@ -420,10 +427,10 @@ export default function PerformancePage() {
       {/* Per-stock P&L Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in-up-delay-3">
         {/* P&L Bar Chart */}
-        <Card className="rounded-2xl">
+        <Card className="border border-border bg-card rounded-xl">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-violet-500" />
+              <BarChart3 className="h-4 w-4 text-primary" />
               P&L by Stock
             </CardTitle>
           </CardHeader>
@@ -440,15 +447,12 @@ export default function PerformancePage() {
                   margin={{ left: 10, right: 10 }}
                 >
                   <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
-                    opacity={0.3}
+                    stroke="var(--border)"
                     horizontal={false}
                   />
                   <XAxis
                     type="number"
-                    tick={{ fontSize: 11 }}
-                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     tickLine={false}
                     axisLine={false}
                     tickFormatter={(v) =>
@@ -458,19 +462,14 @@ export default function PerformancePage() {
                   <YAxis
                     type="category"
                     dataKey="symbol"
-                    tick={{ fontSize: 11, fontWeight: 600 }}
-                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fontSize: 11, fontWeight: 600, fill: "var(--muted-foreground)" }}
                     tickLine={false}
                     axisLine={false}
                     width={70}
                   />
                   <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "12px",
-                      fontSize: "12px",
-                    }}
+                    contentStyle={chartTooltipStyle}
+                    cursor={{ fill: "var(--border)", opacity: 0.3 }}
                     formatter={(value) => [
                       `PKR ${formatPKR(Number(value), { decimals: 0 })}`,
                       "P&L",
@@ -482,8 +481,8 @@ export default function PerformancePage() {
                         key={i}
                         fill={
                           entry.pnl >= 0
-                            ? "hsl(152, 75%, 40%)"
-                            : "hsl(0, 85%, 60%)"
+                            ? "var(--color-profit)"
+                            : "var(--color-loss)"
                         }
                       />
                     ))}
@@ -495,10 +494,10 @@ export default function PerformancePage() {
         </Card>
 
         {/* P&L List */}
-        <Card className="rounded-2xl">
+        <Card className="border border-border bg-card rounded-xl">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-violet-500" />
+              <TrendingUp className="h-4 w-4 text-primary" />
               Stock Returns
             </CardTitle>
           </CardHeader>
@@ -508,11 +507,11 @@ export default function PerformancePage() {
                 No holdings to display
               </p>
             ) : (
-              <div className="space-y-1">
+              <div className="divide-y divide-border">
                 {stockPnL.map((stock) => (
                   <div
                     key={stock.symbol}
-                    className="flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-muted/30 transition-colors"
+                    className="flex items-center justify-between py-2.5 px-1 transition-colors hover:bg-muted/40"
                   >
                     <div>
                       <p className="text-sm font-semibold">{stock.symbol}</p>
@@ -522,9 +521,8 @@ export default function PerformancePage() {
                     </div>
                     <div className="text-right">
                       <p
-                        className={`text-sm font-bold font-tabular flex items-center gap-0.5 justify-end ${
-                          stock.pnl >= 0 ? "text-emerald-600" : "text-red-500"
-                        }`}
+                        className="text-sm font-semibold font-tabular flex items-center gap-0.5 justify-end"
+                        style={{ color: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                       >
                         {stock.pnl >= 0 ? (
                           <ArrowUpRight className="h-3.5 w-3.5" />
@@ -535,11 +533,8 @@ export default function PerformancePage() {
                         {formatPKR(stock.pnl, { decimals: 0 })}
                       </p>
                       <p
-                        className={`text-[11px] font-tabular font-semibold ${
-                          stock.pnlPct >= 0
-                            ? "text-emerald-600"
-                            : "text-red-500"
-                        }`}
+                        className="text-[11px] font-tabular font-semibold"
+                        style={{ color: stock.pnlPct >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                       >
                         {stock.pnlPct >= 0 ? "+" : ""}
                         {stock.pnlPct.toFixed(2)}%

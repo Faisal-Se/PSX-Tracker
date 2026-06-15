@@ -1,24 +1,20 @@
 "use client";
 
 import { useEffect, useState, useCallback, use } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   ArrowUpRight,
   ArrowDownRight,
   Eye,
   ShoppingCart,
   ArrowLeft,
-  BarChart3,
   Activity,
-  TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -140,37 +136,48 @@ export default function StockPage({
   }
 
   const isGain = stock.change >= 0;
+  const changeColor = isGain ? "var(--color-profit)" : "var(--color-loss)";
+  const changeBg = isGain ? "var(--color-profit-bg)" : "var(--color-loss-bg)";
+
+  const stats: { label: string; value: number; isVolume?: boolean }[] = [
+    { label: "Open", value: stock.open },
+    { label: "Prev Close", value: stock.ldcp },
+    { label: "High", value: stock.high },
+    { label: "Low", value: stock.low },
+    { label: "Volume", value: stock.volume, isVolume: true },
+  ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 animate-in-up">
         <Link href="/market">
           <Button
             variant="ghost"
             size="sm"
-            className="h-9 w-9 p-0 rounded-xl"
+            className="h-9 w-9 p-0 rounded-lg text-muted-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{stock.symbol}</h1>
-            <Badge
-              variant="secondary"
-              className="text-xs rounded-lg px-2.5 py-0.5"
-            >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {stock.symbol}
+            </h1>
+            <span className="text-xs text-muted-foreground border border-border rounded-md px-2 py-0.5">
               {stock.sector}
-            </Badge>
+            </span>
           </div>
-          <p className="text-muted-foreground text-sm">{stock.company}</p>
+          <p className="text-muted-foreground text-sm truncate">
+            {stock.company}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
-            className="rounded-xl"
+            className="rounded-lg border border-border"
             onClick={handleAddToWatchlist}
           >
             <Eye className="h-4 w-4 mr-2" />
@@ -178,7 +185,7 @@ export default function StockPage({
           </Button>
           <Button
             size="sm"
-            className="rounded-xl"
+            className="rounded-lg"
             onClick={() => setShowTrade(true)}
           >
             <ShoppingCart className="h-4 w-4 mr-2" />
@@ -187,91 +194,80 @@ export default function StockPage({
         </div>
       </div>
 
-      {/* Price Card */}
-      <Card className="rounded-xl shadow-sm border-border/50">
+      {/* Price Hero */}
+      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-1">
         <CardContent className="py-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-4xl font-bold font-tabular tracking-tight">
-                PKR {formatPKR(stock.current)}
-              </p>
-              <div
-                className={`flex items-center gap-1.5 mt-2 ${
-                  isGain
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-red-600 dark:text-red-400"
-                }`}
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Last Price
+          </p>
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-2 mt-1.5">
+            <p className="text-4xl font-semibold font-tabular tracking-tight">
+              {formatPKR(stock.current)}
+            </p>
+            <div
+              className="flex items-center gap-1.5 pb-1"
+              style={{ color: changeColor }}
+            >
+              {isGain ? (
+                <ArrowUpRight className="h-5 w-5" />
+              ) : (
+                <ArrowDownRight className="h-5 w-5" />
+              )}
+              <span className="font-semibold font-tabular text-lg">
+                {isGain ? "+" : ""}
+                {stock.change.toFixed(2)}
+              </span>
+              <span
+                className="text-xs font-semibold font-tabular ml-0.5 rounded-md px-2 py-0.5"
+                style={{ color: changeColor, backgroundColor: changeBg }}
               >
-                {isGain ? (
-                  <ArrowUpRight className="h-5 w-5" />
-                ) : (
-                  <ArrowDownRight className="h-5 w-5" />
-                )}
-                <span className="font-semibold font-tabular text-lg">
-                  {isGain ? "+" : ""}
-                  {stock.change.toFixed(2)}
-                </span>
-                <Badge
-                  variant="secondary"
-                  className={`text-xs font-semibold font-tabular ml-1 rounded-md ${
-                    isGain
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                      : "bg-red-500/10 text-red-600 dark:text-red-400"
-                  }`}
-                >
-                  {isGain ? "+" : ""}
-                  {stock.changePercent.toFixed(2)}%
-                </Badge>
-              </div>
-            </div>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-x-8 gap-y-3">
-              {[
-                { label: "Open", value: stock.open },
-                { label: "Prev Close", value: stock.ldcp },
-                { label: "High", value: stock.high },
-                { label: "Low", value: stock.low },
-                {
-                  label: "Volume",
-                  value: stock.volume,
-                  isVolume: true,
-                },
-              ].map((stat) => (
-                <div key={stat.label}>
-                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                    {stat.label}
-                  </p>
-                  <p className="text-sm font-semibold font-tabular mt-0.5">
-                    {stat.isVolume
-                      ? stock.volume.toLocaleString()
-                      : formatPKR(stat.value)}
-                  </p>
-                </div>
-              ))}
+                {isGain ? "+" : ""}
+                {stock.changePercent.toFixed(2)}%
+              </span>
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* Stat Cells */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 animate-in-up-delay-2">
+        {stats.map((stat) => (
+          <Card
+            key={stat.label}
+            className="border border-border bg-card rounded-xl"
+          >
+            <CardContent className="py-3.5 px-4">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                {stat.label}
+              </p>
+              <p className="text-base font-semibold font-tabular mt-1">
+                {stat.isVolume
+                  ? stock.volume.toLocaleString()
+                  : formatPKR(stat.value)}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       {/* Price Chart */}
-      <Card className="rounded-xl shadow-sm border-border/50">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
+        <CardContent className="py-5">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <Activity className="h-4 w-4" />
               Price History
-            </CardTitle>
-            <div className="flex gap-1 bg-muted/50 p-0.5 rounded-lg">
+            </p>
+            <div className="flex gap-0.5 border border-border rounded-lg p-0.5">
               {(["1M", "3M", "6M", "1Y", "ALL"] as const).map((p) => (
                 <Button
                   key={p}
-                  variant={period === p ? "default" : "ghost"}
+                  variant="ghost"
                   size="sm"
                   className={`text-xs h-7 px-3 rounded-md ${
                     period === p
-                      ? "shadow-sm"
-                      : "hover:bg-background/60"
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted"
                   }`}
                   onClick={() => setPeriod(p)}
                 >
@@ -280,21 +276,37 @@ export default function StockPage({
               ))}
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
           {filteredHistory.length > 0 ? (
             <ResponsiveContainer width="100%" height={350}>
-              <LineChart data={filteredHistory}>
+              <AreaChart
+                data={filteredHistory}
+                margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+              >
+                <defs>
+                  <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="0%"
+                      stopColor="var(--primary)"
+                      stopOpacity={0.2}
+                    />
+                    <stop
+                      offset="100%"
+                      stopColor="var(--primary)"
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid
-                  strokeDasharray="3 3"
+                  vertical={false}
                   stroke="var(--border)"
-                  strokeOpacity={0.5}
+                  strokeOpacity={0.6}
                 />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 11 }}
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   axisLine={false}
                   tickLine={false}
+                  minTickGap={32}
                   tickFormatter={(d) => {
                     const date = new Date(d);
                     return `${date.getDate()}/${date.getMonth() + 1}`;
@@ -302,17 +314,26 @@ export default function StockPage({
                 />
                 <YAxis
                   domain={["auto", "auto"]}
-                  tick={{ fontSize: 11 }}
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   axisLine={false}
                   tickLine={false}
+                  width={48}
                   tickFormatter={(v) => formatPKR(v, { compact: true, decimals: 0 })}
                 />
                 <Tooltip
+                  cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
                   contentStyle={{
-                    backgroundColor: "var(--card)",
+                    background: "var(--card)",
                     border: "1px solid var(--border)",
-                    borderRadius: "12px",
-                    fontSize: "12px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    padding: "6px 10px",
+                    boxShadow: "none",
+                    color: "var(--foreground)",
+                  }}
+                  labelStyle={{
+                    color: "var(--muted-foreground)",
+                    marginBottom: 2,
                   }}
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   formatter={(value: any) => [
@@ -320,20 +341,21 @@ export default function StockPage({
                     "Close",
                   ]}
                 />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="close"
-                  stroke={isGain ? "#10b981" : "#ef4444"}
+                  stroke="var(--primary)"
                   strokeWidth={2}
+                  fill="url(#priceFill)"
                   dot={false}
                   activeDot={{
-                    r: 5,
+                    r: 4,
                     strokeWidth: 2,
                     fill: "var(--card)",
-                    stroke: isGain ? "#10b981" : "#ef4444",
+                    stroke: "var(--primary)",
                   }}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           ) : (
             <div className="flex flex-col items-center justify-center py-16">
