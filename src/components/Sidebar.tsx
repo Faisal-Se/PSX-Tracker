@@ -71,25 +71,25 @@ export function Sidebar() {
   };
 
   const statusTextColors = {
-    open: "text-emerald-400",
-    "pre-market": "text-amber-400",
-    "post-market": "text-orange-400",
-    closed: "text-zinc-500",
+    open: "text-emerald-500",
+    "pre-market": "text-amber-500",
+    "post-market": "text-orange-500",
+    closed: "text-muted-foreground",
   };
 
   return (
-    <aside className="dark left-0 top-0 z-40 h-dvh w-[260px] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col border-r border-white/5">
+    <aside className="left-0 top-0 z-40 h-dvh w-[260px] bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border">
       {/* Logo */}
-      <div className="px-5 pt-6 pb-4 shrink-0">
+      <div className="px-5 pt-5 pb-4 shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 animate-breathe">
-            <TrendingUp className="h-5 w-5 text-white" strokeWidth={2.5} />
+          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+            <TrendingUp className="h-[18px] w-[18px] text-primary-foreground" strokeWidth={2.4} />
           </div>
           <div>
-            <h1 className="text-[15px] font-bold tracking-tight text-white">
+            <h1 className="text-[14px] font-semibold tracking-tight text-sidebar-accent-foreground">
               PSX Tracker
             </h1>
-            <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/35">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-sidebar-foreground/60">
               Pakistan Stock Exchange
             </p>
           </div>
@@ -97,7 +97,7 @@ export function Sidebar() {
       </div>
 
       {/* Market Status */}
-      <div className="mx-4 mb-4 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 shrink-0">
+      <div className="mx-3 mb-4 px-3 py-2.5 rounded-lg bg-sidebar-accent border border-sidebar-border shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -105,10 +105,10 @@ export function Sidebar() {
                 className={`h-3.5 w-3.5 ${statusTextColors[marketStatus.status]}`}
               />
               {marketStatus.status === "open" && (
-                <span className="absolute inset-0 h-3.5 w-3.5 rounded-full bg-emerald-400/40 pulse-dot" />
+                <span className="absolute inset-0 h-3.5 w-3.5 rounded-full bg-emerald-500/40 pulse-dot" />
               )}
             </div>
-            <span className="text-xs font-semibold text-white/85">
+            <span className="text-xs font-medium text-sidebar-accent-foreground">
               {marketStatus.label}
             </span>
           </div>
@@ -116,14 +116,14 @@ export function Sidebar() {
             className={`h-1.5 w-1.5 rounded-full ${statusColors[marketStatus.status]}`}
           />
         </div>
-        <p className="text-[10px] text-white/35 mt-1 pl-5.5">
+        <p className="text-[10px] text-sidebar-foreground/70 mt-1 pl-5.5">
           {marketStatus.nextEvent}
         </p>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white/25 px-3 mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50 px-2.5 mb-1.5">
           Menu
         </p>
         {navItems.map((item) => {
@@ -134,19 +134,19 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-200 ${
+              className={`group flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors duration-150 ${
                 isActive
-                  ? "bg-gradient-to-r from-emerald-500/20 to-cyan-500/10 text-white shadow-md shadow-emerald-500/10 border border-emerald-500/20"
-                  : "text-white/50 hover:text-white/90 hover:bg-white/8"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60"
               }`}
             >
               <item.icon
-                className={`h-[18px] w-[18px] transition-colors ${
+                className={`h-[17px] w-[17px] transition-colors ${
                   isActive
-                    ? "text-emerald-400"
-                    : "text-white/35 group-hover:text-white/70"
+                    ? "text-sidebar-primary"
+                    : "text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground"
                 }`}
-                strokeWidth={isActive ? 2.2 : 1.8}
+                strokeWidth={1.9}
               />
               {item.label}
             </Link>
@@ -159,12 +159,12 @@ export function Sidebar() {
         {mounted && (
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium text-white/50 hover:text-white/90 hover:bg-white/8 transition-all duration-200"
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/60 transition-colors duration-150"
           >
             {theme === "dark" ? (
-              <Sun className="h-[18px] w-[18px] text-white/35" strokeWidth={1.8} />
+              <Sun className="h-[17px] w-[17px] text-sidebar-foreground/70" strokeWidth={1.9} />
             ) : (
-              <Moon className="h-[18px] w-[18px] text-white/35" strokeWidth={1.8} />
+              <Moon className="h-[17px] w-[17px] text-sidebar-foreground/70" strokeWidth={1.9} />
             )}
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </button>
@@ -172,9 +172,9 @@ export function Sidebar() {
       </div>
 
       {/* User Section */}
-      <div className="p-3 shrink-0">
+      <div className="p-3 shrink-0 border-t border-sidebar-border">
         {user && (
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10">
+          <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg">
             {user.picture ? (
               <img
                 src={user.picture}
@@ -183,7 +183,7 @@ export function Sidebar() {
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-400/25 to-cyan-400/25 flex items-center justify-center text-emerald-400 font-bold text-xs shrink-0">
+              <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
                 {user.name
                   .split(" ")
                   .map((n) => n[0])
@@ -193,16 +193,16 @@ export function Sidebar() {
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-white/90 truncate">
+              <p className="text-xs font-medium text-sidebar-accent-foreground truncate">
                 {user.name}
               </p>
-              <p className="text-[10px] text-white/35 truncate">
+              <p className="text-[10px] text-sidebar-foreground/70 truncate">
                 {user.email}
               </p>
             </div>
             <button
               onClick={handleLogout}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-red-400 transition-colors"
+              className="p-1.5 rounded-md hover:bg-sidebar-accent text-sidebar-foreground/60 hover:text-destructive transition-colors"
               title="Logout"
             >
               <LogOut className="h-3.5 w-3.5" />

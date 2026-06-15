@@ -110,10 +110,24 @@ export default function DashboardPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
+  const [balancesHidden, setBalancesHidden] = useState(false);
 
   useEffect(() => {
     setWidgets(loadWidgets());
+    try {
+      setBalancesHidden(localStorage.getItem("psx-hide-balances") === "1");
+    } catch {}
   }, []);
+
+  const toggleBalances = () => {
+    setBalancesHidden((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("psx-hide-balances", next ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  };
 
   const saveWidgets = (updated: WidgetConfig[]) => {
     setWidgets(updated);
@@ -226,8 +240,8 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-end justify-between animate-in-up">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <h1 className="text-xl lg:text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
             Your portfolio overview and market summary
           </p>
         </div>
@@ -235,8 +249,22 @@ export default function DashboardPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={toggleBalances}
+            className="h-8 text-xs gap-1.5"
+            title={balancesHidden ? "Show balances" : "Hide balances"}
+          >
+            {balancesHidden ? (
+              <Eye className="h-3 w-3" />
+            ) : (
+              <EyeOff className="h-3 w-3" />
+            )}
+            {balancesHidden ? "Show" : "Hide"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowWidgetSettings(!showWidgetSettings)}
-            className="h-8 text-xs gap-1.5 rounded-xl"
+            className="h-8 text-xs gap-1.5"
           >
             <Settings2 className="h-3 w-3" />
             Widgets
@@ -246,7 +274,7 @@ export default function DashboardPage() {
             size="sm"
             onClick={fetchData}
             disabled={refreshing}
-            className="h-8 text-xs gap-1.5 rounded-xl"
+            className="h-8 text-xs gap-1.5"
           >
             <RefreshCw
               className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
@@ -322,45 +350,45 @@ export default function DashboardPage() {
       )}
 
       {/* KSE-100 Hero Card */}
-      {isVisible("kse100") && <div className="relative rounded-2xl overflow-hidden border-0 shadow-lg shadow-emerald-500/10 hero-card animate-in-up-delay-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4 lg:p-6">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZyIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48Y2lyY2xlIGN4PSIxIiBjeT0iMSIgcj0iMC41IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCBmaWxsPSJ1cmwoI2cpIiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIvPjwvc3ZnPg==')] opacity-50" />
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-full blur-3xl" />
-        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {isVisible("kse100") && <div className="rounded-xl border border-border bg-card p-5 lg:p-6 animate-in-up-delay-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Activity className="h-4 w-4 text-emerald-400" />
-              <span className="text-xs font-semibold tracking-wider uppercase text-emerald-400/80">
+            <div className="flex items-center gap-2 mb-2.5">
+              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
                 KSE 100 Index
               </span>
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
               </span>
             </div>
-            <p className="text-3xl lg:text-5xl font-bold font-tabular tracking-tight">
+            <p className="text-3xl lg:text-4xl font-semibold font-tabular tracking-tight">
               {kse100?.current ? formatPKR(kse100.current) : "—"}
             </p>
             {kse100 && (
               <div
-                className={`flex items-center gap-2 mt-3 text-sm font-semibold ${
-                  kse100.change >= 0 ? "text-emerald-400" : "text-red-400"
+                className={`flex items-center gap-2 mt-2.5 text-sm font-medium ${
+                  kse100.change >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]"
                 }`}
               >
                 {kse100.change >= 0 ? (
-                  <ArrowUpRight className="h-5 w-5" />
+                  <ArrowUpRight className="h-4 w-4" />
                 ) : (
-                  <ArrowDownRight className="h-5 w-5" />
+                  <ArrowDownRight className="h-4 w-4" />
                 )}
-                <span className="font-tabular text-lg">
+                <span className="font-tabular">
                   {kse100.change >= 0 ? "+" : ""}
                   {formatPKR(Math.abs(kse100.change))}
                 </span>
                 <span
-                  className={`px-2 py-0.5 rounded-lg text-xs font-bold ${
-                    kse100.change >= 0
-                      ? "bg-emerald-400/20 text-emerald-300"
-                      : "bg-red-400/20 text-red-300"
-                  }`}
+                  className="px-1.5 py-0.5 rounded-md text-xs font-semibold font-tabular"
+                  style={{
+                    backgroundColor:
+                      kse100.change >= 0
+                        ? "var(--color-profit-bg)"
+                        : "var(--color-loss-bg)",
+                  }}
                 >
                   {kse100.changePercent >= 0 ? "+" : ""}
                   {kse100.changePercent.toFixed(2)}%
@@ -369,16 +397,16 @@ export default function DashboardPage() {
             )}
           </div>
           {kse100 && (
-            <div className="text-right space-y-3">
+            <div className="flex sm:flex-col gap-6 sm:gap-2 sm:text-right">
               <div className="text-sm">
-                <span className="text-white/40 font-medium">High</span>{" "}
-                <span className="font-tabular text-white/90 font-semibold">
+                <span className="text-muted-foreground">High </span>
+                <span className="font-tabular font-medium">
                   {formatPKR(kse100.high)}
                 </span>
               </div>
               <div className="text-sm">
-                <span className="text-white/40 font-medium">Low</span>{" "}
-                <span className="font-tabular text-white/90 font-semibold">
+                <span className="text-muted-foreground">Low </span>
+                <span className="font-tabular font-medium">
                   {formatPKR(kse100.low)}
                 </span>
               </div>
@@ -388,20 +416,20 @@ export default function DashboardPage() {
       </div>}
 
       {/* Stats Grid */}
-      {isVisible("stats") && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in-up-delay-2">
-        <Card className="stat-card stat-card-emerald border-border/50 shadow-sm rounded-2xl">
-          <CardContent className="pt-5 pb-4">
+      {isVisible("stats") && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 animate-in-up-delay-2">
+        <Card className="stat-card border border-border rounded-xl">
+          <CardContent className="pt-4 pb-4">
             <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
                   Portfolio Value
                 </p>
-                <p className="text-2xl font-bold font-tabular mt-1.5">
+                <p className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}>
                   {formatPKR(totalCurrentValue, { decimals: 0 })}
                 </p>
               </div>
-              <div className="h-10 w-10 rounded-xl icon-bg-emerald flex items-center justify-center">
-                <BarChart3 className="h-5 w-5 text-emerald-500" />
+              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                <BarChart3 className="h-[18px] w-[18px] text-muted-foreground" />
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
@@ -410,19 +438,19 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="stat-card stat-card-blue border-border/50 shadow-sm rounded-2xl">
-          <CardContent className="pt-5 pb-4">
+        <Card className="stat-card border border-border rounded-xl">
+          <CardContent className="pt-4 pb-4">
             <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
                   Cash Balance
                 </p>
-                <p className="text-2xl font-bold font-tabular mt-1.5">
+                <p className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}>
                   {formatPKR(totalCash, { decimals: 0 })}
                 </p>
               </div>
-              <div className="h-10 w-10 rounded-xl icon-bg-blue flex items-center justify-center">
-                <Wallet className="h-5 w-5 text-blue-500" />
+              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                <Wallet className="h-[18px] w-[18px] text-muted-foreground" />
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
@@ -431,19 +459,19 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="stat-card stat-card-violet border-border/50 shadow-sm rounded-2xl">
-          <CardContent className="pt-5 pb-4">
+        <Card className="stat-card border border-border rounded-xl">
+          <CardContent className="pt-4 pb-4">
             <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
                   Total Invested
                 </p>
-                <p className="text-2xl font-bold font-tabular mt-1.5">
+                <p className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}>
                   {formatPKR(totalInvested, { decimals: 0 })}
                 </p>
               </div>
-              <div className="h-10 w-10 rounded-xl icon-bg-violet flex items-center justify-center">
-                <Banknote className="h-5 w-5 text-violet-500" />
+              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                <Banknote className="h-[18px] w-[18px] text-muted-foreground" />
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
@@ -452,38 +480,32 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className={`stat-card ${totalPnL >= 0 ? "stat-card-emerald" : "stat-card-rose"} border-border/50 shadow-sm rounded-2xl`}>
-          <CardContent className="pt-5 pb-4">
+        <Card className="stat-card border border-border rounded-xl">
+          <CardContent className="pt-4 pb-4">
             <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
                   Total P&L
                 </p>
                 <p
-                  className={`text-2xl font-bold font-tabular mt-1.5 ${
-                    totalPnL >= 0 ? "text-emerald-600" : "text-red-500"
-                  }`}
+                  className={`text-2xl font-semibold font-tabular mt-1.5 ${balancesHidden ? "balance-blur" : ""}`}
+                  style={{ color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
                 >
                   {totalPnL >= 0 ? "+" : ""}
                   {formatPKR(totalPnL, { decimals: 0 })}
                 </p>
               </div>
-              <div
-                className={`h-10 w-10 rounded-xl flex items-center justify-center ${
-                  totalPnL >= 0 ? "icon-bg-emerald" : "icon-bg-rose"
-                }`}
-              >
+              <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
                 {totalPnL >= 0 ? (
-                  <TrendingUp className="h-5 w-5 text-emerald-500" />
+                  <TrendingUp className="h-[18px] w-[18px]" style={{ color: "var(--color-profit)" }} />
                 ) : (
-                  <TrendingDown className="h-5 w-5 text-red-500" />
+                  <TrendingDown className="h-[18px] w-[18px]" style={{ color: "var(--color-loss)" }} />
                 )}
               </div>
             </div>
             <p
-              className={`text-[11px] font-semibold mt-2 ${
-                totalPnLPercent >= 0 ? "text-emerald-600" : "text-red-500"
-              }`}
+              className="text-[11px] font-medium mt-2 font-tabular"
+              style={{ color: totalPnLPercent >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
             >
               {totalPnLPercent >= 0 ? "+" : ""}
               {totalPnLPercent.toFixed(2)}% return
