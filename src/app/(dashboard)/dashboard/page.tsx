@@ -398,18 +398,6 @@ export default function DashboardPage() {
     [marketData]
   );
 
-  // Market breadth — advancers vs decliners.
-  const breadth = useMemo(() => {
-    let up = 0;
-    let down = 0;
-    for (const s of marketData) {
-      if (s.changePercent > 0) up++;
-      else if (s.changePercent < 0) down++;
-    }
-    const total = up + down || 1;
-    return { up, down, upPct: (up / total) * 100 };
-  }, [marketData]);
-
   // KSE-100 "open" ≈ previous close (current − change); index open isn't scraped.
   const kseOpen = kse100 ? kse100.current - kse100.change : 0;
 
@@ -751,25 +739,6 @@ export default function DashboardPage() {
           )}
 
           <div className="flex-1" />
-
-          {/* breadth */}
-          {breadth.up + breadth.down > 0 && (
-            <div className="flex shrink-0 items-center gap-3">
-              <span className="num inline-flex items-center gap-1 text-[12.5px] font-semibold text-gain">
-                ▲ {breadth.up}
-              </span>
-              <div className="flex flex-col items-center gap-1">
-                <span className="text-[10px] font-medium text-ink-3">Breadth</span>
-                <div className="flex h-[5px] w-[120px] overflow-hidden rounded-full bg-line">
-                  <span style={{ width: `${breadth.upPct}%`, background: "var(--color-gain)" }} />
-                  <span style={{ width: `${100 - breadth.upPct}%`, background: "var(--color-loss-strong)" }} />
-                </div>
-              </div>
-              <span className="num inline-flex items-center gap-1 text-[12.5px] font-semibold text-loss-strong">
-                {breadth.down} ▼
-              </span>
-            </div>
-          )}
         </div>
       )}
 
