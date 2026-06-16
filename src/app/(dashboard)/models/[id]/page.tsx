@@ -794,39 +794,25 @@ export default function ModelDetailPage() {
     setSipError("");
 
     try {
-      // First add cash, then execute bulk buys
-      const addRes = await fetch(`/api/model-portfolios/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addCash: amount }),
-      });
-      if (!addRes.ok) {
-        const data = await addRes.json();
-        setSipError(data.error || "Failed to add SIP cash");
-        return;
-      }
-
+      // Single atomic endpoint: deposit + buys in one save (no orphaned cash).
       const trades = sipPlan
         .filter((p) => p.shares > 0)
         .map((p) => ({
           symbol: p.symbol,
           companyName: p.companyName,
-          type: "BUY" as const,
           quantity: p.shares,
           price: parseFloat(p.price) > 0 ? parseFloat(p.price) : undefined,
         }));
 
-      if (trades.length > 0) {
-        const buyRes = await fetch(`/api/model-portfolios/${id}/bulk-trade`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ trades }),
-        });
-        if (!buyRes.ok) {
-          const data = await buyRes.json();
-          setSipError(data.error || "Failed to execute SIP buys");
-          return;
-        }
+      const res = await fetch(`/api/model-portfolios/${id}/sip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, trades }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setSipError(data.error || "SIP failed");
+        return;
       }
 
       setShowSipConfirm(false);

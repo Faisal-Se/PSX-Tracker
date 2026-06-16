@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Search,
-  Bell,
   Sun,
   Moon,
   ChevronDown,
@@ -180,14 +179,6 @@ export function TopNav() {
               )}
             </button>
           )}
-
-          <button
-            className="relative grid h-[38px] w-[38px] place-items-center rounded-[10px] border border-line bg-canvas text-ink-2 hover:bg-ink/[.04]"
-            title="Notifications"
-          >
-            <Bell className="h-[17px] w-[17px]" />
-            <span className="absolute right-2 top-2 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-loss-strong" />
-          </button>
 
           {user && (
             <DropdownMenu>

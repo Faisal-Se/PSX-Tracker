@@ -42,6 +42,8 @@ export interface TransactionData {
   total: number;
   portfolioId: string;
   createdAt: string;
+  /** Realized gain/loss, set on SELL = (price − avgCost) × qty. */
+  realizedPnl?: number;
 }
 
 export interface WatchlistItem {
@@ -85,10 +87,11 @@ export interface ModelTransactionData {
 }
 
 function generateId(): string {
-  return (
-    Date.now().toString(36) +
-    Math.random().toString(36).substring(2, 10)
-  );
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
+  }
 }
 
 export { generateId };
@@ -101,27 +104,35 @@ async function getDrive() {
   return google.drive({ version: "v3", auth: client });
 }
 
+/**
+ * Locate the data file. Returns the newest match (defends against duplicate
+ * files that a past create-race could have produced) plus its revision id for
+ * optimistic concurrency.
+ */
 async function findFile(
   drive: ReturnType<typeof google.drive>,
   fileName: string
-): Promise<string | null> {
+): Promise<{ id: string; headRevisionId: string | null } | null> {
   const res = await drive.files.list({
     spaces: "appDataFolder",
     q: `name = '${fileName}'`,
-    fields: "files(id, name)",
-    pageSize: 1,
+    fields: "files(id, name, headRevisionId, modifiedTime)",
+    orderBy: "modifiedTime desc",
+    pageSize: 10,
   });
-  return res.data.files?.[0]?.id || null;
+  const file = res.data.files?.[0];
+  if (!file?.id) return null;
+  return { id: file.id, headRevisionId: file.headRevisionId ?? null };
 }
 
 async function readFile<T>(fileName: string, defaultValue: T): Promise<T> {
   try {
     const drive = await getDrive();
-    const fileId = await findFile(drive, fileName);
-    if (!fileId) return defaultValue;
+    const found = await findFile(drive, fileName);
+    if (!found) return defaultValue;
 
     const res = await drive.files.get(
-      { fileId, alt: "media" },
+      { fileId: found.id, alt: "media" },
       { responseType: "text" }
     );
 
@@ -133,27 +144,81 @@ async function readFile<T>(fileName: string, defaultValue: T): Promise<T> {
 
 async function writeFile<T>(fileName: string, data: T): Promise<void> {
   const drive = await getDrive();
-  const fileId = await findFile(drive, fileName);
-  const content = JSON.stringify(data);
-
+  const found = await findFile(drive, fileName);
   const media = {
     mimeType: "application/json",
-    body: Readable.from([content]),
+    body: Readable.from([JSON.stringify(data)]),
   };
 
-  if (fileId) {
-    await drive.files.update({
-      fileId,
-      media,
-    });
+  if (found) {
+    await drive.files.update({ fileId: found.id, media });
   } else {
     await drive.files.create({
-      requestBody: {
-        name: fileName,
-        parents: ["appDataFolder"],
-      },
+      requestBody: { name: fileName, parents: ["appDataFolder"] },
       media,
     });
+  }
+}
+
+/**
+ * Read-modify-write a Drive JSON file with optimistic concurrency. Reads the
+ * file + its revision, applies `mutate`, and writes back guarded by
+ * `If-Match: <revision>`. On a 412 (someone else wrote in between) it re-reads
+ * and retries, so concurrent mutations serialize instead of clobbering.
+ */
+async function mutateFile<T>(
+  fileName: string,
+  defaultValue: T,
+  mutate: (current: T) => T,
+  attempt = 0
+): Promise<T> {
+  const drive = await getDrive();
+  const found = await findFile(drive, fileName);
+
+  // Read current contents (or default for a brand-new file).
+  let current = defaultValue;
+  if (found) {
+    try {
+      const res = await drive.files.get(
+        { fileId: found.id, alt: "media" },
+        { responseType: "text" }
+      );
+      current = JSON.parse(res.data as string) as T;
+    } catch {
+      current = defaultValue;
+    }
+  }
+
+  const next = mutate(current);
+  const media = {
+    mimeType: "application/json",
+    body: Readable.from([JSON.stringify(next)]),
+  };
+
+  try {
+    if (found) {
+      await drive.files.update(
+        { fileId: found.id, media },
+        // Guard the write on the revision we read.
+        found.headRevisionId
+          ? { headers: { "If-Match": found.headRevisionId } }
+          : undefined
+      );
+    } else {
+      await drive.files.create({
+        requestBody: { name: fileName, parents: ["appDataFolder"] },
+        media,
+      });
+    }
+    return next;
+  } catch (err: unknown) {
+    const status = (err as { code?: number; status?: number })?.code ??
+      (err as { response?: { status?: number } })?.response?.status;
+    // 412 = precondition failed (revision changed). Retry with fresh read.
+    if (status === 412 && attempt < 5) {
+      return mutateFile(fileName, defaultValue, mutate, attempt + 1);
+    }
+    throw err;
   }
 }
 
@@ -179,7 +244,6 @@ export async function getPortfolio(
 export async function createPortfolio(
   data: Omit<PortfolioData, "id" | "holdings" | "transactions" | "createdAt" | "updatedAt">
 ): Promise<PortfolioData> {
-  const portfolios = await getPortfolios();
   const now = new Date().toISOString();
   const portfolio: PortfolioData = {
     id: generateId(),
@@ -189,8 +253,10 @@ export async function createPortfolio(
     createdAt: now,
     updatedAt: now,
   };
-  portfolios.push(portfolio);
-  await savePortfolios(portfolios);
+  await mutateFile<PortfolioData[]>("portfolios.json", [], (portfolios) => [
+    ...portfolios,
+    portfolio,
+  ]);
   return portfolio;
 }
 
@@ -198,23 +264,30 @@ export async function updatePortfolio(
   id: string,
   updater: (p: PortfolioData) => PortfolioData
 ): Promise<PortfolioData | null> {
-  const portfolios = await getPortfolios();
-  const idx = portfolios.findIndex((p) => p.id === id);
-  if (idx === -1) return null;
-  portfolios[idx] = updater({
-    ...portfolios[idx],
-    updatedAt: new Date().toISOString(),
+  let result: PortfolioData | null = null;
+  await mutateFile<PortfolioData[]>("portfolios.json", [], (portfolios) => {
+    const idx = portfolios.findIndex((p) => p.id === id);
+    if (idx === -1) return portfolios;
+    const updated = updater({
+      ...portfolios[idx],
+      updatedAt: new Date().toISOString(),
+    });
+    result = updated;
+    const next = [...portfolios];
+    next[idx] = updated;
+    return next;
   });
-  await savePortfolios(portfolios);
-  return portfolios[idx];
+  return result;
 }
 
 export async function deletePortfolio(id: string): Promise<boolean> {
-  const portfolios = await getPortfolios();
-  const filtered = portfolios.filter((p) => p.id !== id);
-  if (filtered.length === portfolios.length) return false;
-  await savePortfolios(filtered);
-  return true;
+  let deleted = false;
+  await mutateFile<PortfolioData[]>("portfolios.json", [], (portfolios) => {
+    const filtered = portfolios.filter((p) => p.id !== id);
+    deleted = filtered.length !== portfolios.length;
+    return filtered;
+  });
+  return deleted;
 }
 
 // ─── Watchlist operations ───
@@ -231,25 +304,28 @@ export async function addToWatchlist(
   symbol: string,
   companyName: string
 ): Promise<WatchlistItem | null> {
-  const items = await getWatchlist();
-  if (items.some((i) => i.symbol === symbol)) return null;
-  const item: WatchlistItem = {
-    id: generateId(),
-    symbol,
-    companyName,
-    createdAt: new Date().toISOString(),
-  };
-  items.push(item);
-  await saveWatchlist(items);
+  let item: WatchlistItem | null = null;
+  await mutateFile<WatchlistItem[]>("watchlist.json", [], (items) => {
+    if (items.some((i) => i.symbol === symbol)) return items;
+    item = {
+      id: generateId(),
+      symbol,
+      companyName,
+      createdAt: new Date().toISOString(),
+    };
+    return [...items, item];
+  });
   return item;
 }
 
 export async function removeFromWatchlist(symbol: string): Promise<boolean> {
-  const items = await getWatchlist();
-  const filtered = items.filter((i) => i.symbol !== symbol);
-  if (filtered.length === items.length) return false;
-  await saveWatchlist(filtered);
-  return true;
+  let removed = false;
+  await mutateFile<WatchlistItem[]>("watchlist.json", [], (items) => {
+    const filtered = items.filter((i) => i.symbol !== symbol);
+    removed = filtered.length !== items.length;
+    return filtered;
+  });
+  return removed;
 }
 
 // ─── Model Portfolio operations ───
@@ -274,7 +350,6 @@ export async function getModelPortfolio(
 export async function createModelPortfolio(
   data: Omit<ModelPortfolioData, "id" | "createdAt" | "updatedAt">
 ): Promise<ModelPortfolioData> {
-  const models = await getModelPortfolios();
   const now = new Date().toISOString();
   const model: ModelPortfolioData = {
     id: generateId(),
@@ -282,8 +357,10 @@ export async function createModelPortfolio(
     createdAt: now,
     updatedAt: now,
   };
-  models.push(model);
-  await saveModelPortfolios(models);
+  await mutateFile<ModelPortfolioData[]>("model-portfolios.json", [], (models) => [
+    ...models,
+    model,
+  ]);
   return model;
 }
 
@@ -291,21 +368,28 @@ export async function updateModelPortfolio(
   id: string,
   updater: (m: ModelPortfolioData) => ModelPortfolioData
 ): Promise<ModelPortfolioData | null> {
-  const models = await getModelPortfolios();
-  const idx = models.findIndex((m) => m.id === id);
-  if (idx === -1) return null;
-  models[idx] = updater({
-    ...models[idx],
-    updatedAt: new Date().toISOString(),
+  let result: ModelPortfolioData | null = null;
+  await mutateFile<ModelPortfolioData[]>("model-portfolios.json", [], (models) => {
+    const idx = models.findIndex((m) => m.id === id);
+    if (idx === -1) return models;
+    const updated = updater({
+      ...models[idx],
+      updatedAt: new Date().toISOString(),
+    });
+    result = updated;
+    const next = [...models];
+    next[idx] = updated;
+    return next;
   });
-  await saveModelPortfolios(models);
-  return models[idx];
+  return result;
 }
 
 export async function deleteModelPortfolio(id: string): Promise<boolean> {
-  const models = await getModelPortfolios();
-  const filtered = models.filter((m) => m.id !== id);
-  if (filtered.length === models.length) return false;
-  await saveModelPortfolios(filtered);
-  return true;
+  let deleted = false;
+  await mutateFile<ModelPortfolioData[]>("model-portfolios.json", [], (models) => {
+    const filtered = models.filter((m) => m.id !== id);
+    deleted = filtered.length !== models.length;
+    return filtered;
+  });
+  return deleted;
 }

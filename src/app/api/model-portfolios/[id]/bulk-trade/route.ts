@@ -53,10 +53,18 @@ export async function POST(
     total: number;
   }[] = [];
 
+  // Aggregate total sell quantity per symbol so two SELLs of the same stock
+  // can't each pass validation against the original share count and oversell.
+  const sellTotals = new Map<string, number>();
+
   for (const trade of trades) {
-    if (trade.quantity <= 0) {
+    if (
+      (trade.type !== "BUY" && trade.type !== "SELL") ||
+      !Number.isFinite(trade.quantity) ||
+      trade.quantity <= 0
+    ) {
       return NextResponse.json(
-        { error: `Invalid quantity for ${trade.symbol}` },
+        { error: `Invalid trade for ${trade.symbol}` },
         { status: 400 }
       );
     }
@@ -65,7 +73,7 @@ export async function POST(
       trade.price && trade.price > 0
         ? trade.price
         : priceMap.get(trade.symbol) || 0;
-    if (price <= 0) {
+    if (!Number.isFinite(price) || price <= 0) {
       return NextResponse.json(
         { error: `Cannot find price for ${trade.symbol}` },
         { status: 400 }
@@ -75,18 +83,11 @@ export async function POST(
     const total = trade.quantity * price;
 
     if (trade.type === "SELL") {
-      const alloc = model.allocations.find((a) => a.symbol === trade.symbol);
-      if (!alloc || alloc.shares < trade.quantity) {
-        return NextResponse.json(
-          {
-            error: `Insufficient shares for ${trade.symbol}. Have ${alloc?.shares || 0}, trying to sell ${trade.quantity}`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (trade.type === "BUY") {
+      sellTotals.set(
+        trade.symbol,
+        (sellTotals.get(trade.symbol) || 0) + trade.quantity
+      );
+    } else {
       totalBuyCost += total;
     }
 
@@ -98,6 +99,19 @@ export async function POST(
       price,
       total,
     });
+  }
+
+  // Validate aggregate sells against current holdings.
+  for (const [symbol, qty] of sellTotals) {
+    const alloc = model.allocations.find((a) => a.symbol === symbol);
+    if (!alloc || alloc.shares < qty) {
+      return NextResponse.json(
+        {
+          error: `Insufficient shares for ${symbol}. Have ${alloc?.shares || 0}, trying to sell ${qty}`,
+        },
+        { status: 400 }
+      );
+    }
   }
 
   const totalSellProceeds = resolvedTrades
@@ -116,7 +130,13 @@ export async function POST(
 
   const now = new Date().toISOString();
 
-  const updated = await updateModelPortfolio(id, (m) => {
+  let updated;
+  try {
+    updated = await updateModelPortfolio(id, (m) => {
+    // Re-check inside the atomic write (guards against concurrent cash changes).
+    if (netCashNeeded > m.cashBalance + 0.01) {
+      throw new Error("INSUFFICIENT_CASH");
+    }
     for (const trade of resolvedTrades) {
       // Record transaction
       m.transactions.push({
@@ -200,7 +220,13 @@ export async function POST(
     }
 
     return m;
-  });
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "INSUFFICIENT_CASH") {
+      return NextResponse.json({ error: "Insufficient cash" }, { status: 400 });
+    }
+    throw err;
+  }
 
   if (!updated) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

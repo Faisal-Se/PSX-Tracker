@@ -2,16 +2,9 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { RefreshCw } from "lucide-react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-} from "recharts";
 import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { NavProgressionChart } from "@/components/NavProgressionChart";
 
 interface Transaction {
   id: string;
@@ -71,7 +64,6 @@ interface ModelPortfolio {
   transactions?: ModelTransaction[];
 }
 
-type Period = "1W" | "1M" | "3M" | "6M" | "1Y" | "ALL";
 type Scope = "all" | "personal" | "models";
 
 // Map a model portfolio into the page's Portfolio shape (excluding the CASH pseudo-row)
@@ -114,7 +106,6 @@ export default function PerformancePage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [period, setPeriod] = useState<Period>("1Y");
   const [scope, setScope] = useState<Scope>("all");
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -148,6 +139,8 @@ export default function PerformancePage() {
     fetchData();
   }, [fetchData]);
 
+  const [history, setHistory] = useState<Record<string, { date: string; close: number }[]>>({});
+
   const priceMap = useMemo(
     () => new Map(marketData.map((s) => [s.symbol, s.current])),
     [marketData]
@@ -160,6 +153,57 @@ export default function PerformancePage() {
     if (scope === "models") return mapped;
     return [...portfolios, ...mapped];
   }, [scope, portfolios, modelPortfolios]);
+
+  // Holdings + cash across the active scope, shaped for the NAV chart.
+  const chartHoldings = useMemo(
+    () =>
+      activePortfolios.flatMap((p) =>
+        p.holdings.map((h) => ({
+          symbol: h.symbol,
+          shares: h.quantity,
+          avgPrice: h.avgPrice,
+        }))
+      ),
+    [activePortfolios]
+  );
+  const chartCash = useMemo(
+    () => activePortfolios.reduce((s, p) => s + p.cashBalance, 0),
+    [activePortfolios]
+  );
+
+  // Fetch per-symbol price history for the NAV chart.
+  useEffect(() => {
+    const symbols = Array.from(new Set(chartHoldings.map((h) => h.symbol))).slice(0, 16);
+    if (symbols.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const missing = symbols.filter((s) => !history[s]);
+      if (missing.length === 0) return;
+      type Pt = { date: string; close: number };
+      const results = await Promise.all(
+        missing.map(async (sym): Promise<[string, Pt[]]> => {
+          try {
+            const res = await fetch(`/api/psx/history?symbol=${encodeURIComponent(sym)}`);
+            if (!res.ok) return [sym, []];
+            const data = await res.json();
+            return [sym, Array.isArray(data) ? (data as Pt[]) : []];
+          } catch {
+            return [sym, []];
+          }
+        })
+      );
+      if (cancelled) return;
+      setHistory((prev) => {
+        const next = { ...prev };
+        for (const [sym, data] of results) next[sym] = data;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartHoldings]);
 
   // Derived transactions based on the selected scope (models synthesize portfolioId)
   const activeTransactions = useMemo<Transaction[]>(() => {
@@ -201,80 +245,6 @@ export default function PerformancePage() {
   const totalPnLPct = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
   const netWorth = totalCurrentValue + totalCash;
 
-  // Build cumulative P&L chart data from transactions
-  const chartData = useMemo(() => {
-    if (activeTransactions.length === 0) return [];
-
-    const sorted = [...activeTransactions].sort(
-      (a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    // Group transactions by date
-    const dailyMap = new Map<
-      string,
-      { invested: number; buys: number; sells: number }
-    >();
-
-    let cumulativeInvested = 0;
-    let cumulativeSellProceeds = 0;
-
-    for (const tx of sorted) {
-      const dateKey = new Date(tx.createdAt).toISOString().split("T")[0];
-      if (!dailyMap.has(dateKey)) {
-        dailyMap.set(dateKey, { invested: 0, buys: 0, sells: 0 });
-      }
-      const day = dailyMap.get(dateKey)!;
-
-      if (tx.type === "BUY") {
-        cumulativeInvested += tx.total;
-        day.buys += tx.total;
-      } else if (tx.type === "SELL") {
-        cumulativeSellProceeds += tx.total;
-        day.sells += tx.total;
-      }
-
-      day.invested = cumulativeInvested - cumulativeSellProceeds;
-    }
-
-    // Filter by period
-    const now = new Date();
-    const cutoff = new Date();
-    switch (period) {
-      case "1W":
-        cutoff.setDate(now.getDate() - 7);
-        break;
-      case "1M":
-        cutoff.setMonth(now.getMonth() - 1);
-        break;
-      case "3M":
-        cutoff.setMonth(now.getMonth() - 3);
-        break;
-      case "6M":
-        cutoff.setMonth(now.getMonth() - 6);
-        break;
-      case "1Y":
-        cutoff.setFullYear(now.getFullYear() - 1);
-        break;
-      case "ALL":
-        cutoff.setFullYear(2000);
-        break;
-    }
-
-    return Array.from(dailyMap.entries())
-      .filter(([date]) => new Date(date) >= cutoff)
-      .map(([date, data]) => ({
-        date,
-        label: new Date(date).toLocaleDateString("en-PK", {
-          day: "numeric",
-          month: "short",
-        }),
-        invested: data.invested,
-        buys: data.buys,
-        sells: data.sells,
-      }));
-  }, [activeTransactions, period]);
-
   // Per-stock P&L breakdown
   const stockPnL = useMemo(() => {
     const allHoldings = activePortfolios.flatMap((p) => p.holdings);
@@ -314,7 +284,6 @@ export default function PerformancePage() {
     [stockPnL]
   );
 
-  const periods: Period[] = ["1W", "1M", "3M", "6M", "1Y", "ALL"];
   const scopes: { value: Scope; label: string }[] = [
     { value: "all", label: "All" },
     { value: "personal", label: "Personal" },
@@ -401,70 +370,15 @@ export default function PerformancePage() {
         ))}
       </div>
 
-      {/* Investment Timeline */}
-      <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="text-[15px] font-bold">Investment Timeline</div>
-          <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
-            {periods.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
-                  period === p ? "bg-brand text-white" : "text-ink-2 hover:text-ink"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="-mx-1.5 -mb-1 mt-4 h-[260px]">
-          {chartData.length < 2 ? (
-            <div className="flex h-full items-center justify-center">
-              <p className="text-xs text-ink-3">
-                No transaction data yet. Start trading to see your timeline.
-              </p>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="timelineFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#059669" stopOpacity={0.26} />
-                    <stop offset="100%" stopColor="#059669" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="label" hide />
-                <YAxis domain={["dataMin", "dataMax"]} hide />
-                <Tooltip
-                  cursor={{ stroke: "var(--color-line)", strokeWidth: 1 }}
-                  contentStyle={{
-                    background: "var(--color-card)",
-                    border: "1px solid var(--color-line)",
-                    borderRadius: 12,
-                    fontSize: 12,
-                    color: "var(--color-ink)",
-                    boxShadow: "var(--shadow-pop)",
-                  }}
-                  formatter={(v) => [`Rs ${formatPKR(Number(v), { decimals: 0 })}`, "Net Invested"]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="invested"
-                  stroke="#059669"
-                  strokeWidth={2.2}
-                  fill="url(#timelineFill)"
-                  dot={false}
-                  activeDot={{ r: 4, fill: "#059669" }}
-                  isAnimationActive
-                  animationDuration={1100}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </section>
+      {/* Portfolio value over time (real NAV from price history) */}
+      <div className="mb-[18px]">
+        <NavProgressionChart
+          holdings={chartHoldings}
+          cash={chartCash}
+          history={history}
+          title="Investment Timeline"
+        />
+      </div>
 
       {/* P&L by Stock + Stock Returns */}
       <div className="grid items-start gap-[18px] lg:grid-cols-[1.2fr_1fr]">
