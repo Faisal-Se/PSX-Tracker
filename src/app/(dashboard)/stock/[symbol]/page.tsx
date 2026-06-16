@@ -15,6 +15,7 @@ import {
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
 import { sectorName } from "@/lib/sectors";
+import { Skeleton, ChartSkeleton } from "@/components/ui/skeleton";
 
 interface StockData {
   symbol: string;
@@ -129,13 +130,16 @@ export default function StockPage({
     return (
       <>
         <div className="mb-[18px] flex items-center gap-3.5">
-          <div className="h-[52px] w-[52px] animate-pulse rounded-[10px] bg-line-soft" />
+          <Skeleton className="h-[52px] w-[52px] rounded-[10px]" />
           <div className="space-y-2">
-            <div className="h-6 w-32 animate-pulse rounded bg-line-soft" />
-            <div className="h-4 w-44 animate-pulse rounded bg-line-soft" />
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-4 w-44" />
           </div>
         </div>
-        <div className="h-[380px] animate-pulse rounded-2xl border border-line bg-card shadow-card" />
+        <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <Skeleton className="mb-4 h-8 w-40" />
+          <ChartSkeleton height={300} />
+        </div>
       </>
     );
   }

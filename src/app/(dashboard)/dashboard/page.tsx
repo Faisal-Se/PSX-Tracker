@@ -22,7 +22,7 @@ import {
 import { formatPKR, getMarketStatus } from "@/lib/market-status";
 import { STRIP_SECTORS, stripSectorLabel } from "@/lib/sectors";
 import { Sparkline } from "@/components/Sparkline";
-import { ChartSkeleton } from "@/components/ui/skeleton";
+import { ChartSkeleton, PageSkeleton } from "@/components/ui/skeleton";
 import {
   AreaChart,
   Area,
@@ -189,6 +189,7 @@ export default function DashboardPage() {
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
   const [balancesHidden, setBalancesHidden] = useState(false);
@@ -261,6 +262,7 @@ export default function DashboardPage() {
       console.error("Failed to fetch data:", error);
     } finally {
       setRefreshing(false);
+      setLoaded(true);
     }
   }, []);
 
@@ -546,6 +548,10 @@ export default function DashboardPage() {
   const kseUp = (kse100?.change ?? 0) >= 0;
 
   const blur = (s: string) => (balancesHidden ? "balance-blur" : s);
+
+  // Gate the first paint behind a skeleton so the zeroed "empty" frame never
+  // flashes before live data arrives.
+  if (!loaded) return <PageSkeleton />;
 
   return (
     <>

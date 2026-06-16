@@ -15,6 +15,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { formatPKR } from "@/lib/market-status";
+import { PageSkeleton } from "@/components/ui/skeleton";
 import { sectorName } from "@/lib/sectors";
 
 /* ────────────────────────── types ────────────────────────── */
@@ -98,22 +99,27 @@ export default function AnalyticsPage() {
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [scope, setScope] = useState<Scope>("all");
+  const [loaded, setLoaded] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [portfolioRes, modelRes, marketRes] = await Promise.all([
-      fetch("/api/portfolios"),
-      fetch("/api/model-portfolios"),
-      fetch("/api/psx"),
-    ]);
+    try {
+      const [portfolioRes, modelRes, marketRes] = await Promise.all([
+        fetch("/api/portfolios"),
+        fetch("/api/model-portfolios"),
+        fetch("/api/psx"),
+      ]);
 
-    if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
-    if (modelRes.ok) {
-      const data = await modelRes.json();
-      setModelPortfolios(Array.isArray(data) ? data : []);
-    }
-    if (marketRes.ok) {
-      const data = await marketRes.json();
-      setMarketData(Array.isArray(data) ? data : []);
+      if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
+      if (modelRes.ok) {
+        const data = await modelRes.json();
+        setModelPortfolios(Array.isArray(data) ? data : []);
+      }
+      if (marketRes.ok) {
+        const data = await marketRes.json();
+        setMarketData(Array.isArray(data) ? data : []);
+      }
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -225,6 +231,8 @@ export default function AnalyticsPage() {
   const maxWeight = breakdownRows[0]?.weight || 1;
 
   const hasData = allHoldings.length > 0;
+
+  if (!loaded) return <PageSkeleton />;
 
   return (
     <>
