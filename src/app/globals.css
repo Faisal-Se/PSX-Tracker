@@ -475,6 +475,33 @@
 }
 .ping-dot { animation: ping-dot 2s ease-out infinite; }
 
+/* ── Skeleton shimmer (design-token based) ── */
+@keyframes skeleton-sweep {
+  100% { transform: translateX(100%); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--color-ink) 7%, transparent);
+  border-radius: 10px;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--color-card) 65%, transparent),
+    transparent
+  );
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; }
+}
+
 /* Linear keeps text solid; map old gradient helpers to plain foreground */
 .gradient-text,
 .gradient-text-blue,

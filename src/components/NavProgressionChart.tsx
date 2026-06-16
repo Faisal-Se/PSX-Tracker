@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { TrendingUp } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+import { ChartSkeleton } from "@/components/ui/skeleton";
 import {
   buildNavSeries,
   sliceRange,
@@ -63,6 +64,13 @@ export function NavProgressionChart({
     return { growthPct: (last / first - 1) * 100, ath: athInfo(fullSeries) };
   }, [series, fullSeries]);
 
+  // Loading = holdings exist but their price history hasn't all arrived yet.
+  const loading = useMemo(() => {
+    const syms = holdings.filter((h) => h.shares > 0).map((h) => h.symbol);
+    if (syms.length === 0) return false;
+    return series.length < 2 && syms.some((s) => !history[s] || history[s].length === 0);
+  }, [holdings, history, series]);
+
   const last = series[series.length - 1]?.value ?? 0;
   const up = growthPct >= 0;
   const color = up ? "var(--color-gain)" : "var(--color-loss-strong)";
@@ -87,7 +95,9 @@ export function NavProgressionChart({
         </div>
       </div>
 
-      {series.length < 2 ? (
+      {loading ? (
+        <ChartSkeleton height={260} />
+      ) : series.length < 2 ? (
         <div className="flex h-[260px] items-center justify-center">
           <p className="text-[13px] text-ink-3">Not enough history to chart yet</p>
         </div>

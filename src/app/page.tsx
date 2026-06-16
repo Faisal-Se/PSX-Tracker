@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { BrandSplash } from "@/components/BrandSplash";
 
 // Logged-in users go straight to the app; visitors see the landing page.
 export default function Home() {
@@ -23,9 +24,5 @@ export default function Home() {
     };
   }, [router]);
 
-  return (
-    <div className="min-h-dvh flex items-center justify-center bg-background">
-      <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  return <BrandSplash label="Getting things ready" />;
 }

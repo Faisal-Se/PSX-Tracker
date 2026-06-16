@@ -22,6 +22,7 @@ import {
 import { formatPKR, getMarketStatus } from "@/lib/market-status";
 import { STRIP_SECTORS, stripSectorLabel } from "@/lib/sectors";
 import { Sparkline } from "@/components/Sparkline";
+import { ChartSkeleton } from "@/components/ui/skeleton";
 import {
   AreaChart,
   Area,
@@ -825,14 +826,12 @@ export default function DashboardPage() {
                     />
                   </AreaChart>
                 </ResponsiveContainer>
-              ) : (
+              ) : allHoldings.length === 0 ? (
                 <div className="flex h-full items-center justify-center">
-                  <p className="text-xs text-ink-3">
-                    {allHoldings.length === 0
-                      ? "Add holdings to see value over time"
-                      : "Building price history…"}
-                  </p>
+                  <p className="text-xs text-ink-3">Add holdings to see value over time</p>
                 </div>
+              ) : (
+                <ChartSkeleton height={168} />
               )}
             </div>
           </section>

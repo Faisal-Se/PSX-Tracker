@@ -19,6 +19,7 @@ import {
   type HistPt,
   type CashFlow,
 } from "@/lib/returns";
+import { ChartSkeleton } from "@/components/ui/skeleton";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "ALL"] as const;
 const KSE_COLOR = "#f59e0b";
@@ -86,6 +87,14 @@ export function BenchmarkChart({
   const delta = portFinal - kseFinal;
   const outperformed = delta >= 0;
 
+  // Loading while KSE history or holdings' price history hasn't arrived.
+  const loading = useMemo(() => {
+    const syms = holdings.filter((h) => h.shares > 0).map((h) => h.symbol);
+    if (syms.length === 0) return false;
+    const histMissing = syms.some((s) => !history[s] || history[s].length === 0);
+    return data.length < 2 && (kse.length === 0 || histMissing);
+  }, [holdings, history, kse, data]);
+
   return (
     <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
@@ -133,7 +142,9 @@ export function BenchmarkChart({
         ))}
       </div>
 
-      {data.length < 2 ? (
+      {loading ? (
+        <ChartSkeleton height={220} />
+      ) : data.length < 2 ? (
         <div className="flex h-[220px] items-center justify-center">
           <p className="text-[13px] text-ink-3">Not enough history to compare yet</p>
         </div>
