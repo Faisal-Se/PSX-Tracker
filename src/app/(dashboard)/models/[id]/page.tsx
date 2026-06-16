@@ -2,10 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,12 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   ArrowLeft,
-  ArrowUpRight,
-  ArrowDownRight,
   Wallet,
-  TrendingUp,
-  BarChart3,
-  PieChart,
   Plus,
   X,
   Search,
@@ -29,7 +20,6 @@ import {
   Minus,
   ShoppingCart,
   Trash2,
-  Activity,
   Hash,
   Percent,
   Sparkles,
@@ -37,12 +27,7 @@ import {
 import { formatPKR } from "@/lib/market-status";
 import {
   ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
   Tooltip,
-  CartesianGrid,
   Cell,
   PieChart as RechartsPie,
   Pie,
@@ -82,6 +67,27 @@ interface SearchStock {
   company: string;
   current: number;
 }
+
+/* Avatar tint palette (per ticker) — copied from market/page.tsx */
+const TINTS = ["#2563EB", "#7C3AED", "#0D9488", "#DB2777", "#CA8A04", "#0891B2", "#16A34A", "#4F46E5"];
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
+}
+
+/* Allocation / donut palette (NOT P&L) */
+const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#DB2777"];
+const CASH_COLOR = "#CBD5E1";
+
+const TOOLTIP_STYLE = {
+  background: "var(--color-card)",
+  border: "1px solid var(--color-line)",
+  borderRadius: 12,
+  fontSize: 12,
+  color: "var(--color-ink)",
+  boxShadow: "var(--shadow-pop)",
+} as const;
 
 export default function ModelDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -286,8 +292,8 @@ export default function ModelDetailPage() {
 
   if (loading || !model) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex h-64 items-center justify-center">
+        <RefreshCw className="h-6 w-6 animate-spin text-ink-3" />
       </div>
     );
   }
@@ -307,6 +313,7 @@ export default function ModelDetailPage() {
   const totalValue = model.cashBalance + marketValue;
   const totalPnl = marketValue - investedValue;
   const totalPnlPct = investedValue > 0 ? (totalPnl / investedValue) * 100 : 0;
+  const totalUp = totalPnl >= 0;
 
   // Live allocation % — derived from current market values so they always
   // reflect the latest prices/holdings (never stale stored percentages).
@@ -330,6 +337,9 @@ export default function ModelDetailPage() {
   ]
     .filter((a) => a.pct > 0)
     .sort((a, b) => b.pct - a.pct);
+
+  const allocColor = (symbol: string, i: number) =>
+    symbol === "CASH" ? CASH_COLOR : ALLOC_COLORS[i % ALLOC_COLORS.length];
 
   // Rebalance helpers
   const rebalanceTotalPct = rebalanceAllocations.reduce(
@@ -814,676 +824,534 @@ export default function ModelDetailPage() {
     }
   };
 
-  // Indigo / neutral chart palette (CSS-var driven, calm Linear tones)
-  const CHART_COLORS = [
-    "var(--chart-1)",
-    "var(--chart-2)",
-    "var(--chart-3)",
-    "var(--chart-4)",
-    "var(--chart-5)",
+  // ── Derived chart data (stocks present) ──
+  const stockPnlData = stockAllocations.map((alloc) => {
+    const currentPrice = marketPrices[alloc.symbol] || alloc.avgPrice;
+    const currentValue = alloc.shares * currentPrice;
+    const costBasis = alloc.shares * alloc.avgPrice;
+    const pnl = currentValue - costBasis;
+    const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+    return { symbol: alloc.symbol, pnl, pnlPct, currentValue, costBasis };
+  });
+  const maxAbsPnl = Math.max(1, ...stockPnlData.map((d) => Math.abs(d.pnl)));
+
+  const pieData = [
+    ...stockAllocations.map((a) => ({
+      name: a.symbol,
+      value: a.shares * (marketPrices[a.symbol] || a.avgPrice),
+    })),
+    ...(model.cashBalance > 0 ? [{ name: "Cash", value: model.cashBalance }] : []),
   ];
-  const CASH_COLOR = "var(--muted-foreground)";
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 animate-in-up">
-        <div>
-          <button
-            onClick={() => router.push("/models")}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Models
-          </button>
+    <>
+      {/* ── Page header: back link + name + edit pencil + actions ── */}
+      <div className="mb-[18px]">
+        <button
+          onClick={() => router.push("/models")}
+          className="mb-3.5 flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink"
+        >
+          <ArrowLeft className="h-[15px] w-[15px]" />
+          Back to Models
+        </button>
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl border border-border bg-muted/40 flex items-center justify-center shrink-0">
-              <PieChart className="h-5 w-5 text-muted-foreground" />
-            </div>
+            <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[14px] bg-brand text-white shadow-[0_6px_16px_rgba(37,99,235,.25)]">
+              <RefreshCw className="h-[22px] w-[22px]" />
+            </span>
             <div>
-              <h1 className="text-xl lg:text-2xl font-semibold tracking-tight flex items-center gap-2">
-                {model.name}
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-[24px] font-bold tracking-[-.03em]">{model.name}</h1>
+                <span className="rounded-full bg-brand/10 px-2 py-[3px] text-[10.5px] font-semibold text-brand">
+                  MODEL
+                </span>
                 <button
                   onClick={() => {
                     setEditName(model.name);
                     setEditDescription(model.description);
                     setShowEditInfo(true);
                   }}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  className="grid h-7 w-7 place-items-center rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-brand"
+                  title="Edit info"
                 >
                   <Pencil className="h-4 w-4" />
                 </button>
-              </h1>
+              </div>
               {model.description && (
-                <p className="text-sm text-muted-foreground">
+                <div className="mt-0.5 max-w-[520px] text-[13px] text-ink-3">
                   {model.description}
-                </p>
+                </div>
               )}
             </div>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            className="rounded-lg"
-            onClick={() => setShowAddCash(true)}
-          >
-            <Plus className="h-4 w-4 mr-1.5" />
-            Add Cash
-          </Button>
-          <Button
-            variant="outline"
-            className="rounded-lg"
-            onClick={() => setShowWithdrawCash(true)}
-          >
-            <Minus className="h-4 w-4 mr-1.5" />
-            Withdraw
-          </Button>
-          <Button
-            variant="outline"
-            className="rounded-lg"
-            onClick={openBulkTrade}
-          >
-            <ShoppingCart className="h-4 w-4 mr-1.5" />
-            Bulk Trade
-          </Button>
-          <Button
-            variant="outline"
-            className="rounded-lg"
-            onClick={openSip}
-          >
-            <Sparkles className="h-4 w-4 mr-1.5" />
-            SIP
-          </Button>
-          <Button
-            className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={openRebalance}
-          >
-            <RefreshCw className="h-4 w-4 mr-1.5" />
-            Rebalance
-          </Button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => setShowAddCash(true)}
+              className="flex h-10 items-center gap-2 rounded-[11px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105"
+            >
+              <Plus className="h-[15px] w-[15px]" />
+              Add Cash
+            </button>
+            <button
+              onClick={() => setShowWithdrawCash(true)}
+              className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+            >
+              <Minus className="h-[15px] w-[15px]" />
+              Withdraw
+            </button>
+            <button
+              onClick={openBulkTrade}
+              className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+            >
+              <ShoppingCart className="h-[15px] w-[15px]" />
+              Bulk Trade
+            </button>
+            <button
+              onClick={openSip}
+              className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+            >
+              <Sparkles className="h-[15px] w-[15px]" />
+              SIP
+            </button>
+            <button
+              onClick={openRebalance}
+              className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+            >
+              <RefreshCw className="h-[15px] w-[15px]" />
+              Rebalance
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Value / P&L Hero + Metric Strip */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-in-up-delay-1">
-        {/* Hero: Total Value + P&L */}
-        <Card className="border border-border bg-card rounded-xl lg:col-span-1">
-          <CardContent className="pt-5 pb-5">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              Total Value
-            </p>
-            <p className="text-3xl font-semibold font-tabular mt-1.5">
-              PKR {formatPKR(totalValue, { decimals: 0 })}
-            </p>
-            <div className="flex items-center gap-2 mt-3">
-              <span
-                className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm font-tabular font-semibold"
-                style={{
-                  color: totalPnl >= 0 ? "var(--color-profit)" : "var(--color-loss)",
-                  backgroundColor: totalPnl >= 0 ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
-                }}
-              >
-                {totalPnl >= 0 ? (
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                ) : (
-                  <ArrowDownRight className="h-3.5 w-3.5" />
-                )}
-                {totalPnl >= 0 ? "+" : ""}
-                {formatPKR(totalPnl, { decimals: 0 })}
-              </span>
-              <span
-                className="text-sm font-tabular font-semibold"
-                style={{ color: totalPnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-              >
-                {totalPnlPct >= 0 ? "+" : ""}
-                {totalPnlPct.toFixed(2)}%
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Metric strip */}
-        <Card className="border border-border bg-card rounded-xl lg:col-span-2">
-          <CardContent className="py-5 grid grid-cols-3 divide-x divide-border">
-            <div className="px-2">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                Cash Balance
-              </p>
-              <p className="text-lg font-semibold font-tabular mt-1.5">
-                PKR {formatPKR(model.cashBalance, { decimals: 0 })}
-              </p>
-            </div>
-            <div className="px-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                Invested
-              </p>
-              <p className="text-lg font-semibold font-tabular mt-1.5">
-                PKR {formatPKR(investedValue, { decimals: 0 })}
-              </p>
-            </div>
-            <div className="px-4">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                Market Value
-              </p>
-              <p className="text-lg font-semibold font-tabular mt-1.5">
-                PKR {formatPKR(marketValue, { decimals: 0 })}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Holdings Table */}
-      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-2">
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-            <TrendingUp className="h-4 w-4" />
-            Holdings
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {stockAllocations.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No stocks yet. Click Rebalance to add stocks.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-[11px] text-muted-foreground uppercase tracking-wide border-b border-border">
-                    <th className="text-left py-2 px-2 font-semibold">
-                      Stock
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Alloc %
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Shares
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Avg Price
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Current
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Value
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">P&L</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stockAllocations.map((alloc) => {
-                    const currentPrice =
-                      marketPrices[alloc.symbol] || alloc.avgPrice;
-                    const currentValue = alloc.shares * currentPrice;
-                    const costBasis = alloc.shares * alloc.avgPrice;
-                    const pnl = currentValue - costBasis;
-                    const pnlPct =
-                      costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-
-                    return (
-                      <tr
-                        key={alloc.symbol}
-                        className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors"
-                      >
-                        <td className="py-3 px-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className="h-8 w-8 rounded-lg border border-border bg-muted/40 flex items-center justify-center text-[10px] font-semibold text-muted-foreground shrink-0">
-                              {alloc.symbol.slice(0, 3)}
-                            </div>
-                            <div>
-                              <p className="font-semibold flex items-center gap-1.5">
-                                {alloc.symbol}
-                                <button
-                                  onClick={() => openEditHolding(alloc)}
-                                  className="text-muted-foreground hover:text-foreground transition-colors"
-                                  title="Edit avg price / shares"
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </button>
-                              </p>
-                              <p className="text-[11px] text-muted-foreground truncate max-w-[150px]">
-                                {alloc.companyName}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="text-right py-3 px-2">
-                          <span className="inline-block text-[10px] font-tabular font-semibold px-1.5 py-0.5 rounded-md border border-border bg-muted/40 text-muted-foreground">
-                            {livePct(alloc.symbol).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="text-right py-3 px-2 font-tabular font-semibold">
-                          {alloc.shares}
-                        </td>
-                        <td className="text-right py-3 px-2 font-tabular">
-                          {formatPKR(alloc.avgPrice)}
-                        </td>
-                        <td className="text-right py-3 px-2 font-tabular">
-                          {formatPKR(currentPrice)}
-                        </td>
-                        <td className="text-right py-3 px-2 font-tabular font-semibold">
-                          {formatPKR(currentValue, { decimals: 0 })}
-                        </td>
-                        <td className="text-right py-3 px-2">
-                          <div
-                            className="font-tabular font-semibold"
-                            style={{ color: pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-                          >
-                            <span className="flex items-center justify-end gap-0.5">
-                              {pnl >= 0 ? (
-                                <ArrowUpRight className="h-3 w-3" />
-                              ) : (
-                                <ArrowDownRight className="h-3 w-3" />
-                              )}
-                              {formatPKR(Math.abs(pnl), { decimals: 0 })}
-                            </span>
-                            <span className="text-[11px] opacity-80">
-                              {pnlPct >= 0 ? "+" : ""}
-                              {pnlPct.toFixed(2)}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Allocation Breakdown */}
-      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-            <BarChart3 className="h-4 w-4" />
-            Allocation Breakdown
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-3 bg-muted rounded-full overflow-hidden flex mb-4">
-            {allocationBreakdown.map((a, i) => {
-              const color =
-                a.symbol === "CASH"
-                  ? CASH_COLOR
-                  : CHART_COLORS[i % CHART_COLORS.length];
-              return (
-                <div
-                  key={a.symbol}
-                  className="h-full transition-all"
-                  style={{ width: `${a.pct}%`, backgroundColor: color }}
-                  title={`${a.label}: ${a.pct.toFixed(1)}%`}
-                />
-              );
-            })}
+      {/* ── Hero: Total Value + P&L badge + metric strip ── */}
+      <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+        <div className="mb-2 text-[13px] font-medium text-ink-2">Total Value</div>
+        <div className="flex flex-wrap items-baseline gap-3">
+          <div className="num whitespace-nowrap text-[38px] font-bold leading-none tracking-[-.035em]">
+            Rs {formatPKR(totalValue, { decimals: 0 })}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {allocationBreakdown.map((a, i) => {
-              const color =
-                a.symbol === "CASH"
-                  ? CASH_COLOR
-                  : CHART_COLORS[i % CHART_COLORS.length];
-              return (
-                <div key={a.symbol} className="flex items-center gap-1.5">
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-                  <span className="text-xs font-medium">{a.label}</span>
-                  <span className="text-xs text-muted-foreground font-tabular">
-                    {a.pct.toFixed(1)}%
-                  </span>
-                </div>
-              );
-            })}
+          <span
+            className="num rounded-lg px-2.5 py-1 text-[13px] font-semibold"
+            style={{
+              color: totalUp ? "var(--color-gain)" : "var(--color-loss-strong)",
+              background: totalUp ? "var(--color-gain-50)" : "var(--color-loss-50)",
+            }}
+          >
+            {totalUp ? "▲" : "▼"} {totalUp ? "+" : ""}
+            {totalPnlPct.toFixed(2)}%
+          </span>
+        </div>
+        <div className="mt-2.5 text-[13px] text-ink-3">
+          {totalUp ? "Up" : "Down"} Rs {formatPKR(Math.abs(totalPnl), { decimals: 0 })} all time
+        </div>
+        <div className="mt-[22px] flex flex-wrap gap-[22px] border-t border-line pt-5">
+          <div className="min-w-[90px] flex-1">
+            <div className="mb-1.5 text-[12px] text-ink-2">Cash</div>
+            <div className="num text-[20px] font-bold tracking-[-.02em]">
+              Rs {formatPKR(model.cashBalance, { decimals: 0 })}
+            </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Analytics */}
-      {stockAllocations.length > 0 && (() => {
-        const stockPnlData = stockAllocations.map((alloc) => {
-          const currentPrice = marketPrices[alloc.symbol] || alloc.avgPrice;
-          const currentValue = alloc.shares * currentPrice;
-          const costBasis = alloc.shares * alloc.avgPrice;
-          const pnl = currentValue - costBasis;
-          const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-          return {
-            symbol: alloc.symbol,
-            pnl,
-            pnlPct,
-            currentValue,
-            costBasis,
-          };
-        });
-
-        const pieData = [
-          ...stockAllocations.map((a) => ({
-            name: a.symbol,
-            value: a.shares * (marketPrices[a.symbol] || a.avgPrice),
-          })),
-          ...(model.cashBalance > 0
-            ? [{ name: "Cash", value: model.cashBalance }]
-            : []),
-        ];
-
-        // Indigo-family palette for charts (calm, Linear)
-        const PIE_COLORS = [
-          "var(--chart-1)", "var(--chart-2)", "var(--chart-3)",
-          "var(--chart-4)", "var(--chart-5)",
-        ];
-
-        return (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in-up-delay-3">
-            {/* P&L by Stock */}
-            <Card className="border border-border bg-card rounded-xl">
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                  <Activity className="h-4 w-4" />
-                  P&L by Stock
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={stockPnlData}
-                      layout="vertical"
-                      margin={{ top: 0, right: 10, bottom: 0, left: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        horizontal={false}
-                        stroke="hsl(var(--border))"
-                      />
-                      <XAxis
-                        type="number"
-                        tick={{ fontSize: 11 }}
-                        tickFormatter={(v) => formatPKR(v, { decimals: 0 })}
-                        stroke="hsl(var(--muted-foreground))"
-                      />
-                      <YAxis
-                        dataKey="symbol"
-                        type="category"
-                        tick={{ fontSize: 12, fontWeight: 600 }}
-                        width={65}
-                        stroke="hsl(var(--muted-foreground))"
-                      />
-                      <Tooltip
-                        content={({ active, payload }) => {
-                          if (!active || !payload?.length) return null;
-                          const d = payload[0].payload;
-                          return (
-                            <div className="bg-popover border border-border rounded-xl px-3 py-2 shadow-lg text-sm">
-                              <p className="font-semibold">{d.symbol}</p>
-                              <p style={{ color: d.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}>
-                                P&L: {d.pnl >= 0 ? "+" : ""}PKR {formatPKR(d.pnl, { decimals: 0 })}
-                              </p>
-                              <p className="text-muted-foreground text-xs">
-                                {d.pnlPct >= 0 ? "+" : ""}{d.pnlPct.toFixed(2)}%
-                              </p>
-                            </div>
-                          );
-                        }}
-                      />
-                      <Bar dataKey="pnl" radius={[0, 4, 4, 0]}>
-                        {stockPnlData.map((entry, i) => (
-                          <Cell
-                            key={i}
-                            fill={entry.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)"}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Portfolio Composition Pie */}
-            <Card className="border border-border bg-card rounded-xl">
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                  <PieChart className="h-4 w-4" />
-                  Portfolio Composition
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[200px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPie>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={85}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        {pieData.map((_, i) => (
-                          <Cell
-                            key={i}
-                            fill={
-                              pieData[i].name === "Cash"
-                                ? CASH_COLOR
-                                : PIE_COLORS[i % PIE_COLORS.length]
-                            }
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        content={({ active, payload }) => {
-                          if (!active || !payload?.length) return null;
-                          const d = payload[0].payload;
-                          return (
-                            <div className="bg-popover border border-border rounded-xl px-3 py-2 shadow-lg text-sm">
-                              <p className="font-semibold">{d.name}</p>
-                              <p>PKR {formatPKR(d.value, { decimals: 0 })}</p>
-                              <p className="text-muted-foreground text-xs">
-                                {totalValue > 0
-                                  ? ((d.value / totalValue) * 100).toFixed(1)
-                                  : 0}
-                                %
-                              </p>
-                            </div>
-                          );
-                        }}
-                      />
-                    </RechartsPie>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex flex-wrap gap-2.5 mt-3 justify-center">
-                  {pieData.map((d, i) => (
-                    <div key={d.name} className="flex items-center gap-1.5">
-                      <div
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{
-                          backgroundColor:
-                            d.name === "Cash"
-                              ? CASH_COLOR
-                              : PIE_COLORS[i % PIE_COLORS.length],
-                        }}
-                      />
-                      <span className="text-xs font-medium">{d.name}</span>
-                      <span className="text-xs text-muted-foreground font-tabular">
-                        {totalValue > 0
-                          ? ((d.value / totalValue) * 100).toFixed(1)
-                          : 0}
-                        %
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Stock Returns */}
-            <Card className="border border-border bg-card rounded-xl lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                  <TrendingUp className="h-4 w-4" />
-                  Stock Returns
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {stockPnlData
-                    .sort((a, b) => b.pnlPct - a.pnlPct)
-                    .map((stock) => (
-                      <div
-                        key={stock.symbol}
-                        className="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-card"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold">{stock.symbol}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            Cost: PKR {formatPKR(stock.costBasis, { decimals: 0 })} → Value: PKR{" "}
-                            {formatPKR(stock.currentValue, { decimals: 0 })}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p
-                            className="text-sm font-semibold font-tabular"
-                            style={{ color: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-                          >
-                            {stock.pnl >= 0 ? "+" : ""}PKR {formatPKR(stock.pnl, { decimals: 0 })}
-                          </p>
-                          <p
-                            className="text-xs font-tabular"
-                            style={{ color: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-                          >
-                            {stock.pnlPct >= 0 ? "+" : ""}{stock.pnlPct.toFixed(2)}%
-                          </p>
-                        </div>
-                        <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${Math.min(100, Math.abs(stock.pnlPct))}%`,
-                              backgroundColor: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)",
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
+          <div className="min-w-[90px] flex-1">
+            <div className="mb-1.5 text-[12px] text-ink-2">Invested</div>
+            <div className="num text-[20px] font-bold tracking-[-.02em]">
+              Rs {formatPKR(investedValue, { decimals: 0 })}
+            </div>
           </div>
-        );
-      })()}
+          <div className="min-w-[90px] flex-1">
+            <div className="mb-1.5 text-[12px] text-ink-2">Market Value</div>
+            <div className="num text-[20px] font-bold tracking-[-.02em]">
+              Rs {formatPKR(marketValue, { decimals: 0 })}
+            </div>
+          </div>
+        </div>
+      </section>
 
-      {/* Transaction History */}
-      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-4">
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-            <Wallet className="h-4 w-4" />
-            Transaction History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {model.transactions.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No transactions yet.
-            </p>
-          ) : (
-            <div className="divide-y divide-border">
-              {model.transactions.map((tx) => {
-                const isBuy = tx.type === "BUY";
-                const isSell = tx.type === "SELL";
-                const isCash =
-                  tx.type === "CASH_IN" || tx.type === "CASH_OUT";
-                const isOut = isBuy || tx.type === "CASH_OUT";
-
+      {/* ── Holdings table ── */}
+      <section className="mb-[18px] rounded-2xl border border-line bg-card shadow-card">
+        <div className="flex items-center justify-between px-[22px] pb-3 pt-[22px]">
+          <h2 className="text-[16px] font-bold">Holdings</h2>
+          <span className="text-[12px] text-ink-3">
+            {stockAllocations.length} stock{stockAllocations.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        {stockAllocations.length === 0 ? (
+          <p className="px-[22px] py-10 text-center text-sm text-ink-3">
+            No stocks yet. Click Rebalance to add stocks.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[680px]">
+              <div className="grid grid-cols-[1.9fr_.8fr_.8fr_.9fr_.9fr_1fr_.9fr_40px] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+                <span>STOCK</span>
+                <span className="text-right">ALLOC</span>
+                <span className="text-right">SHARES</span>
+                <span className="text-right">AVG</span>
+                <span className="text-right">CURRENT</span>
+                <span className="text-right">VALUE</span>
+                <span className="text-right">P&amp;L</span>
+                <span></span>
+              </div>
+              {stockAllocations.map((alloc) => {
+                const currentPrice = marketPrices[alloc.symbol] || alloc.avgPrice;
+                const currentValue = alloc.shares * currentPrice;
+                const costBasis = alloc.shares * alloc.avgPrice;
+                const pnl = currentValue - costBasis;
+                const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+                const up = pnl >= 0;
+                const c = tint(alloc.symbol);
                 return (
                   <div
-                    key={tx.id}
-                    className="flex items-center justify-between py-2.5 px-2 hover:bg-muted/40 transition-colors first:rounded-t-lg last:rounded-b-lg"
+                    key={alloc.symbol}
+                    className="grid grid-cols-[1.9fr_.8fr_.8fr_.9fr_.9fr_1fr_.9fr_40px] items-center gap-2 border-b border-line-soft px-[22px] py-[11px] hover:bg-ink/[.03]"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg border border-border bg-muted/40 flex items-center justify-center text-muted-foreground">
-                        {isBuy ? (
-                          <ArrowUpRight className="h-4 w-4" />
-                        ) : isSell ? (
-                          <ArrowDownRight className="h-4 w-4" />
-                        ) : (
-                          <DollarSign className="h-4 w-4" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">
-                          {isCash ? tx.companyName : `${tx.type} ${tx.symbol}`}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {isCash
-                            ? ""
-                            : `${tx.quantity} shares @ PKR ${formatPKR(tx.price)}`}
-                          {!isCash && " · "}
-                          {new Date(tx.createdAt).toLocaleDateString("en-PK", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </p>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-[10.5px] font-bold"
+                        style={{ background: `${c}22`, color: c }}
+                      >
+                        {alloc.symbol.slice(0, 2)}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold">{alloc.symbol}</div>
+                        <div className="truncate text-[11px] text-ink-3">
+                          {alloc.companyName}
+                        </div>
                       </div>
                     </div>
+                    <span className="num text-right text-[12.5px] font-semibold">
+                      {livePct(alloc.symbol).toFixed(1)}%
+                    </span>
+                    <span className="num text-right text-[12.5px]">{alloc.shares}</span>
+                    <span className="num text-right text-[12.5px] text-ink-2">
+                      {formatPKR(alloc.avgPrice)}
+                    </span>
+                    <span className="num text-right text-[12.5px] font-semibold">
+                      {formatPKR(currentPrice)}
+                    </span>
+                    <span className="num text-right text-[12.5px] font-semibold">
+                      {formatPKR(currentValue, { decimals: 0 })}
+                    </span>
                     <span
-                      className="font-tabular font-semibold text-sm"
-                      style={{ color: isOut ? "var(--color-loss)" : "var(--color-profit)" }}
+                      className="num text-right text-[12.5px] font-semibold"
+                      style={{ color: up ? "var(--color-gain)" : "var(--color-loss-strong)" }}
                     >
-                      {isOut ? "-" : "+"}PKR{" "}
-                      {formatPKR(tx.total, { decimals: 0 })}
+                      {up ? "+" : ""}
+                      {pnlPct.toFixed(2)}%
+                    </span>
+                    <button
+                      onClick={() => openEditHolding(alloc)}
+                      title="Edit avg price / shares"
+                      className="grid h-7 w-7 place-items-center justify-self-end rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-brand"
+                    >
+                      <Pencil className="h-[14px] w-[14px]" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ── Allocation Breakdown + Portfolio Composition (donut) ── */}
+      <div className="mb-[18px] grid gap-[18px] lg:grid-cols-[1.2fr_1fr]">
+        {/* Allocation Breakdown bar + legend */}
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 text-[15px] font-bold">Allocation Breakdown</div>
+          {allocationBreakdown.length === 0 ? (
+            <div className="flex h-[120px] items-center justify-center">
+              <p className="text-xs text-ink-3">No allocation yet</p>
+            </div>
+          ) : (
+            <>
+              <div className="mb-[18px] flex h-3 overflow-hidden rounded-md">
+                {allocationBreakdown.map((a, i) => (
+                  <span
+                    key={a.symbol}
+                    style={{ width: `${a.pct}%`, background: allocColor(a.symbol, i) }}
+                    title={`${a.label}: ${a.pct.toFixed(1)}%`}
+                  />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {allocationBreakdown.map((a, i) => (
+                  <div key={a.symbol} className="flex items-center gap-2">
+                    <span
+                      className="h-[9px] w-[9px] shrink-0 rounded-[3px]"
+                      style={{ background: allocColor(a.symbol, i) }}
+                    />
+                    <span className="flex-1 text-[12px] font-medium">{a.label}</span>
+                    <span className="num text-[12px] font-semibold text-ink-2">
+                      {a.pct.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+
+        {/* Portfolio Composition donut */}
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 text-[15px] font-bold">Portfolio Composition</div>
+          {pieData.length === 0 ? (
+            <div className="flex h-[130px] items-center justify-center">
+              <p className="text-xs text-ink-3">No composition yet</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-5">
+              <div className="relative h-[130px] w-[130px] shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsPie>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius="62%"
+                      outerRadius="100%"
+                      paddingAngle={1.5}
+                      stroke="none"
+                      isAnimationActive
+                      animationDuration={900}
+                    >
+                      {pieData.map((e, i) => (
+                        <Cell
+                          key={e.name}
+                          fill={e.name === "Cash" ? CASH_COLOR : ALLOC_COLORS[i % ALLOC_COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      formatter={(v, n) => [`Rs ${formatPKR(Number(v), { decimals: 0 })}`, String(n)]}
+                    />
+                  </RechartsPie>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                  <div>
+                    <div className="text-[11px] text-ink-3">Total</div>
+                    <div className="num text-[14px] font-bold">
+                      {formatPKR(totalValue, { compact: true })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                {pieData.map((e, i) => (
+                  <div key={e.name} className="flex items-center gap-2">
+                    <span
+                      className="h-[9px] w-[9px] shrink-0 rounded-[3px]"
+                      style={{
+                        background: e.name === "Cash" ? CASH_COLOR : ALLOC_COLORS[i % ALLOC_COLORS.length],
+                      }}
+                    />
+                    <span className="flex-1 text-[12px] font-medium">{e.name}</span>
+                    <span className="num text-[12px] font-semibold text-ink-2">
+                      {totalValue > 0 ? ((e.value / totalValue) * 100).toFixed(1) : "0"}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* ── P&L by Stock (horizontal bars) + Transaction History ── */}
+      <div className="mb-[18px] grid items-start gap-[18px] lg:grid-cols-[1.2fr_1fr]">
+        {/* P&L by Stock */}
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 text-[15px] font-bold">P&amp;L by Stock</div>
+          {stockPnlData.length === 0 ? (
+            <p className="py-6 text-center text-sm text-ink-3">No stocks yet</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {stockPnlData.map((d) => {
+                const up = d.pnl >= 0;
+                const width = (Math.abs(d.pnl) / maxAbsPnl) * 50;
+                const color = up ? "var(--color-gain)" : "var(--color-loss-strong)";
+                return (
+                  <div
+                    key={d.symbol}
+                    className="grid grid-cols-[52px_1fr_84px] items-center gap-2.5"
+                  >
+                    <span className="text-[12px] font-semibold">{d.symbol}</span>
+                    <div className="relative flex h-[18px] justify-center">
+                      <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
+                      <div
+                        className="absolute top-[3px] h-3 rounded-[3px]"
+                        style={
+                          up
+                            ? { left: "50%", width: `${width}%`, background: color }
+                            : { right: "50%", width: `${width}%`, background: color }
+                        }
+                      />
+                    </div>
+                    <span
+                      className="num text-right text-[11.5px] font-semibold"
+                      style={{ color }}
+                    >
+                      {up ? "+" : "−"}
+                      {formatPKR(Math.abs(d.pnl), { decimals: 0 })}
                     </span>
                   </div>
                 );
               })}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </section>
+
+        {/* Transaction History */}
+        <section className="rounded-2xl border border-line bg-card shadow-card">
+          <div className="flex items-center gap-2 px-[22px] pb-2 pt-[22px]">
+            <Wallet className="h-4 w-4 text-ink-3" />
+            <h2 className="text-[15px] font-bold">Transaction History</h2>
+          </div>
+          {model.transactions.length === 0 ? (
+            <p className="px-[22px] py-8 text-center text-sm text-ink-3">
+              No transactions yet.
+            </p>
+          ) : (
+            model.transactions.map((tx) => {
+              const isBuy = tx.type === "BUY";
+              const isSell = tx.type === "SELL";
+              const isCashIn = tx.type === "CASH_IN";
+              const isCash = isCashIn || tx.type === "CASH_OUT";
+
+              const badge = isBuy
+                ? { label: "BUY", color: "#059669" }
+                : isSell
+                  ? { label: "SELL", color: "#E11D48" }
+                  : isCashIn
+                    ? { label: "CASH IN", color: "#2563EB" }
+                    : { label: "CASH OUT", color: "#CA8A04" };
+
+              return (
+                <div
+                  key={tx.id}
+                  className="flex items-center gap-3 border-t border-line-soft px-[22px] py-[11px]"
+                >
+                  <span
+                    className="num shrink-0 rounded-md px-1.5 py-[3px] text-[10px] font-bold tracking-[.03em]"
+                    style={{ color: badge.color, background: `${badge.color}1e` }}
+                  >
+                    {badge.label}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold">
+                      {isCash ? "Cash" : tx.symbol}
+                    </div>
+                    <div className="text-[11px] text-ink-3">
+                      {new Date(tx.createdAt).toLocaleDateString("en-PK", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {!isCash && (
+                      <div className="num text-[12.5px] font-semibold">
+                        {tx.quantity} @ {formatPKR(tx.price)}
+                      </div>
+                    )}
+                    <div className="num text-[11px] text-ink-3">
+                      Rs {formatPKR(tx.total, { decimals: 0 })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </section>
+      </div>
+
+      {/* ── Stock Returns ── */}
+      {stockPnlData.length > 0 && (
+        <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 text-[15px] font-bold">Stock Returns</div>
+          <div className="space-y-2">
+            {[...stockPnlData]
+              .sort((a, b) => b.pnlPct - a.pnlPct)
+              .map((stock) => {
+                const up = stock.pnl >= 0;
+                const color = up ? "var(--color-gain)" : "var(--color-loss-strong)";
+                return (
+                  <div
+                    key={stock.symbol}
+                    className="flex items-center gap-3 rounded-[10px] border border-line bg-card p-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold">{stock.symbol}</p>
+                      <p className="num text-[11px] text-ink-3">
+                        Cost: Rs {formatPKR(stock.costBasis, { decimals: 0 })} → Value: Rs{" "}
+                        {formatPKR(stock.currentValue, { decimals: 0 })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="num text-[13px] font-semibold" style={{ color }}>
+                        {up ? "+" : "−"}Rs {formatPKR(Math.abs(stock.pnl), { decimals: 0 })}
+                      </p>
+                      <p className="num text-[11px]" style={{ color }}>
+                        {up ? "+" : ""}
+                        {stock.pnlPct.toFixed(2)}%
+                      </p>
+                    </div>
+                    <div className="h-2 w-24 overflow-hidden rounded-full bg-canvas">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(100, Math.abs(stock.pnlPct))}%`,
+                          background: color,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </section>
+      )}
 
       {/* ═══════════════════════════════════ */}
       {/* Add Cash Dialog                    */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showAddCash} onOpenChange={setShowAddCash}>
-        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
+        <DialogContent className="rounded-2xl border border-line bg-card sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <DollarSign className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <DollarSign className="h-5 w-5 text-ink-3" />
               Add Cash
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Amount (PKR)</Label>
-              <Input
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Amount (Rs)
+              </label>
+              <input
                 type="number"
                 min="0"
                 value={addCashAmount}
                 onChange={(e) => setAddCashAmount(e.target.value)}
                 placeholder="e.g. 50000"
-                className="rounded-lg font-tabular text-lg"
+                className="num w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-lg outline-none focus:border-brand"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-ink-3">
                 Current balance:{" "}
-                <span className="font-tabular font-semibold text-foreground">
-                  PKR {formatPKR(model.cashBalance, { decimals: 0 })}
+                <span className="num font-semibold text-ink">
+                  Rs {formatPKR(model.cashBalance, { decimals: 0 })}
                 </span>
               </p>
             </div>
-            <Button
+            <button
               onClick={handleAddCash}
-              disabled={
-                addCashLoading ||
-                !addCashAmount ||
-                parseFloat(addCashAmount) <= 0
-              }
-              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+              disabled={addCashLoading || !addCashAmount || parseFloat(addCashAmount) <= 0}
+              className="w-full rounded-[10px] bg-brand py-2.5 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
             >
               {addCashLoading ? "Adding..." : "Add Cash"}
-            </Button>
+            </button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1492,38 +1360,40 @@ export default function ModelDetailPage() {
       {/* Withdraw Cash Dialog               */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showWithdrawCash} onOpenChange={setShowWithdrawCash}>
-        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
+        <DialogContent className="rounded-2xl border border-line bg-card sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <Minus className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Minus className="h-5 w-5 text-ink-3" />
               Withdraw Cash
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Amount (PKR)</Label>
-              <Input
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Amount (Rs)
+              </label>
+              <input
                 type="number"
                 min="0"
                 max={model.cashBalance}
                 value={withdrawCashAmount}
                 onChange={(e) => setWithdrawCashAmount(e.target.value)}
                 placeholder="e.g. 50000"
-                className="rounded-lg font-tabular text-lg"
+                className="num w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-lg outline-none focus:border-brand"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-ink-3">
                 Available:{" "}
-                <span className="font-tabular font-semibold text-foreground">
-                  PKR {formatPKR(model.cashBalance, { decimals: 0 })}
+                <span className="num font-semibold text-ink">
+                  Rs {formatPKR(model.cashBalance, { decimals: 0 })}
                 </span>
               </p>
               {parseFloat(withdrawCashAmount) > model.cashBalance && (
-                <p className="text-[11px] font-semibold" style={{ color: "var(--color-loss)" }}>
+                <p className="text-[11px] font-semibold" style={{ color: "var(--color-loss-strong)" }}>
                   Amount exceeds available cash balance
                 </p>
               )}
             </div>
-            <Button
+            <button
               onClick={handleWithdrawCash}
               disabled={
                 withdrawCashLoading ||
@@ -1531,10 +1401,10 @@ export default function ModelDetailPage() {
                 parseFloat(withdrawCashAmount) <= 0 ||
                 parseFloat(withdrawCashAmount) > model.cashBalance
               }
-              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+              className="w-full rounded-[10px] bg-brand py-2.5 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
             >
               {withdrawCashLoading ? "Withdrawing..." : "Withdraw Cash"}
-            </Button>
+            </button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1543,34 +1413,38 @@ export default function ModelDetailPage() {
       {/* Edit Info Dialog                   */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showEditInfo} onOpenChange={setShowEditInfo}>
-        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
+        <DialogContent className="rounded-2xl border border-line bg-card sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Edit Model Info</DialogTitle>
+            <DialogTitle className="text-base font-bold">Edit Model Info</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Name</Label>
-              <Input
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Name
+              </label>
+              <input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="rounded-lg"
+                className="w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-[13px] outline-none focus:border-brand"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Description</Label>
-              <Input
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Description
+              </label>
+              <input
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                className="rounded-lg"
+                className="w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-[13px] outline-none focus:border-brand"
               />
             </div>
-            <Button
+            <button
               onClick={handleEditInfo}
               disabled={!editName.trim()}
-              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+              className="w-full rounded-[10px] bg-brand py-2.5 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
             >
               Save
-            </Button>
+            </button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1579,55 +1453,57 @@ export default function ModelDetailPage() {
       {/* Edit Holding Dialog                */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showEditHolding} onOpenChange={setShowEditHolding}>
-        <DialogContent className="sm:max-w-sm border border-border bg-card rounded-xl">
+        <DialogContent className="rounded-2xl border border-line bg-card sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <Pencil className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Pencil className="h-5 w-5 text-ink-3" />
               Edit {editHoldingSymbol}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-ink-3">
               Correct the stored average (cost) price or share count for{" "}
-              <span className="font-semibold text-foreground">
-                {editHoldingName}
-              </span>
-              . Cash and transaction history are not affected.
+              <span className="font-semibold text-ink">{editHoldingName}</span>. Cash
+              and transaction history are not affected.
             </p>
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Average Price (PKR)</Label>
-              <Input
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Average Price (Rs)
+              </label>
+              <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={editHoldingAvg}
                 onChange={(e) => setEditHoldingAvg(e.target.value)}
-                className="rounded-lg font-tabular text-lg"
+                className="num w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-lg outline-none focus:border-brand"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Shares</Label>
-              <Input
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Shares
+              </label>
+              <input
                 type="number"
                 min="0"
                 step="1"
                 value={editHoldingShares}
                 onChange={(e) => setEditHoldingShares(e.target.value)}
-                className="rounded-lg font-tabular text-lg"
+                className="num w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-lg outline-none focus:border-brand"
               />
             </div>
             {editHoldingError && (
-              <p className="text-[11px] font-semibold" style={{ color: "var(--color-loss)" }}>
+              <p className="text-[11px] font-semibold" style={{ color: "var(--color-loss-strong)" }}>
                 {editHoldingError}
               </p>
             )}
-            <Button
+            <button
               onClick={handleEditHoldingSubmit}
               disabled={editHoldingLoading}
-              className="w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+              className="w-full rounded-[10px] bg-brand py-2.5 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
             >
               {editHoldingLoading ? "Saving..." : "Save Changes"}
-            </Button>
+            </button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1636,10 +1512,10 @@ export default function ModelDetailPage() {
       {/* Rebalance Dialog                   */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showRebalance} onOpenChange={setShowRebalance}>
-        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border border-line bg-card sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <RefreshCw className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <RefreshCw className="h-5 w-5 text-ink-3" />
               Rebalance Portfolio
             </DialogTitle>
           </DialogHeader>
@@ -1647,14 +1523,16 @@ export default function ModelDetailPage() {
           <div className="space-y-5 pt-2">
             {/* Add stocks search */}
             <div className="space-y-2">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Add New Stock</Label>
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Add New Stock
+              </label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                <input
                   value={stockQuery}
                   onChange={(e) => setStockQuery(e.target.value)}
                   placeholder="Search stocks..."
-                  className="pl-9 rounded-lg"
+                  className="w-full rounded-[10px] border border-line bg-canvas py-2 pl-9 pr-3 text-[13px] outline-none focus:border-brand"
                 />
               </div>
               {stockResults.length > 0 && (
@@ -1662,29 +1540,25 @@ export default function ModelDetailPage() {
                   {stockResults.map((stock) => (
                     <button
                       key={stock.symbol}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 transition-colors text-left group"
+                      className="group flex items-center justify-between rounded-[10px] border border-line bg-card px-3 py-2 text-left transition-colors hover:border-brand/40 hover:bg-ink/[.03]"
                       onClick={() => handleRebalanceAddStock(stock)}
                     >
                       <div className="min-w-0">
-                        <span className="font-semibold text-sm group-hover:text-primary">
+                        <span className="text-sm font-semibold group-hover:text-brand">
                           {stock.symbol}
                         </span>
-                        <span className="text-[11px] text-muted-foreground ml-2">
-                          {stock.company}
-                        </span>
+                        <span className="ml-2 text-[11px] text-ink-3">{stock.company}</span>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs font-tabular">
-                          PKR {formatPKR(stock.current)}
-                        </span>
-                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="num text-xs">Rs {formatPKR(stock.current)}</span>
+                        <Plus className="h-3.5 w-3.5 text-ink-3 group-hover:text-brand" />
                       </div>
                     </button>
                   ))}
                 </div>
               )}
               {searchLoading && stockQuery.length > 0 && (
-                <p className="text-xs text-muted-foreground">Searching...</p>
+                <p className="text-xs text-ink-3">Searching...</p>
               )}
             </div>
 
@@ -1692,15 +1566,17 @@ export default function ModelDetailPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Allocations</Label>
-                  <div className="flex items-center bg-muted rounded-lg p-0.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                    Allocations
+                  </label>
+                  <div className="flex items-center rounded-[10px] bg-canvas p-0.5">
                     <button
                       type="button"
                       onClick={() => setRebalanceMode("percent")}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
                         rebalanceMode === "percent"
-                          ? "bg-background text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "bg-card text-ink shadow-card"
+                          : "text-ink-3 hover:text-ink"
                       }`}
                     >
                       <Percent className="h-3 w-3" />
@@ -1722,10 +1598,10 @@ export default function ModelDetailPage() {
                           })
                         );
                       }}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
                         rebalanceMode === "shares"
-                          ? "bg-background text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "bg-card text-ink shadow-card"
+                          : "text-ink-3 hover:text-ink"
                       }`}
                     >
                       <Hash className="h-3 w-3" />
@@ -1734,11 +1610,11 @@ export default function ModelDetailPage() {
                   </div>
                 </div>
                 <span
-                  className="text-xs font-semibold font-tabular"
+                  className="num text-xs font-semibold"
                   style={{
                     color:
                       Math.abs(rebalanceTotalPct - 100) < 1
-                        ? "var(--color-profit)"
+                        ? "var(--color-gain)"
                         : undefined,
                   }}
                 >
@@ -1747,22 +1623,16 @@ export default function ModelDetailPage() {
               </div>
 
               {/* Progress bar */}
-              <div className="h-2 bg-muted rounded-full overflow-hidden flex">
+              <div className="flex h-2 overflow-hidden rounded-full bg-canvas">
                 {rebalanceAllocations
                   .filter((a) => a.percentage > 0)
-                  .map((a, i) => {
-                    const color =
-                      a.symbol === "CASH"
-                        ? CASH_COLOR
-                        : CHART_COLORS[i % CHART_COLORS.length];
-                    return (
-                      <div
-                        key={a.symbol}
-                        className="h-full transition-all"
-                        style={{ width: `${a.percentage}%`, backgroundColor: color }}
-                      />
-                    );
-                  })}
+                  .map((a, i) => (
+                    <div
+                      key={a.symbol}
+                      className="h-full transition-all"
+                      style={{ width: `${a.percentage}%`, background: allocColor(a.symbol, i) }}
+                    />
+                  ))}
               </div>
 
               <div className="space-y-2">
@@ -1792,29 +1662,27 @@ export default function ModelDetailPage() {
                   return (
                     <div
                       key={alloc.symbol}
-                      className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border"
+                      className="flex items-center gap-3 rounded-[10px] border border-line bg-card p-2.5"
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">
-                          {alloc.symbol === "CASH"
-                            ? "Cash Reserve"
-                            : alloc.symbol}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">
+                          {alloc.symbol === "CASH" ? "Cash Reserve" : alloc.symbol}
                         </p>
                         {alloc.symbol !== "CASH" && (
-                          <p className="text-[11px] text-muted-foreground truncate">
+                          <p className="truncate text-[11px] text-ink-3">
                             {alloc.companyName}
                           </p>
                         )}
                         {/* Trade preview */}
                         {alloc.symbol !== "CASH" && price > 0 && (
-                          <p className="text-[11px] mt-0.5">
-                            <span className="text-muted-foreground">
+                          <p className="mt-0.5 text-[11px]">
+                            <span className="text-ink-3">
                               {currentShares} → {targetShares} shares
                             </span>
                             {diff !== 0 && (
                               <span
                                 className="ml-1.5 font-semibold"
-                                style={{ color: diff > 0 ? "var(--color-profit)" : "var(--color-loss)" }}
+                                style={{ color: diff > 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}
                               >
                                 ({diff > 0 ? "+" : ""}
                                 {diff} = {diff > 0 ? "BUY" : "SELL"})
@@ -1826,7 +1694,7 @@ export default function ModelDetailPage() {
                       <div className="flex items-center gap-2">
                         {rebalanceMode === "percent" || alloc.symbol === "CASH" ? (
                           <>
-                            <Input
+                            <input
                               type="number"
                               min="0"
                               max="100"
@@ -1838,16 +1706,14 @@ export default function ModelDetailPage() {
                                   parseFloat(e.target.value) || 0
                                 )
                               }
-                              className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                              className="num h-8 w-20 rounded-[10px] border border-line bg-canvas text-center text-sm outline-none focus:border-brand"
                               disabled={rebalanceMode === "shares" && alloc.symbol === "CASH"}
                             />
-                            <span className="text-xs text-muted-foreground font-semibold">
-                              %
-                            </span>
+                            <span className="text-xs font-semibold text-ink-3">%</span>
                           </>
                         ) : (
                           <>
-                            <Input
+                            <input
                               type="number"
                               min="0"
                               step="1"
@@ -1858,27 +1724,21 @@ export default function ModelDetailPage() {
                                   parseInt(e.target.value) || 0
                                 )
                               }
-                              className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                              className="num h-8 w-20 rounded-[10px] border border-line bg-canvas text-center text-sm outline-none focus:border-brand"
                             />
-                            <span className="text-xs text-muted-foreground font-semibold">
-                              shares
-                            </span>
-                            <span className="text-[11px] text-muted-foreground font-tabular">
+                            <span className="text-xs font-semibold text-ink-3">shares</span>
+                            <span className="num text-[11px] text-ink-3">
                               ({alloc.percentage.toFixed(1)}%)
                             </span>
                           </>
                         )}
                         {alloc.symbol !== "CASH" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                            onClick={() =>
-                              handleRebalanceRemove(alloc.symbol)
-                            }
+                          <button
+                            className="grid h-7 w-7 place-items-center rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-ink"
+                            onClick={() => handleRebalanceRemove(alloc.symbol)}
                           >
                             <X className="h-3.5 w-3.5" />
-                          </Button>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1889,33 +1749,27 @@ export default function ModelDetailPage() {
 
             {rebalanceError && (
               <div
-                className="text-sm px-3 py-2 rounded-lg"
-                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+                className="rounded-[10px] px-3 py-2 text-sm"
+                style={{ color: "var(--color-loss-strong)", background: "var(--color-loss-50)" }}
               >
                 {rebalanceError}
               </div>
             )}
 
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="rounded-lg"
+              <button
+                className="rounded-[10px] border border-line bg-card px-4 py-2 text-[13px] font-medium hover:bg-ink/[.04]"
                 onClick={() => setShowRebalance(false)}
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
                 onClick={handleRebalanceNext}
-                disabled={
-                  rebalanceLoading ||
-                  Math.abs(rebalanceTotalPct - 100) > 1
-                }
-                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={rebalanceLoading || Math.abs(rebalanceTotalPct - 100) > 1}
+                className="flex-1 rounded-[10px] bg-brand py-2 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
               >
-                {rebalanceLoading
-                  ? "Rebalancing..."
-                  : "Review Trades"}
-              </Button>
+                {rebalanceLoading ? "Rebalancing..." : "Review Trades"}
+              </button>
             </div>
           </div>
         </DialogContent>
@@ -1925,72 +1779,77 @@ export default function ModelDetailPage() {
       {/* Rebalance Confirm Prices Dialog    */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showRebalanceConfirm} onOpenChange={setShowRebalanceConfirm}>
-        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border border-line bg-card sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <DollarSign className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <DollarSign className="h-5 w-5 text-ink-3" />
               Confirm Trade Prices
             </DialogTitle>
           </DialogHeader>
 
-          <p className="text-xs text-muted-foreground -mt-1">
-            Enter the price at which you are buying/selling each stock. Leave empty to use market price.
+          <p className="-mt-1 text-xs text-ink-3">
+            Enter the price at which you are buying/selling each stock. Leave empty to use
+            market price.
           </p>
 
           <div className="space-y-3 pt-2">
             {rebalanceTrades.map((trade, i) => {
-              const tradePrice = trade.price && parseFloat(trade.price) > 0
-                ? parseFloat(trade.price)
-                : trade.marketPrice;
+              const tradePrice =
+                trade.price && parseFloat(trade.price) > 0
+                  ? parseFloat(trade.price)
+                  : trade.marketPrice;
               const totalCost = trade.shares * tradePrice;
-              const pnl = trade.type === "SELL"
-                ? (tradePrice - trade.avgPrice) * trade.shares
-                : 0;
-              const newAvg = trade.type === "BUY" && trade.avgPrice > 0
-                ? (() => {
-                    const existing = model.allocations.find((a) => a.symbol === trade.symbol);
-                    const existingShares = existing?.shares || 0;
-                    return (trade.avgPrice * existingShares + tradePrice * trade.shares) / (existingShares + trade.shares);
-                  })()
-                : trade.type === "BUY"
-                  ? tradePrice
+              const pnl =
+                trade.type === "SELL"
+                  ? (tradePrice - trade.avgPrice) * trade.shares
                   : 0;
+              const newAvg =
+                trade.type === "BUY" && trade.avgPrice > 0
+                  ? (() => {
+                      const existing = model.allocations.find((a) => a.symbol === trade.symbol);
+                      const existingShares = existing?.shares || 0;
+                      return (
+                        (trade.avgPrice * existingShares + tradePrice * trade.shares) /
+                        (existingShares + trade.shares)
+                      );
+                    })()
+                  : trade.type === "BUY"
+                    ? tradePrice
+                    : 0;
 
               return (
                 <div
                   key={trade.symbol}
-                  className="p-3 rounded-lg border border-border bg-card"
+                  className="rounded-[10px] border border-line bg-card p-3"
                 >
                   {/* Header */}
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                        className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
                         style={{
-                          color: trade.type === "SELL" ? "var(--color-loss)" : "var(--color-profit)",
-                          backgroundColor: trade.type === "SELL" ? "var(--color-loss-bg)" : "var(--color-profit-bg)",
+                          color: trade.type === "SELL" ? "var(--color-loss-strong)" : "var(--color-gain)",
+                          background: trade.type === "SELL" ? "var(--color-loss-50)" : "var(--color-gain-50)",
                         }}
                       >
                         {trade.type}
                       </span>
                       <span className="text-sm font-semibold">{trade.symbol}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {trade.shares} shares
-                    </span>
+                    <span className="text-xs text-ink-3">{trade.shares} shares</span>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mb-2 truncate">
-                    {trade.companyName}
-                  </p>
+                  <p className="mb-2 truncate text-[11px] text-ink-3">{trade.companyName}</p>
 
                   {/* Price input */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <Label className="text-xs text-muted-foreground whitespace-nowrap w-20">
+                  <div className="mb-2 flex items-center gap-2">
+                    <label className="w-20 whitespace-nowrap text-xs text-ink-3">
                       {trade.type === "SELL" ? "Sell Price" : "Buy Price"}
-                    </Label>
+                    </label>
                     <div className="relative flex-1">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">PKR</span>
-                      <Input
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-3">
+                        Rs
+                      </span>
+                      <input
                         type="number"
                         min="0"
                         step="0.01"
@@ -2003,7 +1862,7 @@ export default function ModelDetailPage() {
                             )
                           );
                         }}
-                        className="pl-10 h-8 rounded-lg font-tabular text-sm"
+                        className="num h-8 w-full rounded-[10px] border border-line bg-canvas pl-9 pr-3 text-sm outline-none focus:border-brand"
                       />
                     </div>
                   </div>
@@ -2011,41 +1870,39 @@ export default function ModelDetailPage() {
                   {/* Info rows */}
                   <div className="space-y-1 text-[11px]">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Market Price</span>
-                      <span className="font-tabular">PKR {formatPKR(trade.marketPrice)}</span>
+                      <span className="text-ink-3">Market Price</span>
+                      <span className="num">Rs {formatPKR(trade.marketPrice)}</span>
                     </div>
                     {trade.avgPrice > 0 && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Your Avg Price</span>
-                        <span className="font-tabular">PKR {formatPKR(trade.avgPrice)}</span>
+                        <span className="text-ink-3">Your Avg Price</span>
+                        <span className="num">Rs {formatPKR(trade.avgPrice)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-semibold">
-                      <span className="text-muted-foreground">Total</span>
-                      <span className="font-tabular">PKR {formatPKR(totalCost, { decimals: 0 })}</span>
+                      <span className="text-ink-3">Total</span>
+                      <span className="num">Rs {formatPKR(totalCost, { decimals: 0 })}</span>
                     </div>
                     {trade.type === "SELL" && trade.avgPrice > 0 && (
-                      <div className="flex justify-between font-semibold pt-1 border-t border-border">
-                        <span style={{ color: pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}>
+                      <div className="flex justify-between border-t border-line pt-1 font-semibold">
+                        <span style={{ color: pnl >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}>
                           {pnl >= 0 ? "Profit" : "Loss"}
                         </span>
                         <span
-                          className="font-tabular"
-                          style={{ color: pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
+                          className="num"
+                          style={{ color: pnl >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}
                         >
-                          {pnl >= 0 ? "+" : ""}PKR {formatPKR(pnl, { decimals: 0 })}
-                          <span className="text-[10px] ml-1 opacity-70">
+                          {pnl >= 0 ? "+" : ""}Rs {formatPKR(pnl, { decimals: 0 })}
+                          <span className="ml-1 text-[10px] opacity-70">
                             ({((tradePrice - trade.avgPrice) / trade.avgPrice * 100).toFixed(1)}%)
                           </span>
                         </span>
                       </div>
                     )}
                     {trade.type === "BUY" && (
-                      <div className="flex justify-between pt-1 border-t border-border">
-                        <span className="text-muted-foreground">New Avg Price</span>
-                        <span className="font-tabular font-semibold">
-                          PKR {formatPKR(newAvg)}
-                        </span>
+                      <div className="flex justify-between border-t border-line pt-1">
+                        <span className="text-ink-3">New Avg Price</span>
+                        <span className="num font-semibold">Rs {formatPKR(newAvg)}</span>
                       </div>
                     )}
                   </div>
@@ -2055,30 +1912,27 @@ export default function ModelDetailPage() {
 
             {rebalanceError && (
               <div
-                className="text-sm px-3 py-2 rounded-lg"
-                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+                className="rounded-[10px] px-3 py-2 text-sm"
+                style={{ color: "var(--color-loss-strong)", background: "var(--color-loss-50)" }}
               >
                 {rebalanceError}
               </div>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                className="rounded-lg"
+              <button
+                className="rounded-[10px] border border-line bg-card px-4 py-2 text-[13px] font-medium hover:bg-ink/[.04]"
                 onClick={() => setShowRebalanceConfirm(false)}
               >
                 Back
-              </Button>
-              <Button
+              </button>
+              <button
                 onClick={() => handleRebalanceSubmit()}
                 disabled={rebalanceLoading}
-                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                className="flex-1 rounded-[10px] bg-brand py-2 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
               >
-                {rebalanceLoading
-                  ? "Executing..."
-                  : "Confirm & Execute"}
-              </Button>
+                {rebalanceLoading ? "Executing..." : "Confirm & Execute"}
+              </button>
             </div>
           </div>
         </DialogContent>
@@ -2088,18 +1942,18 @@ export default function ModelDetailPage() {
       {/* SIP Dialog                          */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showSip} onOpenChange={setShowSip}>
-        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border border-line bg-card sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <Sparkles className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Sparkles className="h-5 w-5 text-ink-3" />
               SIP — Smart Investment Plan
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            <p className="text-xs text-muted-foreground">
-              Enter an amount to invest. We&apos;ll auto-distribute it across your
-              stocks based on{" "}
+            <p className="text-xs text-ink-3">
+              Enter an amount to invest. We&apos;ll auto-distribute it across your stocks
+              based on{" "}
               {sipBasis === "current"
                 ? "their current weights in the portfolio"
                 : "your stored target allocation"}
@@ -2108,29 +1962,33 @@ export default function ModelDetailPage() {
 
             {/* Amount input */}
             <div className="space-y-2">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Investment Amount (PKR)</Label>
-              <Input
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Investment Amount (Rs)
+              </label>
+              <input
                 type="number"
                 min="0"
                 value={sipAmount}
                 onChange={(e) => setSipAmount(e.target.value)}
                 placeholder="e.g. 30000"
-                className="rounded-lg font-tabular"
+                className="num w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-[13px] outline-none focus:border-brand"
                 autoFocus
               />
             </div>
 
             {/* Basis toggle */}
             <div className="space-y-2">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Distribute by</Label>
-              <div className="flex items-center bg-muted rounded-lg p-0.5 w-fit">
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Distribute by
+              </label>
+              <div className="flex w-fit items-center rounded-[10px] bg-canvas p-0.5">
                 <button
                   type="button"
                   onClick={() => setSipBasis("current")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
                     sipBasis === "current"
-                      ? "bg-background text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-card text-ink shadow-card"
+                      : "text-ink-3 hover:text-ink"
                   }`}
                 >
                   Current holdings
@@ -2138,10 +1996,10 @@ export default function ModelDetailPage() {
                 <button
                   type="button"
                   onClick={() => setSipBasis("target")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
                     sipBasis === "target"
-                      ? "bg-background text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-card text-ink shadow-card"
+                      : "text-ink-3 hover:text-ink"
                   }`}
                 >
                   Target allocation
@@ -2159,7 +2017,9 @@ export default function ModelDetailPage() {
               const leftover = amount - totalCost;
               return (
                 <div className="space-y-2">
-                  <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Plan</Label>
+                  <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                    Plan
+                  </label>
                   <div className="space-y-1.5">
                     {sipPlan.map((item) => {
                       const price = parseFloat(item.price) || item.marketPrice;
@@ -2167,22 +2027,18 @@ export default function ModelDetailPage() {
                       return (
                         <div
                           key={item.symbol}
-                          className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border"
+                          className="flex items-center gap-3 rounded-[10px] border border-line bg-card p-2.5"
                         >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold truncate">
-                              {item.symbol}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground truncate">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold">{item.symbol}</p>
+                            <p className="truncate text-[11px] text-ink-3">
                               {item.companyName}
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm font-semibold font-tabular">
-                              {item.shares} shares
-                            </p>
-                            <p className="text-[11px] text-muted-foreground font-tabular">
-                              PKR {formatPKR(cost, { decimals: 0 })} ·{" "}
+                            <p className="num text-sm font-semibold">{item.shares} shares</p>
+                            <p className="num text-[11px] text-ink-3">
+                              Rs {formatPKR(cost, { decimals: 0 })} ·{" "}
                               {(item.weight * 100).toFixed(1)}%
                             </p>
                           </div>
@@ -2190,14 +2046,14 @@ export default function ModelDetailPage() {
                       );
                     })}
                   </div>
-                  <div className="flex items-center justify-between pt-2 text-xs border-t border-border">
-                    <span className="text-muted-foreground">
-                      Invested: PKR {formatPKR(totalCost, { decimals: 0 })}
+                  <div className="flex items-center justify-between border-t border-line pt-2 text-xs">
+                    <span className="num text-ink-3">
+                      Invested: Rs {formatPKR(totalCost, { decimals: 0 })}
                     </span>
-                    <span className="text-muted-foreground">
+                    <span className="text-ink-3">
                       Leftover cash:{" "}
-                      <span className="font-semibold text-foreground font-tabular">
-                        PKR {formatPKR(leftover, { decimals: 0 })}
+                      <span className="num font-semibold text-ink">
+                        Rs {formatPKR(leftover, { decimals: 0 })}
                       </span>
                     </span>
                   </div>
@@ -2206,35 +2062,35 @@ export default function ModelDetailPage() {
             })()}
 
             {sipAmount && parseFloat(sipAmount) > 0 && sipPlan.length === 0 && (
-              <div className="text-sm text-muted-foreground border border-border bg-muted/40 px-3 py-2 rounded-lg">
-                Amount is too small to buy even 1 share of any stock, or no stocks in portfolio.
+              <div className="rounded-[10px] border border-line bg-canvas px-3 py-2 text-sm text-ink-3">
+                Amount is too small to buy even 1 share of any stock, or no stocks in
+                portfolio.
               </div>
             )}
 
             {sipError && (
               <div
-                className="text-sm px-3 py-2 rounded-lg"
-                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+                className="rounded-[10px] px-3 py-2 text-sm"
+                style={{ color: "var(--color-loss-strong)", background: "var(--color-loss-50)" }}
               >
                 {sipError}
               </div>
             )}
 
             <div className="flex gap-3 pt-1">
-              <Button
-                variant="outline"
-                className="rounded-lg"
+              <button
+                className="rounded-[10px] border border-line bg-card px-4 py-2 text-[13px] font-medium hover:bg-ink/[.04]"
                 onClick={() => setShowSip(false)}
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
                 onClick={handleSipNext}
                 disabled={!sipAmount || parseFloat(sipAmount) <= 0 || sipPlan.length === 0}
-                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                className="flex-1 rounded-[10px] bg-brand py-2 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
               >
                 Review & Confirm
-              </Button>
+              </button>
             </div>
           </div>
         </DialogContent>
@@ -2244,19 +2100,19 @@ export default function ModelDetailPage() {
       {/* SIP Confirm Prices Dialog           */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showSipConfirm} onOpenChange={setShowSipConfirm}>
-        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border border-line bg-card sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <DollarSign className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <DollarSign className="h-5 w-5 text-ink-3" />
               Confirm Buy Prices
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3 pt-2">
-            <p className="text-xs text-muted-foreground">
-              Override any buy price if needed, then execute to add PKR{" "}
-              {formatPKR(parseFloat(sipAmount) || 0, { decimals: 0 })} cash and
-              buy these shares.
+            <p className="text-xs text-ink-3">
+              Override any buy price if needed, then execute to add Rs{" "}
+              {formatPKR(parseFloat(sipAmount) || 0, { decimals: 0 })} cash and buy these
+              shares.
             </p>
 
             <div className="space-y-2">
@@ -2266,28 +2122,24 @@ export default function ModelDetailPage() {
                 return (
                   <div
                     key={item.symbol}
-                    className="p-3 rounded-lg bg-card border border-border"
+                    className="rounded-[10px] border border-line bg-card p-3"
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="mb-2 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold">{item.symbol}</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {item.companyName}
-                        </p>
+                        <p className="text-[11px] text-ink-3">{item.companyName}</p>
                       </div>
                       <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
-                        style={{ color: "var(--color-profit)", backgroundColor: "var(--color-profit-bg)" }}
+                        className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                        style={{ color: "var(--color-gain)", background: "var(--color-gain-50)" }}
                       >
                         BUY {item.shares}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-1.5">
-                        <Label className="text-[11px] text-muted-foreground">
-                          Buy @
-                        </Label>
-                        <Input
+                        <label className="text-[11px] text-ink-3">Buy @</label>
+                        <input
                           type="number"
                           min="0.01"
                           step="0.01"
@@ -2295,21 +2147,19 @@ export default function ModelDetailPage() {
                           onChange={(e) => {
                             const val = e.target.value;
                             setSipPlan((prev) =>
-                              prev.map((p, i) =>
-                                i === idx ? { ...p, price: val } : p
-                              )
+                              prev.map((p, i) => (i === idx ? { ...p, price: val } : p))
                             );
                           }}
-                          className="w-24 h-7 rounded-lg font-tabular text-center text-xs"
+                          className="num h-7 w-24 rounded-[10px] border border-line bg-canvas text-center text-xs outline-none focus:border-brand"
                         />
                       </div>
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="num text-[11px] text-ink-3">
                         Mkt: {formatPKR(item.marketPrice)}
                       </span>
-                      <span className="text-[11px] text-muted-foreground ml-auto">
+                      <span className="ml-auto text-[11px] text-ink-3">
                         ={" "}
-                        <span className="font-bold text-foreground font-tabular">
-                          PKR {formatPKR(cost, { decimals: 0 })}
+                        <span className="num font-bold text-ink">
+                          Rs {formatPKR(cost, { decimals: 0 })}
                         </span>
                       </span>
                     </div>
@@ -2320,28 +2170,27 @@ export default function ModelDetailPage() {
 
             {sipError && (
               <div
-                className="text-sm px-3 py-2 rounded-lg"
-                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+                className="rounded-[10px] px-3 py-2 text-sm"
+                style={{ color: "var(--color-loss-strong)", background: "var(--color-loss-50)" }}
               >
                 {sipError}
               </div>
             )}
 
             <div className="flex gap-3 pt-1">
-              <Button
-                variant="outline"
-                className="rounded-lg"
+              <button
+                className="rounded-[10px] border border-line bg-card px-4 py-2 text-[13px] font-medium hover:bg-ink/[.04]"
                 onClick={() => setShowSipConfirm(false)}
               >
                 Back
-              </Button>
-              <Button
+              </button>
+              <button
                 onClick={handleSipSubmit}
                 disabled={sipLoading}
-                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                className="flex-1 rounded-[10px] bg-brand py-2 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
               >
                 {sipLoading ? "Executing..." : "Execute SIP"}
-              </Button>
+              </button>
             </div>
           </div>
         </DialogContent>
@@ -2351,10 +2200,10 @@ export default function ModelDetailPage() {
       {/* Bulk Trade Dialog                  */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showBulkTrade} onOpenChange={setShowBulkTrade}>
-        <DialogContent className="sm:max-w-lg border border-border bg-card rounded-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border border-line bg-card sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <ShoppingCart className="h-5 w-5 text-ink-3" />
               Bulk Trade
             </DialogTitle>
           </DialogHeader>
@@ -2363,7 +2212,9 @@ export default function ModelDetailPage() {
             {/* Quick add from existing holdings */}
             {stockAllocations.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Quick Sell Holdings</Label>
+                <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                  Quick Sell Holdings
+                </label>
                 <div className="flex flex-wrap gap-1.5">
                   {stockAllocations
                     .filter((a) => !bulkTrades.some((t) => t.symbol === a.symbol))
@@ -2371,7 +2222,7 @@ export default function ModelDetailPage() {
                       <button
                         key={a.symbol}
                         onClick={() => handleBulkTradeAddHolding(a)}
-                        className="px-2.5 py-1 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 text-xs font-semibold transition-colors"
+                        className="rounded-[10px] border border-line bg-card px-2.5 py-1 text-xs font-semibold transition-colors hover:border-brand/40 hover:bg-ink/[.03]"
                       >
                         {a.symbol} ({a.shares})
                       </button>
@@ -2382,14 +2233,16 @@ export default function ModelDetailPage() {
 
             {/* Search to add buy */}
             <div className="space-y-2">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Add Stock to Buy</Label>
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Add Stock to Buy
+              </label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                <input
                   value={stockQuery}
                   onChange={(e) => setStockQuery(e.target.value)}
                   placeholder="Search stocks..."
-                  className="pl-9 rounded-lg"
+                  className="w-full rounded-[10px] border border-line bg-canvas py-2 pl-9 pr-3 text-[13px] outline-none focus:border-brand"
                 />
               </div>
               {stockResults.length > 0 && (
@@ -2397,22 +2250,18 @@ export default function ModelDetailPage() {
                   {stockResults.map((stock) => (
                     <button
                       key={stock.symbol}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 transition-colors text-left group"
+                      className="group flex items-center justify-between rounded-[10px] border border-line bg-card px-3 py-2 text-left transition-colors hover:border-brand/40 hover:bg-ink/[.03]"
                       onClick={() => handleBulkTradeAddStock(stock)}
                     >
                       <div>
-                        <span className="font-semibold text-sm group-hover:text-primary">
+                        <span className="text-sm font-semibold group-hover:text-brand">
                           {stock.symbol}
                         </span>
-                        <span className="text-[11px] text-muted-foreground ml-2">
-                          {stock.company}
-                        </span>
+                        <span className="ml-2 text-[11px] text-ink-3">{stock.company}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-tabular">
-                          PKR {formatPKR(stock.current)}
-                        </span>
-                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
+                        <span className="num text-xs">Rs {formatPKR(stock.current)}</span>
+                        <Plus className="h-3.5 w-3.5 text-ink-3 group-hover:text-brand" />
                       </div>
                     </button>
                   ))}
@@ -2423,9 +2272,9 @@ export default function ModelDetailPage() {
             {/* Trade list */}
             {bulkTrades.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
                   Trades ({bulkTrades.length})
-                </Label>
+                </label>
                 {bulkTrades.map((trade) => {
                   const price = marketPrices[trade.symbol] || 0;
                   const qty = parseInt(trade.quantity) || 0;
@@ -2434,17 +2283,15 @@ export default function ModelDetailPage() {
                   return (
                     <div
                       key={trade.symbol}
-                      className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border"
+                      className="flex items-center gap-3 rounded-[10px] border border-line bg-card p-2.5"
                     >
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold">{trade.symbol}</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {price > 0
-                            ? `@ PKR ${formatPKR(price)}`
-                            : "Price unavailable"}
+                        <p className="text-[11px] text-ink-3">
+                          {price > 0 ? `@ Rs ${formatPKR(price)}` : "Price unavailable"}
                           {qty > 0 && price > 0 && (
-                            <span className="ml-1.5 font-semibold text-foreground">
-                              = PKR {formatPKR(total, { decimals: 0 })}
+                            <span className="num ml-1.5 font-semibold text-ink">
+                              = Rs {formatPKR(total, { decimals: 0 })}
                             </span>
                           )}
                         </p>
@@ -2460,12 +2307,12 @@ export default function ModelDetailPage() {
                             )
                           )
                         }
-                        className="h-8 rounded-lg border border-border bg-background px-2 text-xs font-semibold"
+                        className="h-8 rounded-[10px] border border-line bg-canvas px-2 text-xs font-semibold outline-none focus:border-brand"
                       >
                         <option value="BUY">BUY</option>
                         <option value="SELL">SELL</option>
                       </select>
-                      <Input
+                      <input
                         type="number"
                         min="0"
                         placeholder="Qty"
@@ -2479,7 +2326,7 @@ export default function ModelDetailPage() {
                             )
                           )
                         }
-                        className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                        className="num h-8 w-20 rounded-[10px] border border-line bg-canvas text-center text-sm outline-none focus:border-brand"
                       />
                       <button
                         onClick={() =>
@@ -2487,7 +2334,7 @@ export default function ModelDetailPage() {
                             prev.filter((t) => t.symbol !== trade.symbol)
                           )
                         }
-                        className="p-1 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                        className="grid h-7 w-7 place-items-center rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-ink"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -2498,46 +2345,45 @@ export default function ModelDetailPage() {
             )}
 
             {/* Cash info */}
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-ink-3">
               Available cash:{" "}
-              <span className="font-tabular font-semibold text-foreground">
-                PKR {formatPKR(model.cashBalance, { decimals: 0 })}
+              <span className="num font-semibold text-ink">
+                Rs {formatPKR(model.cashBalance, { decimals: 0 })}
               </span>
             </p>
 
             {bulkTradeError && (
               <div
-                className="text-sm px-3 py-2 rounded-lg"
-                style={{ color: "var(--color-loss)", backgroundColor: "var(--color-loss-bg)" }}
+                className="rounded-[10px] px-3 py-2 text-sm"
+                style={{ color: "var(--color-loss-strong)", background: "var(--color-loss-50)" }}
               >
                 {bulkTradeError}
               </div>
             )}
 
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="rounded-lg"
+              <button
+                className="rounded-[10px] border border-line bg-card px-4 py-2 text-[13px] font-medium hover:bg-ink/[.04]"
                 onClick={() => setShowBulkTrade(false)}
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
                 onClick={handleBulkTradeSubmit}
                 disabled={
                   bulkTradeLoading ||
                   bulkTrades.filter((t) => parseInt(t.quantity) > 0).length === 0
                 }
-                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+                className="flex-1 rounded-[10px] bg-brand py-2 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
               >
                 {bulkTradeLoading
                   ? "Executing..."
                   : `Execute ${bulkTrades.filter((t) => parseInt(t.quantity) > 0).length} Trade(s)`}
-              </Button>
+              </button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

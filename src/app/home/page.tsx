@@ -4,27 +4,81 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   TrendingUp,
-  ArrowUpRight,
-  ArrowRight,
-  PieChart,
   LineChart,
-  Layers,
-  Wallet,
+  ListChecks,
+  ArrowRightLeft,
   ShieldCheck,
-  Sparkles,
   BarChart3,
+  FlaskConical,
 } from "lucide-react";
 
-function GoogleIcon({ className }: { className?: string }) {
+/** Brand mark — trending-up + arrow, matches the design handoff svg / TopNav. */
+function BrandMark() {
   return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 16 L9 10 L13 13 L20 5"
+        stroke="#fff"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M20 5 V10 M20 5 H15"
+        stroke="#fff"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
+
+const features = [
+  {
+    icon: LineChart,
+    title: "Live KSE-100",
+    desc: "Index, full market watch and per-stock history in real time.",
+  },
+  {
+    icon: ListChecks,
+    title: "Model Portfolios",
+    desc: "Target allocations with rebalance, SIP and bulk-trade tools.",
+  },
+  {
+    icon: ArrowRightLeft,
+    title: "Virtual Trading",
+    desc: "Practise BUY / SELL with virtual cash, zero risk.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Private by Design",
+    desc: "Your data stays in your own Google Drive. Always.",
+  },
+  {
+    icon: BarChart3,
+    title: "Deep Analytics",
+    desc: "Allocation, sector and P&L breakdowns with exports.",
+  },
+  {
+    icon: FlaskConical,
+    title: "What-If Simulator",
+    desc: "Model investments before committing a rupee.",
+  },
+];
+
+const stats = [
+  { value: "118,452", label: "KSE-100 index" },
+  { value: "500+", label: "Stocks tracked" },
+  { value: "14", label: "Screens" },
+  { value: "100%", label: "Your data, private" },
+];
+
+const previewHoldings = [
+  { sym: "OG", name: "OGDC", value: "Rs 171,240", change: "+20.5%", color: "#2563EB" },
+  { sym: "LU", name: "LUCK", value: "Rs 316,925", change: "+25.8%", color: "#7C3AED" },
+  { sym: "ME", name: "MEBL", value: "Rs 220,770", change: "+46.0%", color: "#0D9488" },
+];
 
 export default function LandingPage() {
   const [loading, setLoading] = useState(false);
@@ -42,288 +96,235 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-dvh bg-background text-foreground antialiased">
-      {/* ───────────── Nav ───────────── */}
-      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur-xl">
-        <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+    <div className="min-h-screen bg-canvas text-ink antialiased">
+      {/* ───────────── Header ───────────── */}
+      <div className="border-b border-line bg-card">
+        <div className="mx-auto flex h-16 max-w-[1180px] items-center justify-between px-6">
           <Link href="/home" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <TrendingUp className="h-[18px] w-[18px] text-primary-foreground" strokeWidth={2.4} />
-            </div>
-            <span className="text-[15px] font-semibold tracking-tight">PSX Tracker</span>
+            <span className="grid h-8 w-8 place-items-center rounded-[9px] bg-gradient-to-br from-[#4f8bf7] to-[#1d4ed8]">
+              <BrandMark />
+            </span>
+            <span className="text-[16px] font-bold tracking-[-.02em]">
+              PSX<span className="font-medium text-ink-3"> Tracker</span>
+            </span>
           </Link>
-          <div className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
-            <a href="#features" className="transition-colors hover:text-foreground">Features</a>
-            <a href="#preview" className="transition-colors hover:text-foreground">Product</a>
-            <a href="#models" className="transition-colors hover:text-foreground">Model Portfolios</a>
-          </div>
           <div className="flex items-center gap-3">
+            <Link
+              href="/about"
+              className="px-2.5 text-[13.5px] font-medium text-ink-2"
+            >
+              About
+            </Link>
             <button
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-60"
+              className="flex h-10 cursor-pointer items-center rounded-[11px] bg-brand px-[18px] text-[13.5px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] disabled:opacity-60"
             >
-              <GoogleIcon className="h-4 w-4" />
               {loading ? "Redirecting…" : "Sign in"}
             </button>
           </div>
-        </nav>
-      </header>
+        </div>
+      </div>
 
       {/* ───────────── Hero ───────────── */}
-      <section className="relative overflow-hidden">
-        {/* ambient gradient wash */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-[480px] max-w-5xl opacity-60 blur-3xl"
-          style={{
-            background:
-              "radial-gradient(closest-side, color-mix(in oklch, var(--primary) 22%, transparent), transparent)",
-          }}
-        />
-        <div className="relative mx-auto max-w-4xl px-6 pt-24 pb-16 text-center lg:pt-32">
-          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            Pakistan Stock Exchange · live KSE-100 tracking
-          </div>
-          <h1 className="text-balance text-5xl font-semibold leading-[1.05] tracking-tight lg:text-7xl">
-            Your PSX portfolio,
-            <br />
-            <span className="text-primary">beautifully tracked.</span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-xl text-pretty text-lg text-muted-foreground lg:text-xl">
-            Monitor the market, build model portfolios, and watch your gains in
-            real time — with an interface that actually feels good to use.
-          </p>
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <button
-              onClick={handleGoogleLogin}
-              disabled={loading}
-              className="inline-flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-7 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-            >
-              <GoogleIcon className="h-5 w-5 rounded-full bg-white p-0.5" />
-              {loading ? "Redirecting…" : "Continue with Google"}
-            </button>
-            <a
-              href="#preview"
-              className="inline-flex h-12 items-center rounded-xl border border-border bg-card px-6 text-sm font-medium transition-colors hover:bg-muted"
-            >
-              See it in action
-            </a>
-          </div>
-          <p className="mt-4 text-xs text-muted-foreground">
-            Free · Your data stays in your own Google Drive
-          </p>
-        </div>
-
-        {/* ── product preview mock ── */}
-        <div id="preview" className="relative mx-auto max-w-5xl px-6 pb-24">
-          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-2xl shadow-black/5">
-            {/* fake browser chrome */}
-            <div className="flex items-center gap-1.5 border-b border-border px-4 py-3">
-              <span className="h-3 w-3 rounded-full bg-muted-foreground/25" />
-              <span className="h-3 w-3 rounded-full bg-muted-foreground/25" />
-              <span className="h-3 w-3 rounded-full bg-muted-foreground/25" />
-              <div className="ml-3 h-5 flex-1 rounded-md bg-muted" />
+      <div className="py-[72px]">
+        <div className="mx-auto grid max-w-[1180px] grid-cols-1 items-center gap-14 px-6 lg:grid-cols-2">
+          <div>
+            <div className="mb-[22px] inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-[12.5px] font-semibold text-brand">
+              <span className="h-[7px] w-[7px] rounded-full bg-gain" />
+              Live Pakistan Stock Exchange data
             </div>
-            <div className="p-6 lg:p-8">
-              {/* hero value row */}
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Portfolio Value
-                  </p>
-                  <p className="mt-1 font-tabular text-4xl font-semibold tracking-tight lg:text-5xl">
-                    PKR 163,395
-                  </p>
-                  <span
-                    className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-tabular text-sm font-semibold"
-                    style={{ color: "var(--color-profit)", backgroundColor: "var(--color-profit-bg)" }}
-                  >
-                    <ArrowUpRight className="h-3.5 w-3.5" /> +6.16%
-                  </span>
+            <h1 className="text-[52px] font-bold leading-[1.05] tracking-[-.035em]">
+              Track the PSX.
+              <br />
+              <span className="text-brand">Invest smarter.</span>
+            </h1>
+            <p className="mb-[30px] mt-5 max-w-[460px] text-[17px] leading-[1.6] text-ink-2">
+              A calm, beautiful home for your KSE-100 portfolio — model
+              portfolios, virtual trading and deep analytics, with your data kept
+              private in your own Google Drive.
+            </p>
+            <div className="flex flex-wrap items-center gap-3.5">
+              <button
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                className="flex h-[52px] cursor-pointer items-center gap-3 rounded-[13px] bg-ink px-6 text-[15.5px] font-semibold text-canvas shadow-[0_10px_26px_rgba(0,0,0,.18)] disabled:opacity-60"
+              >
+                <span className="grid h-[26px] w-[26px] place-items-center rounded-full bg-white text-[15px] font-bold text-[#4285F4]">
+                  G
+                </span>
+                {loading ? "Redirecting…" : "Continue with Google"}
+              </button>
+              <button
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                className="flex h-[52px] cursor-pointer items-center rounded-[13px] border border-line px-5 text-[14.5px] font-semibold disabled:opacity-60"
+              >
+                View live demo →
+              </button>
+            </div>
+            <div className="mt-4 text-[12.5px] text-ink-3">
+              No credit card · Free forever · Sign in with Google
+            </div>
+          </div>
+
+          {/* ── product preview: browser-frame mock ── */}
+          <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-[0_30px_80px_rgba(13,18,28,.18)]">
+            <div className="flex items-center gap-1.5 border-b border-line-soft bg-canvas px-3.5 py-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+              <div className="mx-2.5 h-[18px] flex-1 rounded-md border border-line-soft bg-card" />
+            </div>
+            <div className="p-[18px]">
+              <div className="text-[11px] font-medium text-ink-3">
+                Total Portfolio Value
+              </div>
+              <div className="mt-0.5 flex items-baseline gap-2">
+                <div className="num text-[28px] font-bold tracking-[-.03em]">
+                  Rs 1,532,935
                 </div>
-                {/* mini area chart */}
-                <svg viewBox="0 0 320 90" className="h-24 w-full max-w-[360px]" preserveAspectRatio="none">
+                <span className="num rounded-md bg-gain-50 px-1.5 py-0.5 text-[12px] font-semibold text-gain">
+                  +21.0%
+                </span>
+              </div>
+              <div className="-mx-1 my-3 h-[88px]">
+                <svg
+                  viewBox="0 0 440 88"
+                  preserveAspectRatio="none"
+                  className="h-full w-full"
+                >
                   <defs>
-                    <linearGradient id="lpfill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.22" />
-                      <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+                    <linearGradient id="lp-area" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#059669" stopOpacity=".26" />
+                      <stop offset="100%" stopColor="#059669" stopOpacity="0" />
                     </linearGradient>
                   </defs>
                   <path
-                    d="M0,70 L40,62 L80,66 L120,48 L160,52 L200,34 L240,40 L280,22 L320,16 L320,90 L0,90 Z"
-                    fill="url(#lpfill)"
+                    d="M0.0 19.7 L19.1 24.5 L38.3 23.0 L57.4 24.1 L76.5 29.2 L95.7 29.6 L114.8 36.0 L133.9 35.3 L153.0 40.3 L172.2 41.9 L191.3 43.1 L210.4 41.4 L229.6 42.1 L248.7 48.7 L267.8 46.8 L287.0 47.8 L306.1 52.4 L325.2 52.5 L344.3 53.5 L363.5 57.7 L382.6 65.7 L401.7 67.6 L420.9 64.0 L440.0 72.3 L440 88 L0 88 Z"
+                    fill="url(#lp-area)"
                   />
                   <path
-                    d="M0,70 L40,62 L80,66 L120,48 L160,52 L200,34 L240,40 L280,22 L320,16"
+                    d="M0.0 19.7 L19.1 24.5 L38.3 23.0 L57.4 24.1 L76.5 29.2 L95.7 29.6 L114.8 36.0 L133.9 35.3 L153.0 40.3 L172.2 41.9 L191.3 43.1 L210.4 41.4 L229.6 42.1 L248.7 48.7 L267.8 46.8 L287.0 47.8 L306.1 52.4 L325.2 52.5 L344.3 53.5 L363.5 57.7 L382.6 65.7 L401.7 67.6 L420.9 64.0 L440.0 72.3"
                     fill="none"
-                    stroke="var(--primary)"
-                    strokeWidth="2"
+                    stroke="#059669"
+                    strokeWidth="2.2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
                 </svg>
               </div>
-              {/* metric strip */}
-              <div className="mt-6 grid grid-cols-2 divide-x divide-border overflow-hidden rounded-xl border border-border md:grid-cols-4">
-                {[
-                  { l: "Cash", v: "14,209" },
-                  { l: "Invested", v: "153,018" },
-                  { l: "Market Value", v: "149,186" },
-                  { l: "P&L", v: "+3,829", c: "var(--color-profit)" },
-                ].map((m) => (
-                  <div key={m.l} className="px-4 py-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{m.l}</p>
-                    <p className="mt-1 font-tabular text-lg font-semibold" style={m.c ? { color: m.c } : undefined}>
-                      {m.v}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ───────────── Features ───────────── */}
-      <section id="features" className="border-t border-border bg-muted/30">
-        <div className="mx-auto max-w-6xl px-6 py-24">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-semibold tracking-tight lg:text-4xl">
-              Everything you need to track the market
-            </h2>
-            <p className="mt-4 text-lg text-muted-foreground">
-              From live prices to model portfolios — all in one calm, fast interface.
-            </p>
-          </div>
-          <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { icon: LineChart, t: "Live KSE-100", d: "Real-time index and market-watch data straight from the exchange." },
-              { icon: PieChart, t: "Portfolio analytics", d: "Allocation donuts, P&L by stock, and value-over-time charts." },
-              { icon: Layers, t: "Model portfolios", d: "Design target allocations, rebalance, and run SIPs with one click." },
-              { icon: Wallet, t: "Virtual trading", d: "Practice with virtual cash — buy, sell, and track without risk." },
-              { icon: BarChart3, t: "Deep insights", d: "Performance, sector breakdowns, and what-if simulations." },
-              { icon: ShieldCheck, t: "Your data, yours", d: "Synced privately to your own Google Drive. Sign in with Google." },
-            ].map((f) => (
-              <div key={f.t} className="rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary/40">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                  <f.icon className="h-5 w-5 text-primary" />
-                </div>
-                <h3 className="mt-4 text-base font-semibold">{f.t}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{f.d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ───────────── Stats band ───────────── */}
-      <section className="border-t border-border">
-        <div className="mx-auto grid max-w-5xl grid-cols-2 gap-8 px-6 py-16 text-center md:grid-cols-4">
-          {[
-            { v: "500+", l: "PSX stocks" },
-            { v: "Live", l: "KSE-100 index" },
-            { v: "∞", l: "Model portfolios" },
-            { v: "100%", l: "Free to use" },
-          ].map((s) => (
-            <div key={s.l}>
-              <p className="font-tabular text-3xl font-semibold tracking-tight lg:text-4xl">{s.v}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{s.l}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ───────────── Model portfolios highlight ───────────── */}
-      <section id="models" className="border-t border-border bg-muted/30">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-24 lg:grid-cols-2">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-              <Layers className="h-3.5 w-3.5 text-primary" /> Model Portfolios
-            </div>
-            <h2 className="mt-5 text-3xl font-semibold tracking-tight lg:text-4xl">
-              Build, rebalance, and grow strategies
-            </h2>
-            <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
-              Create target allocations across any PSX stocks, rebalance to market
-              prices in one tap, run systematic investment plans, and track P&L per
-              strategy — all kept in sync to your own Drive.
-            </p>
-            <Link
-              href="/models"
-              className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-            >
-              Explore model portfolios <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="rounded-2xl border border-border bg-card p-6">
-            <p className="text-sm font-semibold">AKD Growth</p>
-            <div className="mt-4 flex h-2 overflow-hidden rounded-full">
-              {["55%", "20%", "13%", "12%"].map((w, i) => (
-                <div
-                  key={i}
-                  style={{ width: w, background: `var(--chart-${i + 1})` }}
-                  className="h-full"
-                />
-              ))}
-            </div>
-            <div className="mt-5 space-y-2.5 text-sm">
-              {[
-                { s: "DGKC", p: "+12.1%", up: true },
-                { s: "FABL", p: "+11.2%", up: true },
-                { s: "GHNI", p: "-6.7%", up: false },
-                { s: "MTL", p: "+8.0%", up: true },
-              ].map((r) => (
-                <div key={r.s} className="flex items-center justify-between">
-                  <span className="font-medium">{r.s}</span>
+              {previewHoldings.map((h) => (
+                <div key={h.name} className="flex items-center gap-2.5 py-[7px]">
                   <span
-                    className="font-tabular text-sm font-medium"
-                    style={{ color: r.up ? "var(--color-profit)" : "var(--color-loss)" }}
+                    className="grid shrink-0 place-items-center rounded-[10px] font-bold"
+                    style={{
+                      width: 26,
+                      height: 26,
+                      fontSize: "8.58px",
+                      background: `${h.color}22`,
+                      color: h.color,
+                    }}
                   >
-                    {r.p}
+                    {h.sym}
+                  </span>
+                  <div className="flex-1 text-[12px] font-semibold">{h.name}</div>
+                  <span className="num text-[12px] font-semibold">{h.value}</span>
+                  <span className="num w-[52px] text-right text-[11px] font-semibold text-gain">
+                    {h.change}
                   </span>
                 </div>
               ))}
             </div>
           </div>
         </div>
-      </section>
+      </div>
+
+      {/* ───────────── Stats band ───────────── */}
+      <div className="border-y border-line bg-card py-[34px]">
+        <div className="mx-auto grid max-w-[1180px] grid-cols-2 gap-5 px-6 text-center md:grid-cols-4">
+          {stats.map((s) => (
+            <div key={s.label}>
+              <div className="num text-[30px] font-bold tracking-[-.02em]">
+                {s.value}
+              </div>
+              <div className="mt-1 text-[13px] text-ink-3">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ───────────── Feature grid ───────────── */}
+      <div className="py-[72px]">
+        <div className="mx-auto max-w-[1180px] px-6">
+          <div className="mb-11 text-center">
+            <h2 className="text-[34px] font-bold tracking-[-.03em]">
+              Everything you need to follow the market
+            </h2>
+            <p className="mt-3 text-[16px] text-ink-2">
+              From a quick glance to a deep dive — it is all here.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((f) => (
+              <div
+                key={f.title}
+                className="rounded-2xl border border-line bg-card p-6 shadow-card"
+              >
+                <div className="mb-4 grid h-10 w-10 place-items-center rounded-xl bg-brand/10 text-brand">
+                  <f.icon className="h-[19px] w-[19px]" strokeWidth={1.9} />
+                </div>
+                <div className="mb-1.5 text-[16px] font-bold">{f.title}</div>
+                <div className="text-[13.5px] leading-[1.55] text-ink-3">
+                  {f.desc}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* ───────────── CTA ───────────── */}
-      <section className="border-t border-border">
-        <div className="mx-auto max-w-3xl px-6 py-24 text-center">
-          <h2 className="text-3xl font-semibold tracking-tight lg:text-5xl">
-            Start tracking in seconds
-          </h2>
-          <p className="mx-auto mt-4 max-w-md text-lg text-muted-foreground">
-            Sign in with Google and your portfolio is ready. No setup, no cost.
-          </p>
-          <button
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="mt-8 inline-flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-7 text-base font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-          >
-            <GoogleIcon className="h-5 w-5 rounded-full bg-white p-0.5" />
-            {loading ? "Redirecting…" : "Continue with Google"}
-          </button>
+      <div className="pb-20">
+        <div className="mx-auto max-w-[1180px] px-6">
+          <div className="rounded-3xl bg-gradient-to-br from-brand to-brand-2 px-10 py-14 text-center shadow-[0_20px_60px_rgba(37,99,235,.25)]">
+            <h2 className="text-[34px] font-bold tracking-[-.03em] text-white">
+              Start tracking in seconds
+            </h2>
+            <p className="mb-7 mt-3.5 text-[16px] text-white/90">
+              Sign in with Google — your portfolio data never leaves your Drive.
+            </p>
+            <button
+              onClick={handleGoogleLogin}
+              disabled={loading}
+              className="inline-flex h-[52px] cursor-pointer items-center gap-2.5 rounded-[13px] bg-white px-[26px] text-[15.5px] font-bold text-brand shadow-[0_10px_30px_rgba(0,0,0,.2)] disabled:opacity-60"
+            >
+              <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-50 text-[14px] font-bold">
+                G
+              </span>
+              {loading ? "Redirecting…" : "Continue with Google"}
+            </button>
+          </div>
         </div>
-      </section>
+      </div>
 
       {/* ───────────── Footer ───────────── */}
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-10 sm:flex-row">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
-              <TrendingUp className="h-4 w-4 text-primary-foreground" strokeWidth={2.4} />
-            </div>
-            <span className="text-sm font-medium">PSX Tracker</span>
+      <div className="border-t border-line bg-card py-[26px]">
+        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-4 px-6">
+          <div className="flex items-baseline gap-3">
+            <span
+              className="text-[27px]"
+              style={{ fontFamily: "var(--font-signature), cursive" }}
+            >
+              Faisal Qayyum
+            </span>
+            <span className="text-[12px] font-medium text-ink-3">PSX Tracker</span>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Built for the Pakistan Stock Exchange · Not financial advice.
-          </p>
+          <div className="text-[12px] text-ink-3">
+            © 2026 · Designed &amp; built with care
+          </div>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }

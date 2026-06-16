@@ -1,21 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Download } from "lucide-react";
 import {
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  PieChart,
-  Wallet,
-  Banknote,
-  Layers,
-  Download,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  PieChart as RePieChart,
+  PieChart as RechartsPie,
   Pie,
   Cell,
   Tooltip,
@@ -26,9 +14,10 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import Link from "next/link";
 import { formatPKR } from "@/lib/market-status";
-import { PageSkeleton } from "@/components/ui/skeleton";
+import { sectorName } from "@/lib/sectors";
+
+/* ────────────────────────── types ────────────────────────── */
 
 interface Holding {
   id: string;
@@ -68,6 +57,8 @@ interface ModelPortfolio {
 
 type Scope = "all" | "personal" | "models";
 
+/* ────────────────────────── helpers ────────────────────────── */
+
 // Map a model portfolio into the page's Portfolio shape (excluding the CASH pseudo-row)
 function modelToPortfolio(m: ModelPortfolio): Portfolio {
   return {
@@ -86,34 +77,27 @@ function modelToPortfolio(m: ModelPortfolio): Portfolio {
   };
 }
 
-// Indigo-family chart palette (Linear aesthetic)
-const COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
+// Allocation/donut palette (NOT used for P&L). Cash gets its own grey.
+const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#DB2777"];
+const STOCKS_COLOR = "#2563EB";
+const CASH_COLOR = "#CBD5E1";
 
-const chartTooltipStyle = {
-  backgroundColor: "var(--popover)",
-  border: "1px solid var(--border)",
-  borderRadius: "0.5rem",
-  fontSize: "12px",
-  color: "var(--popover-foreground)",
+const tooltipStyle = {
+  background: "var(--color-card)",
+  border: "1px solid var(--color-line)",
+  borderRadius: 12,
+  fontSize: 12,
+  color: "var(--color-ink)",
+  boxShadow: "var(--shadow-pop)",
 } as const;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tooltipFormatPKR = (value: any) => [`PKR ${Number(value).toLocaleString()}`];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tooltipFormatPnL = (value: any) => [`PKR ${Number(value).toLocaleString()}`, "P&L"];
+/* ────────────────────────── page ────────────────────────── */
 
 export default function AnalyticsPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [scope, setScope] = useState<Scope>("all");
-  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     const [portfolioRes, modelRes, marketRes] = await Promise.all([
@@ -131,7 +115,6 @@ export default function AnalyticsPage() {
       const data = await marketRes.json();
       setMarketData(Array.isArray(data) ? data : []);
     }
-    setInitialLoading(false);
   }, []);
 
   useEffect(() => {
@@ -152,50 +135,19 @@ export default function AnalyticsPage() {
     { value: "models", label: "Models" },
   ];
 
-  const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
-  const sectorMap = new Map(marketData.map((s) => [s.symbol, s.sector]));
+  const priceMap = useMemo(
+    () => new Map(marketData.map((s) => [s.symbol, s.current])),
+    [marketData]
+  );
+  const sectorMap = useMemo(
+    () => new Map(marketData.map((s) => [s.symbol, s.sector])),
+    [marketData]
+  );
 
-  const allHoldings = activePortfolios.flatMap((p) => p.holdings);
-
-  // Holdings allocation by value
-  const holdingValues = allHoldings.map((h) => {
-    const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
-    return {
-      name: h.symbol,
-      value: Math.round(currentPrice * h.quantity),
-    };
-  });
-
-  // Sector allocation
-  const sectorAllocation = new Map<string, number>();
-  allHoldings.forEach((h) => {
-    const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
-    const value = currentPrice * h.quantity;
-    const sector = sectorMap.get(h.symbol) || "Other";
-    sectorAllocation.set(
-      sector,
-      (sectorAllocation.get(sector) || 0) + value
-    );
-  });
-  const sectorData = Array.from(sectorAllocation.entries())
-    .map(([name, value]) => ({ name, value: Math.round(value) }))
-    .sort((a, b) => b.value - a.value);
-
-  // P&L per stock
-  const pnlData = allHoldings
-    .map((h) => {
-      const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
-      const pnl = (currentPrice - h.avgPrice) * h.quantity;
-      return {
-        symbol: h.symbol,
-        pnl: Math.round(pnl),
-        pnlPercent:
-          h.avgPrice > 0
-            ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100
-            : 0,
-      };
-    })
-    .sort((a, b) => b.pnl - a.pnl);
+  const allHoldings = useMemo(
+    () => activePortfolios.flatMap((p) => p.holdings),
+    [activePortfolios]
+  );
 
   // Portfolio totals
   const totalInvested = allHoldings.reduce(
@@ -208,420 +160,383 @@ export default function AnalyticsPage() {
   }, 0);
   const totalCash = activePortfolios.reduce((sum, p) => sum + p.cashBalance, 0);
   const totalPnL = totalCurrent - totalInvested;
+  const totalValue = totalCurrent + totalCash;
 
-  // Asset allocation (cash vs stocks)
-  const assetAllocation = [
-    { name: "Stocks", value: Math.round(totalCurrent) },
-    { name: "Cash", value: Math.round(totalCash) },
-  ];
+  // Asset allocation (stocks vs cash)
+  const assetAllocation = useMemo(
+    () => [
+      { name: "Stocks", value: Math.round(totalCurrent), color: STOCKS_COLOR },
+      { name: "Cash", value: Math.round(totalCash), color: CASH_COLOR },
+    ],
+    [totalCurrent, totalCash]
+  );
+  const assetTotal = totalCurrent + totalCash || 1;
+
+  // Sector allocation (by value), labelled via sectorName(code)
+  const sectorData = useMemo(() => {
+    const byCode = new Map<string, number>();
+    allHoldings.forEach((h) => {
+      const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
+      const value = currentPrice * h.quantity;
+      const code = sectorMap.get(h.symbol) || "Other";
+      byCode.set(code, (byCode.get(code) || 0) + value);
+    });
+    return Array.from(byCode.entries())
+      .map(([code, value]) => ({ name: sectorName(code), value: Math.round(value) }))
+      .sort((a, b) => b.value - a.value);
+  }, [allHoldings, priceMap, sectorMap]);
+  const sectorTotal = sectorData.reduce((s, x) => s + x.value, 0) || 1;
+
+  // P&L per stock
+  const pnlData = useMemo(
+    () =>
+      allHoldings
+        .map((h) => {
+          const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
+          const pnl = (currentPrice - h.avgPrice) * h.quantity;
+          return {
+            symbol: h.symbol,
+            pnl: Math.round(pnl),
+            pnlPercent:
+              h.avgPrice > 0
+                ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100
+                : 0,
+          };
+        })
+        .sort((a, b) => b.pnl - a.pnl),
+    [allHoldings, priceMap]
+  );
+
+  // Holdings breakdown rows (by weight)
+  const breakdownRows = useMemo(() => {
+    return allHoldings
+      .map((h) => {
+        const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
+        const value = currentPrice * h.quantity;
+        const weight = totalCurrent > 0 ? (value / totalCurrent) * 100 : 0;
+        const pnlPercent =
+          h.avgPrice > 0
+            ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100
+            : 0;
+        return { symbol: h.symbol, value, weight, pnlPercent };
+      })
+      .sort((a, b) => b.value - a.value);
+  }, [allHoldings, priceMap, totalCurrent]);
+  const maxWeight = breakdownRows[0]?.weight || 1;
 
   const hasData = allHoldings.length > 0;
 
-  if (initialLoading) return <PageSkeleton />;
-
-  const summaryStats = [
-    {
-      label: "Total Portfolio",
-      icon: Wallet,
-      value: `PKR ${formatPKR(totalCurrent + totalCash, { decimals: 0 })}`,
-    },
-    {
-      label: "Invested",
-      icon: Banknote,
-      value: `PKR ${formatPKR(totalInvested, { decimals: 0 })}`,
-    },
-  ];
-
   return (
-    <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 animate-in-up">
+    <>
+      {/* Page header */}
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Portfolio
-          </p>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1">
-            Analytics
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Portfolio performance and allocation analysis
-          </p>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            Allocations, sectors &amp; exports
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">Analytics</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-0.5 rounded-lg border border-border p-0.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex gap-1 rounded-[11px] border border-line bg-canvas p-1">
             {scopes.map((s) => (
               <button
                 key={s.value}
                 onClick={() => setScope(s.value)}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                className={`rounded-lg px-3.5 py-[7px] text-[13px] font-semibold transition-colors ${
                   scope === s.value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-brand text-white"
+                    : "text-ink-2 hover:text-ink"
                 }`}
               >
                 {s.label}
               </button>
             ))}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs gap-1.5 rounded-lg"
+          <button
             onClick={() => window.open("/api/export?type=portfolios&format=csv")}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3 text-[12.5px] font-medium shadow-card hover:bg-ink/[.04]"
           >
-            <Download className="h-3 w-3" />
-            Export Holdings
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs gap-1.5 rounded-lg"
+            <Download className="h-[14px] w-[14px]" />
+            Holdings
+          </button>
+          <button
             onClick={() => window.open("/api/export?type=model-portfolios&format=csv")}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3 text-[12.5px] font-medium shadow-card hover:bg-ink/[.04]"
           >
-            <Download className="h-3 w-3" />
-            Export Models
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs gap-1.5 rounded-lg"
+            <Download className="h-[14px] w-[14px]" />
+            Models
+          </button>
+          <button
             onClick={() => window.open("/api/export?type=transactions&format=csv")}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3 text-[12.5px] font-medium shadow-card hover:bg-ink/[.04]"
           >
-            <Download className="h-3 w-3" />
-            Export Transactions
-          </Button>
+            <Download className="h-[14px] w-[14px]" />
+            Transactions
+          </button>
         </div>
       </div>
 
       {!hasData ? (
-        <Card className="border border-border bg-card rounded-xl">
-          <CardContent className="py-16 text-center">
-            <div className="flex items-center justify-center h-14 w-14 rounded-xl border border-border mb-4 mx-auto">
-              <BarChart3 className="h-7 w-7 text-muted-foreground/50" />
-            </div>
-            <p className="text-sm font-medium text-muted-foreground">
-              No holdings data to analyze yet
-            </p>
-            <p className="text-xs text-muted-foreground/70 mt-1">
-              Start trading from the Market page to see analytics here
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-2xl border border-line bg-card p-[22px] py-16 text-center shadow-card">
+          <p className="text-sm font-medium text-ink-2">
+            No holdings data to analyze yet
+          </p>
+          <p className="mt-1 text-xs text-ink-3">
+            Start trading from the Market page to see analytics here
+          </p>
+        </div>
       ) : (
         <>
-          {/* Summary Hero Strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border border-border bg-border animate-in-up-delay-1">
-            {summaryStats.map((s) => {
-              const Icon = s.icon;
-              return (
-                <div key={s.label} className="bg-card p-5">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Icon className="h-4 w-4" />
-                    <p className="text-[11px] font-semibold uppercase tracking-wide">
-                      {s.label}
-                    </p>
-                  </div>
-                  <p className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none">
-                    {s.value}
-                  </p>
-                </div>
-              );
-            })}
-
-            {/* Total P&L */}
-            <div className="bg-card p-5">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                {totalPnL >= 0 ? (
-                  <TrendingUp className="h-4 w-4" />
-                ) : (
-                  <TrendingDown className="h-4 w-4" />
-                )}
-                <p className="text-[11px] font-semibold uppercase tracking-wide">
-                  Total P&amp;L
-                </p>
+          {/* Summary strip */}
+          <div className="mb-[18px] grid grid-cols-2 gap-[18px] lg:grid-cols-4">
+            <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+                Total Portfolio
               </div>
-              <p
-                className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none"
-                style={{ color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-              >
-                {totalPnL >= 0 ? "+" : ""}PKR{" "}
-                {formatPKR(totalPnL, { decimals: 0 })}
-              </p>
+              <div className="num text-[22px] font-bold tracking-[-.025em]">
+                Rs {formatPKR(totalValue, { decimals: 0 })}
+              </div>
             </div>
-
-            {/* Holdings count */}
-            <div className="bg-card p-5">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Layers className="h-4 w-4" />
-                <p className="text-[11px] font-semibold uppercase tracking-wide">
-                  Holdings
-                </p>
+            <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+                Invested
               </div>
-              <p className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none">
-                {allHoldings.length}{" "}
-                <span className="text-sm font-normal text-muted-foreground">
-                  stocks
-                </span>
-              </p>
+              <div className="num text-[22px] font-bold tracking-[-.025em]">
+                Rs {formatPKR(totalInvested, { decimals: 0 })}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+                Total P&amp;L
+              </div>
+              <div
+                className="num text-[22px] font-bold tracking-[-.025em]"
+                style={{
+                  color: totalPnL >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)",
+                }}
+              >
+                {totalPnL >= 0 ? "+" : "−"}Rs {formatPKR(Math.abs(totalPnL), { decimals: 0 })}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+              <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+                Holdings
+              </div>
+              <div className="num text-[22px] font-bold tracking-[-.025em]">
+                {allHoldings.length}
+              </div>
             </div>
           </div>
 
-          {/* Charts Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in-up-delay-2">
+          {/* Allocation donuts */}
+          <div className="mb-[18px] grid grid-cols-1 gap-[18px] lg:grid-cols-2">
             {/* Asset Allocation */}
-            <Card className="border border-border bg-card rounded-xl">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <PieChart className="h-4 w-4" />
-                  Asset Allocation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <RePieChart>
-                    <Pie
-                      data={assetAllocation}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {assetAllocation.map((_, index) => (
-                        <Cell
-                          key={index}
-                          fill={COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={tooltipFormatPKR}
-                      contentStyle={chartTooltipStyle}
-                    />
-                  </RePieChart>
-                </ResponsiveContainer>
-                <div className="flex justify-center gap-6 mt-2">
-                  {assetAllocation.map((item, i) => (
-                    <div key={item.name} className="flex items-center gap-2">
-                      <div
-                        className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: COLORS[i % COLORS.length] }}
+            <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+              <div className="mb-4 text-[15px] font-bold">Asset Allocation</div>
+              <div className="flex items-center gap-5">
+                <div className="relative h-[130px] w-[130px] shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie
+                        data={assetAllocation}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="63%"
+                        outerRadius="100%"
+                        paddingAngle={1.5}
+                        stroke="none"
+                        isAnimationActive
+                        animationDuration={900}
+                      >
+                        {assetAllocation.map((e) => (
+                          <Cell key={e.name} fill={e.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={tooltipStyle}
+                        formatter={(v, n) => [
+                          `Rs ${formatPKR(Number(v), { decimals: 0 })}`,
+                          String(n),
+                        ]}
                       />
-                      <span className="text-sm font-tabular">
-                        {item.name}: PKR {item.value.toLocaleString()}
+                    </RechartsPie>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                    <div>
+                      <div className="text-[11px] text-ink-3">Total</div>
+                      <div className="num text-[14px] font-bold">
+                        {formatPKR(assetTotal, { compact: true })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col gap-2">
+                  {assetAllocation.map((e) => (
+                    <div key={e.name} className="flex items-center gap-2">
+                      <span
+                        className="h-[9px] w-[9px] rounded-[3px]"
+                        style={{ background: e.color }}
+                      />
+                      <span className="flex-1 text-[12px] font-medium">{e.name}</span>
+                      <span className="num text-[12px] font-semibold text-ink-2">
+                        {((e.value / assetTotal) * 100).toFixed(1)}%
                       </span>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
 
             {/* Sector Allocation */}
-            <Card className="border border-border bg-card rounded-xl">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <PieChart className="h-4 w-4" />
-                  Sector Allocation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <RePieChart>
-                    <Pie
-                      data={sectorData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={2}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {sectorData.map((_, index) => (
-                        <Cell
-                          key={index}
-                          fill={COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={tooltipFormatPKR}
-                      contentStyle={chartTooltipStyle}
-                    />
-                  </RePieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 mt-2">
-                  {sectorData.slice(0, 8).map((item, i) => (
-                    <div key={item.name} className="flex items-center gap-1.5">
-                      <div
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: COLORS[i % COLORS.length] }}
+            <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+              <div className="mb-4 text-[15px] font-bold">Sector Allocation</div>
+              <div className="flex items-center gap-5">
+                <div className="relative h-[130px] w-[130px] shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie
+                        data={sectorData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="63%"
+                        outerRadius="100%"
+                        paddingAngle={1.5}
+                        stroke="none"
+                        isAnimationActive
+                        animationDuration={900}
+                      >
+                        {sectorData.map((e, i) => (
+                          <Cell
+                            key={e.name}
+                            fill={ALLOC_COLORS[i % ALLOC_COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={tooltipStyle}
+                        formatter={(v, n) => [
+                          `Rs ${formatPKR(Number(v), { decimals: 0 })}`,
+                          String(n),
+                        ]}
                       />
-                      <span className="text-xs">{item.name}</span>
+                    </RechartsPie>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                    <div>
+                      <div className="text-[11px] text-ink-3">Total</div>
+                      <div className="num text-[14px] font-bold">
+                        {formatPKR(sectorTotal, { compact: true })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col gap-2">
+                  {sectorData.slice(0, 6).map((e, i) => (
+                    <div key={e.name} className="flex items-center gap-2">
+                      <span
+                        className="h-[9px] w-[9px] rounded-[3px]"
+                        style={{ background: ALLOC_COLORS[i % ALLOC_COLORS.length] }}
+                      />
+                      <span className="flex-1 text-[12px] font-medium">{e.name}</span>
+                      <span className="num text-[12px] font-semibold text-ink-2">
+                        {((e.value / sectorTotal) * 100).toFixed(1)}%
+                      </span>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
           </div>
 
-          {/* P&L Per Stock */}
-          <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" />
-                Profit & Loss by Stock
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={pnlData}>
-                  <CartesianGrid
-                    vertical={false}
-                    stroke="var(--border)"
-                  />
-                  <XAxis
-                    dataKey="symbol"
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => formatPKR(v, { compact: true, decimals: 0 })}
-                  />
-                  <Tooltip
-                    contentStyle={chartTooltipStyle}
-                    cursor={{ fill: "var(--border)", opacity: 0.3 }}
-                    formatter={tooltipFormatPnL}
-                  />
-                  <Bar dataKey="pnl" radius={[6, 6, 0, 0]}>
-                    {pnlData.map((entry, index) => (
-                      <Cell
-                        key={index}
-                        fill={entry.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)"}
+          {/* P&L per Stock */}
+          <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+            <div className="mb-3.5 text-[15px] font-bold">Profit &amp; Loss by Stock</div>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={pnlData}>
+                <CartesianGrid vertical={false} stroke="var(--color-line)" />
+                <XAxis
+                  dataKey="symbol"
+                  tick={{ fontSize: 11, fill: "var(--color-ink-3)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "var(--color-ink-3)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => formatPKR(v, { compact: true, decimals: 0 })}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  cursor={{ fill: "var(--color-line)", opacity: 0.3 }}
+                  formatter={(v) => [
+                    `Rs ${formatPKR(Number(v), { decimals: 0 })}`,
+                    "P&L",
+                  ]}
+                />
+                <Bar dataKey="pnl" radius={[6, 6, 0, 0]}>
+                  {pnlData.map((entry) => (
+                    <Cell
+                      key={entry.symbol}
+                      fill={
+                        entry.pnl >= 0
+                          ? "var(--color-gain)"
+                          : "var(--color-loss-strong)"
+                      }
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </section>
+
+          {/* Holdings Breakdown */}
+          <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+            <div className="mb-3.5 text-[15px] font-bold">Holdings Breakdown</div>
+            <div className="flex flex-col gap-3">
+              {breakdownRows.map((r, i) => {
+                const c = ALLOC_COLORS[i % ALLOC_COLORS.length];
+                const up = r.pnlPercent >= 0;
+                return (
+                  <div
+                    key={r.symbol}
+                    className="grid grid-cols-[80px_1fr_60px_70px] items-center gap-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-[9px] w-[9px] rounded-[3px]"
+                        style={{ background: c }}
                       />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Holdings Breakdown Table */}
-          <Card className="border border-border bg-card rounded-xl animate-in-up-delay-4">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <Layers className="h-4 w-4" />
-                  Holdings Breakdown
-                </CardTitle>
-                <Badge variant="secondary" className="text-xs font-tabular">
-                  {pnlData.length} holdings
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        Stock
-                      </th>
-                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        Value
-                      </th>
-                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        Weight
-                      </th>
-                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        P&L
-                      </th>
-                      <th className="text-right py-3 px-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        P&L %
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pnlData.map((item) => {
-                      const holding = allHoldings.find(
-                        (h) => h.symbol === item.symbol
-                      )!;
-                      const currentPrice =
-                        priceMap.get(item.symbol) || holding.avgPrice;
-                      const value = currentPrice * holding.quantity;
-                      const weight =
-                        totalCurrent > 0 ? (value / totalCurrent) * 100 : 0;
-
-                      return (
-                        <tr
-                          key={item.symbol}
-                          className="table-row-hover border-b border-border last:border-0"
-                        >
-                          <td className="py-3 px-2">
-                            <Link
-                              href={`/stock/${item.symbol}`}
-                              className="hover:text-primary transition-colors"
-                            >
-                              <span className="font-semibold">
-                                {item.symbol}
-                              </span>
-                              <span className="text-xs text-muted-foreground ml-2">
-                                {holding.companyName}
-                              </span>
-                            </Link>
-                          </td>
-                          <td className="text-right py-3 px-2 font-tabular font-medium">
-                            PKR{" "}
-                            {formatPKR(value, { decimals: 0 })}
-                          </td>
-                          <td className="text-right py-3 px-2">
-                            <div className="flex items-center justify-end gap-2">
-                              <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
-                                <div
-                                  className="h-full rounded-full bg-primary"
-                                  style={{ width: `${Math.min(weight, 100)}%` }}
-                                />
-                              </div>
-                              <span className="font-tabular text-xs min-w-[40px] text-right">
-                                {weight.toFixed(1)}%
-                              </span>
-                            </div>
-                          </td>
-                          <td
-                            className="text-right py-3 px-2 font-tabular font-semibold"
-                            style={{ color: item.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-                          >
-                            {item.pnl >= 0 ? "+" : ""}
-                            {item.pnl.toLocaleString()}
-                          </td>
-                          <td className="text-right py-3 px-2">
-                            <span
-                              className="inline-block text-[11px] font-semibold font-tabular px-1.5 py-0.5 rounded-md"
-                              style={{
-                                color: item.pnlPercent >= 0 ? "var(--color-profit)" : "var(--color-loss)",
-                                background: item.pnlPercent >= 0 ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
-                              }}
-                            >
-                              {item.pnlPercent >= 0 ? "+" : ""}
-                              {item.pnlPercent.toFixed(2)}%
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                      <span className="text-[12.5px] font-semibold">{r.symbol}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-canvas">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min((r.weight / maxWeight) * 100, 100)}%`,
+                          background: c,
+                        }}
+                      />
+                    </div>
+                    <span className="num text-right text-[12px] font-semibold">
+                      {r.weight.toFixed(1)}%
+                    </span>
+                    <span
+                      className="num text-right text-[12px] font-semibold"
+                      style={{
+                        color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
+                      }}
+                    >
+                      {up ? "+" : "−"}
+                      {Math.abs(r.pnlPercent).toFixed(2)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         </>
       )}
-    </div>
+    </>
   );
 }

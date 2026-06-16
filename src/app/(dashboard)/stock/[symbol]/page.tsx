@@ -1,16 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, use } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-  ArrowUpRight,
-  ArrowDownRight,
-  Eye,
-  ShoppingCart,
-  ArrowLeft,
-  Activity,
-} from "lucide-react";
+import { ChevronLeft, Star, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import {
   AreaChart,
@@ -23,6 +14,7 @@ import {
 } from "recharts";
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
+import { sectorName } from "@/lib/sectors";
 
 interface StockData {
   symbol: string;
@@ -51,6 +43,13 @@ interface Portfolio {
   id: string;
   name: string;
   cashBalance: number;
+}
+
+const TINTS = ["#2563EB", "#7C3AED", "#0D9488", "#DB2777", "#CA8A04", "#0891B2", "#16A34A", "#4F46E5"];
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
 }
 
 export default function StockPage({
@@ -128,156 +127,132 @@ export default function StockPage({
 
   if (!stock) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <div className="h-10 w-10 rounded-xl bg-muted animate-pulse" />
-        <p className="text-muted-foreground text-sm">Loading stock data...</p>
-      </div>
+      <>
+        <div className="mb-[18px] flex items-center gap-3.5">
+          <div className="h-[52px] w-[52px] animate-pulse rounded-[10px] bg-line-soft" />
+          <div className="space-y-2">
+            <div className="h-6 w-32 animate-pulse rounded bg-line-soft" />
+            <div className="h-4 w-44 animate-pulse rounded bg-line-soft" />
+          </div>
+        </div>
+        <div className="h-[380px] animate-pulse rounded-2xl border border-line bg-card shadow-card" />
+      </>
     );
   }
 
   const isGain = stock.change >= 0;
-  const changeColor = isGain ? "var(--color-profit)" : "var(--color-loss)";
-  const changeBg = isGain ? "var(--color-profit-bg)" : "var(--color-loss-bg)";
+  const c = tint(stock.symbol);
 
   const stats: { label: string; value: number; isVolume?: boolean }[] = [
     { label: "Open", value: stock.open },
     { label: "Prev Close", value: stock.ldcp },
-    { label: "High", value: stock.high },
-    { label: "Low", value: stock.low },
+    { label: "Day High", value: stock.high },
+    { label: "Day Low", value: stock.low },
     { label: "Volume", value: stock.volume, isVolume: true },
   ];
 
   return (
-    <div className="space-y-5">
+    <>
+      {/* Back link */}
+      <Link
+        href="/market"
+        className="mb-3.5 flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink"
+      >
+        <ChevronLeft className="h-[15px] w-[15px]" />
+        Back to Market
+      </Link>
+
       {/* Header */}
-      <div className="flex items-center gap-3 animate-in-up">
-        <Link href="/market">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 w-9 p-0 rounded-lg text-muted-foreground"
+      <div className="mb-[18px] flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <span
+            className="grid shrink-0 place-items-center rounded-[10px] font-bold"
+            style={{
+              width: 52,
+              height: 52,
+              fontSize: "17.16px",
+              background: `${c}22`,
+              color: c,
+            }}
           >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {stock.symbol}
-            </h1>
-            <span className="text-xs text-muted-foreground border border-border rounded-md px-2 py-0.5">
-              {stock.sector}
+            {stock.symbol.slice(0, 2)}
+          </span>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-[26px] font-bold tracking-[-.03em]">
+                {stock.symbol}
+              </h1>
+              <span className="rounded-full bg-canvas px-2.5 py-[3px] text-[11px] font-semibold text-ink-2">
+                {sectorName(stock.sector)}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[14px] text-ink-3">{stock.company}</div>
+          </div>
+        </div>
+        <div className="flex gap-2.5">
+          <button
+            onClick={handleAddToWatchlist}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+          >
+            <Star className="h-[15px] w-[15px]" />
+            Watch
+          </button>
+          <button
+            onClick={() => setShowTrade(true)}
+            className="flex h-10 items-center gap-2 rounded-[11px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105"
+          >
+            <ArrowRight className="h-[15px] w-[15px]" />
+            Trade
+          </button>
+        </div>
+      </div>
+
+      {/* Price hero + chart */}
+      <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-baseline gap-3">
+            <div className="num text-[36px] font-bold tracking-[-.03em]">
+              Rs {formatPKR(stock.current)}
+            </div>
+            <span
+              className="num rounded-lg px-2.5 py-1 text-[13px] font-semibold"
+              style={{
+                color: isGain ? "var(--color-gain)" : "var(--color-loss-strong)",
+                background: isGain
+                  ? "var(--color-gain-50)"
+                  : "var(--color-loss-50)",
+              }}
+            >
+              {isGain ? "▲ +" : "▼ "}
+              {stock.changePercent.toFixed(2)}%
+            </span>
+            <span
+              className="num text-[13px] font-semibold"
+              style={{
+                color: isGain ? "var(--color-gain)" : "var(--color-loss-strong)",
+              }}
+            >
+              {isGain ? "+" : ""}
+              {stock.change.toFixed(2)} today
             </span>
           </div>
-          <p className="text-muted-foreground text-sm truncate">
-            {stock.company}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg border border-border"
-            onClick={handleAddToWatchlist}
-          >
-            <Eye className="h-4 w-4 mr-2" />
-            Watch
-          </Button>
-          <Button
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setShowTrade(true)}
-          >
-            <ShoppingCart className="h-4 w-4 mr-2" />
-            Trade
-          </Button>
-        </div>
-      </div>
-
-      {/* Price Hero */}
-      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-1">
-        <CardContent className="py-6">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Last Price
-          </p>
-          <div className="flex flex-wrap items-end gap-x-4 gap-y-2 mt-1.5">
-            <p className="text-4xl font-semibold font-tabular tracking-tight">
-              {formatPKR(stock.current)}
-            </p>
-            <div
-              className="flex items-center gap-1.5 pb-1"
-              style={{ color: changeColor }}
-            >
-              {isGain ? (
-                <ArrowUpRight className="h-5 w-5" />
-              ) : (
-                <ArrowDownRight className="h-5 w-5" />
-              )}
-              <span className="font-semibold font-tabular text-lg">
-                {isGain ? "+" : ""}
-                {stock.change.toFixed(2)}
-              </span>
-              <span
-                className="text-xs font-semibold font-tabular ml-0.5 rounded-md px-2 py-0.5"
-                style={{ color: changeColor, backgroundColor: changeBg }}
+          <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
+            {(["1M", "3M", "6M", "1Y", "ALL"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold ${
+                  period === p ? "bg-brand text-white" : "text-ink-2 hover:text-ink"
+                }`}
               >
-                {isGain ? "+" : ""}
-                {stock.changePercent.toFixed(2)}%
-              </span>
-            </div>
+                {p}
+              </button>
+            ))}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Stat Cells */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 animate-in-up-delay-2">
-        {stats.map((stat) => (
-          <Card
-            key={stat.label}
-            className="border border-border bg-card rounded-xl"
-          >
-            <CardContent className="py-3.5 px-4">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {stat.label}
-              </p>
-              <p className="text-base font-semibold font-tabular mt-1">
-                {stat.isVolume
-                  ? stock.volume.toLocaleString()
-                  : formatPKR(stat.value)}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Price Chart */}
-      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
-        <CardContent className="py-5">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              Price History
-            </p>
-            <div className="flex gap-0.5 border border-border rounded-lg p-0.5">
-              {(["1M", "3M", "6M", "1Y", "ALL"] as const).map((p) => (
-                <Button
-                  key={p}
-                  variant="ghost"
-                  size="sm"
-                  className={`text-xs h-7 px-3 rounded-md ${
-                    period === p
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                  onClick={() => setPeriod(p)}
-                >
-                  {p}
-                </Button>
-              ))}
-            </div>
-          </div>
+        </div>
+        <div className="-mx-1.5 -mb-1 mt-[18px] h-[290px]">
           {filteredHistory.length > 0 ? (
-            <ResponsiveContainer width="100%" height={350}>
+            <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={filteredHistory}
                 margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
@@ -286,24 +261,24 @@ export default function StockPage({
                   <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
                     <stop
                       offset="0%"
-                      stopColor="var(--primary)"
-                      stopOpacity={0.2}
+                      stopColor={isGain ? "var(--color-gain)" : "var(--color-loss-strong)"}
+                      stopOpacity={0.26}
                     />
                     <stop
                       offset="100%"
-                      stopColor="var(--primary)"
+                      stopColor={isGain ? "var(--color-gain)" : "var(--color-loss-strong)"}
                       stopOpacity={0}
                     />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
                   vertical={false}
-                  stroke="var(--border)"
+                  stroke="var(--color-line)"
                   strokeOpacity={0.6}
                 />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  tick={{ fontSize: 11, fill: "var(--color-ink-3)" }}
                   axisLine={false}
                   tickLine={false}
                   minTickGap={32}
@@ -314,59 +289,72 @@ export default function StockPage({
                 />
                 <YAxis
                   domain={["auto", "auto"]}
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  tick={{ fontSize: 11, fill: "var(--color-ink-3)" }}
                   axisLine={false}
                   tickLine={false}
                   width={48}
                   tickFormatter={(v) => formatPKR(v, { compact: true, decimals: 0 })}
                 />
                 <Tooltip
-                  cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
+                  cursor={{ stroke: "var(--color-line)", strokeWidth: 1 }}
                   contentStyle={{
-                    background: "var(--card)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
+                    background: "var(--color-card)",
+                    border: "1px solid var(--color-line)",
+                    borderRadius: 12,
                     fontSize: 12,
-                    padding: "6px 10px",
-                    boxShadow: "none",
-                    color: "var(--foreground)",
+                    color: "var(--color-ink)",
+                    boxShadow: "var(--shadow-pop)",
                   }}
-                  labelStyle={{
-                    color: "var(--muted-foreground)",
-                    marginBottom: 2,
-                  }}
+                  labelStyle={{ color: "var(--color-ink-3)", marginBottom: 2 }}
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   formatter={(value: any) => [
-                    `PKR ${Number(value).toFixed(2)}`,
+                    `Rs ${Number(value).toFixed(2)}`,
                     "Close",
                   ]}
                 />
                 <Area
                   type="monotone"
                   dataKey="close"
-                  stroke="var(--primary)"
-                  strokeWidth={2}
+                  stroke={isGain ? "var(--color-gain)" : "var(--color-loss-strong)"}
+                  strokeWidth={2.2}
                   fill="url(#priceFill)"
                   dot={false}
                   activeDot={{
                     r: 4,
                     strokeWidth: 2,
-                    fill: "var(--card)",
-                    stroke: "var(--primary)",
+                    fill: "var(--color-card)",
+                    stroke: isGain ? "var(--color-gain)" : "var(--color-loss-strong)",
                   }}
                 />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16">
-              <div className="h-10 w-10 rounded-xl bg-muted animate-pulse mb-3" />
-              <p className="text-sm text-muted-foreground">
-                Loading chart data...
-              </p>
+            <div className="flex h-full flex-col items-center justify-center gap-3">
+              <div className="h-10 w-10 animate-pulse rounded-xl bg-line-soft" />
+              <p className="text-sm text-ink-3">Loading chart data…</p>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
+
+      {/* Stat cells */}
+      <div className="grid grid-cols-2 gap-[18px] sm:grid-cols-3 lg:grid-cols-5">
+        {stats.map((stat) => (
+          <div
+            key={stat.label}
+            className="rounded-2xl border border-line bg-card px-[22px] py-3.5 shadow-card"
+          >
+            <div className="mb-1.5 text-[11.5px] font-medium text-ink-2">
+              {stat.label}
+            </div>
+            <div className="num text-[17px] font-bold">
+              {stat.isVolume
+                ? formatPKR(stat.value, { compact: true })
+                : formatPKR(stat.value, { decimals: 1 })}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {showTrade && (
         <TradeDialog
@@ -379,6 +367,6 @@ export default function StockPage({
           onSuccess={fetchData}
         />
       )}
-    </div>
+    </>
   );
 }

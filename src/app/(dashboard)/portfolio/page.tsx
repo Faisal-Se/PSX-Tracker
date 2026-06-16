@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,29 +19,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import {
   Plus,
-  Wallet,
-  TrendingUp,
-  TrendingDown,
-  ShoppingCart,
   Settings,
   Trash2,
-  PieChart as PieIcon,
-  BarChart3,
-  ArrowUpRight,
-  ArrowDownRight,
+  Pencil,
+  ListFilter,
   Briefcase,
   PackageOpen,
-  CircleDollarSign,
-  Pencil,
-  ChevronUp,
-  ChevronDown,
 } from "lucide-react";
-import Link from "next/link";
 import { TradeDialog } from "@/components/TradeDialog";
 import { StockSearch } from "@/components/StockSearch";
 import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
-import { Sparkline } from "@/components/Sparkline";
 import {
   ResponsiveContainer,
   Tooltip,
@@ -88,18 +74,26 @@ interface HistoryPoint {
 
 type SortKey = "value" | "pnl" | "symbol";
 
-// Indigo-family allocation palette (Linear-style, no rainbow)
-const ALLOCATION_PALETTE = [
-  "var(--primary)",
-  "#6366f1",
-  "#818cf8",
-  "#a5b4fc",
-  "#4f46e5",
-  "#7c3aed",
-  "#c7d2fe",
-  "#3730a3",
+/* Avatar tint palette (per ticker) — multi-series, never used for P&L. */
+const TINTS = [
+  "#2563EB",
+  "#7C3AED",
+  "#0D9488",
+  "#DB2777",
+  "#CA8A04",
+  "#0891B2",
+  "#16A34A",
+  "#4F46E5",
 ];
-const CASH_COLOR = "var(--muted-foreground)";
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
+}
+
+/* Allocation/donut palette (NOT P&L). */
+const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#DB2777"];
+const CASH_COLOR = "#CBD5E1";
 
 export default function PortfolioPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -303,7 +297,7 @@ export default function PortfolioPage() {
   const pnl = totalCurrent - totalInvested;
   const pnlPercent = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
   const totalValue = (activePortfolio?.cashBalance || 0) + totalCurrent;
-  const pnlColor = pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)";
+  const up = pnl >= 0;
 
   // Sortable holding rows for the active portfolio
   const holdingRows = useMemo(() => {
@@ -351,458 +345,400 @@ export default function PortfolioPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePortfolio, marketData]);
 
+  const holdingCount = activePortfolio?.holdings.length ?? 0;
+
   if (initialLoading) return <PageSkeleton />;
 
   return (
-    <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
-      {/* Page Header */}
-      <div className="flex items-end justify-between animate-in-up">
+    <>
+      {/* Page header */}
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl lg:text-2xl font-semibold tracking-tight">
-            Portfolio
-          </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Manage your investment portfolios and track performance
-          </p>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            Personal portfolios
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">Portfolio</h1>
         </div>
-        <Button onClick={() => setShowCreate(true)} size="sm" className="h-8 text-xs gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
-          New Portfolio
-        </Button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {activePortfolio && (
+            <button
+              onClick={openEditDialog}
+              className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+            >
+              <Settings className="h-[15px] w-[15px]" />
+              Settings
+            </button>
+          )}
+        </div>
       </div>
 
       {portfolios.length === 0 ? (
-        <Card className="border border-border bg-card rounded-xl animate-in-up-delay-1">
-          <CardContent className="py-16 text-center">
-            <div className="mx-auto w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-4">
-              <Briefcase className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <h3 className="text-base font-semibold mb-2">No portfolios yet</h3>
-            <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
-              Create your first portfolio to start tracking investments,
-              managing cash, and monitoring your returns.
-            </p>
-            <Button onClick={() => setShowCreate(true)} size="sm" className="h-8 text-xs gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              Create Your First Portfolio
-            </Button>
-          </CardContent>
-        </Card>
+        <section className="rounded-2xl border border-line bg-card p-[22px] py-16 text-center shadow-card">
+          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-brand/10 text-brand">
+            <Briefcase className="h-6 w-6" />
+          </div>
+          <h3 className="mb-2 text-base font-semibold">No portfolios yet</h3>
+          <p className="mx-auto mb-6 max-w-sm text-sm text-ink-3">
+            Create your first portfolio to start tracking investments, managing
+            cash, and monitoring your returns.
+          </p>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="inline-flex h-[38px] items-center gap-2 rounded-[10px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105"
+          >
+            <Plus className="h-[15px] w-[15px]" />
+            Create Your First Portfolio
+          </button>
+        </section>
       ) : (
         <>
-          {/* Portfolio selector tabs (flat, Linear-style) */}
-          <div className="flex items-center gap-2 animate-in-up-delay-1">
-            <div className="flex items-center gap-1 p-1 rounded-lg border border-border bg-card overflow-x-auto">
-              {portfolios.map((p) => {
-                const active = p.id === activeTab;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => setActiveTab(p.id)}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
-                      active
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          {/* Portfolio selector tabs (pill buttons) */}
+          <div className="mb-[18px] flex flex-wrap gap-2">
+            {portfolios.map((p) => {
+              const active = p.id === activeTab;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setActiveTab(p.id)}
+                  className={`flex h-[38px] items-center gap-2 rounded-[10px] px-4 text-[13px] font-semibold ${
+                    active
+                      ? "border border-brand bg-brand/10 text-brand"
+                      : "border border-line bg-card text-ink-2 shadow-card hover:bg-ink/[.04]"
+                  }`}
+                >
+                  {p.name}
+                  <span
+                    className={`text-[10.5px] font-medium ${
+                      active ? "opacity-80" : "text-ink-3"
                     }`}
                   >
-                    {p.name}
-                  </button>
-                );
-              })}
-            </div>
-            {activePortfolio && (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={openEditDialog}
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
-            )}
+                    {p.type}
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setShowCreate(true)}
+              aria-label="New portfolio"
+              className="grid h-[38px] w-[38px] place-items-center rounded-[10px] border border-dashed border-line text-ink-2 hover:bg-ink/[.04]"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
 
           {activePortfolio && (
-            <div className="space-y-6 lg:space-y-8">
-              {/* Hero: total value + P&L summary */}
-              <div className="rounded-xl border border-border bg-card overflow-hidden animate-in-up-delay-1">
-                <div className="flex flex-col lg:flex-row">
-                  <div className="p-5 lg:p-6 lg:w-[40%] lg:border-r border-border">
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
-                        Total Value
-                      </span>
+            <>
+              {/* Total Value + Allocation */}
+              <div className="mb-[18px] grid gap-[18px] lg:grid-cols-[1.5fr_1fr]">
+                {/* Total Value hero */}
+                <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+                  <div className="mb-2 text-[13px] font-medium text-ink-2">
+                    Total Value
+                  </div>
+                  <div className="flex flex-wrap items-baseline gap-3">
+                    <div className="num whitespace-nowrap text-[40px] font-bold leading-none tracking-[-.035em]">
+                      Rs {formatPKR(totalValue, { decimals: 0 })}
                     </div>
-                    <p className="text-3xl lg:text-4xl font-semibold font-tabular tracking-tight">
-                      {formatPKR(totalValue, { decimals: 0 })}
-                    </p>
-                    <div className="flex items-center gap-2 mt-3">
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold font-tabular"
+                    <span
+                      className="num rounded-lg px-2.5 py-1 text-[13px] font-semibold"
+                      style={{
+                        color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
+                        background: up ? "var(--color-gain-50)" : "var(--color-loss-50)",
+                      }}
+                    >
+                      {up ? "+" : "−"}
+                      {Math.abs(pnlPercent).toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="mt-2.5 text-[13px] text-ink-3">
+                    {up ? "Up" : "Down"} Rs {formatPKR(Math.abs(pnl), { decimals: 0 })}{" "}
+                    all time
+                  </div>
+
+                  <div className="mt-[22px] flex flex-wrap gap-[22px] border-t border-line pt-5">
+                    <div className="min-w-[90px] flex-1">
+                      <div className="mb-1.5 text-[12px] text-ink-2">Cash</div>
+                      <div className="num text-[18px] font-bold">
+                        Rs {formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
+                      </div>
+                    </div>
+                    <div className="min-w-[90px] flex-1">
+                      <div className="mb-1.5 text-[12px] text-ink-2">Invested</div>
+                      <div className="num text-[18px] font-bold">
+                        Rs {formatPKR(totalInvested, { decimals: 0 })}
+                      </div>
+                    </div>
+                    <div className="min-w-[90px] flex-1">
+                      <div className="mb-1.5 text-[12px] text-ink-2">
+                        Market Value
+                      </div>
+                      <div className="num text-[18px] font-bold">
+                        Rs {formatPKR(totalCurrent, { decimals: 0 })}
+                      </div>
+                    </div>
+                    <div className="min-w-[90px] flex-1">
+                      <div className="mb-1.5 text-[12px] text-ink-2">Total P&L</div>
+                      <div
+                        className="num text-[18px] font-bold"
                         style={{
-                          color: pnlColor,
-                          backgroundColor:
-                            pnl >= 0
-                              ? "var(--color-profit-bg)"
-                              : "var(--color-loss-bg)",
+                          color: up
+                            ? "var(--color-gain)"
+                            : "var(--color-loss-strong)",
                         }}
                       >
-                        {pnl >= 0 ? (
-                          <ArrowUpRight className="h-3 w-3" />
-                        ) : (
-                          <ArrowDownRight className="h-3 w-3" />
-                        )}
-                        {pnlPercent >= 0 ? "+" : ""}
-                        {pnlPercent.toFixed(2)}%
-                      </span>
-                      <span
-                        className="text-xs font-medium font-tabular"
-                        style={{ color: pnlColor }}
-                      >
-                        {pnl >= 0 ? "+" : ""}
-                        {formatPKR(pnl, { decimals: 0 })}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-3 text-[11px] text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted font-medium text-foreground">
-                        {activePortfolio.type}
-                      </span>
-                      <span>
-                        {activePortfolio._count.transactions} transactions
-                      </span>
+                        {up ? "+" : "−"}Rs {formatPKR(Math.abs(pnl), { decimals: 0 })}
+                      </div>
                     </div>
                   </div>
+                </section>
 
-                  {/* Allocation donut */}
-                  <div className="flex-1 p-5 lg:p-6">
-                    <div className="flex items-center gap-2 mb-3">
-                      <PieIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">
-                        Allocation
-                      </span>
+                {/* Allocation donut */}
+                <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+                  <div className="text-[14px] font-bold">Allocation</div>
+                  <div className="mb-3.5 mt-0.5 text-[12px] text-ink-3">
+                    By market value
+                  </div>
+                  {allocationData.length === 0 ? (
+                    <div className="flex h-[132px] items-center justify-center">
+                      <p className="text-xs text-ink-3">No allocation yet</p>
                     </div>
-                    {allocationData.length === 0 ? (
-                      <div className="h-32 flex items-center justify-center">
-                        <p className="text-xs text-muted-foreground">
-                          No allocation yet
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-5">
-                        <div className="h-36 w-36 shrink-0">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <RechartsPie>
-                              <Pie
-                                data={allocationData}
-                                dataKey="value"
-                                nameKey="name"
-                                innerRadius="62%"
-                                outerRadius="92%"
-                                paddingAngle={1.5}
-                                stroke="var(--card)"
-                                strokeWidth={2}
-                              >
-                                {allocationData.map((entry, i) => (
-                                  <Cell
-                                    key={entry.name}
-                                    fill={
-                                      entry.name === "Cash"
-                                        ? CASH_COLOR
-                                        : ALLOCATION_PALETTE[
-                                            i % ALLOCATION_PALETTE.length
-                                          ]
-                                    }
-                                  />
-                                ))}
-                              </Pie>
-                              <Tooltip
-                                contentStyle={{
-                                  background: "var(--card)",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: 8,
-                                  fontSize: 12,
-                                  padding: "6px 10px",
-                                  boxShadow: "none",
-                                  color: "var(--foreground)",
-                                }}
-                                formatter={(v, n) => [
-                                  `PKR ${formatPKR(Number(v), { decimals: 0 })}`,
-                                  String(n),
-                                ]}
-                              />
-                            </RechartsPie>
-                          </ResponsiveContainer>
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-1.5">
-                          {allocationData.slice(0, 6).map((entry, i) => (
-                            <div
-                              key={entry.name}
-                              className="flex items-center justify-between text-xs"
+                  ) : (
+                    <div className="flex items-center gap-[18px]">
+                      <div className="relative h-[132px] w-[132px] shrink-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RechartsPie>
+                            <Pie
+                              data={allocationData}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius="58%"
+                              outerRadius="100%"
+                              paddingAngle={1.5}
+                              stroke="none"
+                              isAnimationActive
+                              animationDuration={900}
                             >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span
-                                  className="h-2 w-2 rounded-sm shrink-0"
-                                  style={{
-                                    background:
-                                      entry.name === "Cash"
-                                        ? CASH_COLOR
-                                        : ALLOCATION_PALETTE[
-                                            i % ALLOCATION_PALETTE.length
-                                          ],
-                                  }}
+                              {allocationData.map((e, i) => (
+                                <Cell
+                                  key={e.name}
+                                  fill={
+                                    e.name === "Cash"
+                                      ? CASH_COLOR
+                                      : ALLOC_COLORS[i % ALLOC_COLORS.length]
+                                  }
                                 />
-                                <span className="truncate text-muted-foreground">
-                                  {entry.name}
-                                </span>
-                              </div>
-                              <span className="font-tabular font-semibold">
-                                {entry.pct.toFixed(1)}%
-                              </span>
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              contentStyle={{
+                                background: "var(--color-card)",
+                                border: "1px solid var(--color-line)",
+                                borderRadius: 12,
+                                fontSize: 12,
+                                color: "var(--color-ink)",
+                                boxShadow: "var(--shadow-pop)",
+                              }}
+                              formatter={(v, n) => [
+                                `Rs ${formatPKR(Number(v), { decimals: 0 })}`,
+                                String(n),
+                              ]}
+                            />
+                          </RechartsPie>
+                        </ResponsiveContainer>
+                        <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                          <div>
+                            <div className="text-[11px] text-ink-3">Holdings</div>
+                            <div className="num text-[18px] font-bold">
+                              {holdingCount}
                             </div>
-                          ))}
+                          </div>
                         </div>
                       </div>
-                    )}
-                  </div>
-                </div>
+                      <div className="flex flex-1 flex-col gap-2">
+                        {allocationData.slice(0, 6).map((e, i) => (
+                          <div key={e.name} className="flex items-center gap-2">
+                            <span
+                              className="h-[9px] w-[9px] shrink-0 rounded-[3px]"
+                              style={{
+                                background:
+                                  e.name === "Cash"
+                                    ? CASH_COLOR
+                                    : ALLOC_COLORS[i % ALLOC_COLORS.length],
+                              }}
+                            />
+                            <span className="flex-1 text-[12px] font-medium">
+                              {e.name}
+                            </span>
+                            <span className="num text-[12px] font-semibold text-ink-2">
+                              {e.pct.toFixed(1)}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
               </div>
 
-              {/* Metric strip */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 rounded-xl border border-border bg-card overflow-hidden divide-x divide-y lg:divide-y-0 divide-border animate-in-up-delay-2">
-                <Metric
-                  icon={<Wallet className="h-3.5 w-3.5 text-muted-foreground" />}
-                  label="Cash Balance"
-                  value={formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
-                />
-                <Metric
-                  icon={<BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />}
-                  label="Invested"
-                  value={formatPKR(totalInvested, { decimals: 0 })}
-                />
-                <Metric
-                  icon={
-                    <CircleDollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-                  }
-                  label="Market Value"
-                  value={formatPKR(totalCurrent, { decimals: 0 })}
-                />
-                <Metric
-                  icon={
-                    pnl >= 0 ? (
-                      <TrendingUp
-                        className="h-3.5 w-3.5"
-                        style={{ color: "var(--color-profit)" }}
-                      />
-                    ) : (
-                      <TrendingDown
-                        className="h-3.5 w-3.5"
-                        style={{ color: "var(--color-loss)" }}
-                      />
-                    )
-                  }
-                  label="Total P&L"
-                  value={`${pnl >= 0 ? "+" : ""}${formatPKR(pnl, { decimals: 0 })}`}
-                  valueColor={pnlColor}
-                />
-              </div>
-
-              {/* Quick Trade */}
-              <Card className="border border-border bg-card rounded-xl animate-in-up-delay-2">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground" />
+              {/* Holdings table */}
+              <section className="rounded-2xl border border-line bg-card pb-2 shadow-card">
+                <div className="flex items-center justify-between px-[22px] pb-3 pt-[22px]">
+                  <h2 className="text-[16px] font-bold">Holdings</h2>
+                  <button
+                    onClick={() =>
+                      activePortfolio.holdings[0]
+                        ? setTradeStock({
+                            symbol: activePortfolio.holdings[0].symbol,
+                            company: activePortfolio.holdings[0].companyName,
+                            price:
+                              marketData.get(activePortfolio.holdings[0].symbol)
+                                ?.current || activePortfolio.holdings[0].avgPrice,
+                            portfolioId: activePortfolio.id,
+                          })
+                        : document
+                            .getElementById("portfolio-quick-trade")
+                            ?.scrollIntoView({ behavior: "smooth" })
+                    }
+                    className="flex h-10 items-center gap-2 rounded-[11px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105"
+                  >
+                    <ListFilter className="h-[15px] w-[15px]" />
                     Quick Trade
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
+                  </button>
+                </div>
+
+                {/* Quick Trade search (anchored) */}
+                <div id="portfolio-quick-trade" className="px-[22px] pb-3">
                   <StockSearch
                     onSelect={(stock) =>
                       setTradeStock({
                         symbol: stock.symbol,
                         company: stock.company,
                         price: stock.current,
+                        portfolioId: activePortfolio.id,
                       })
                     }
-                    placeholder="Search a stock to buy or sell..."
+                    placeholder="Search a stock to buy or sell…"
                   />
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* Holdings Table */}
-              <Card className="border border-border bg-card rounded-xl animate-in-up-delay-3">
-                <CardContent className="pt-4 pb-2">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-sm font-semibold">Holdings</span>
+                {activePortfolio.holdings.length === 0 ? (
+                  <div className="px-[22px] py-12 text-center">
+                    <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-brand/10 text-brand">
+                      <PackageOpen className="h-6 w-6" />
                     </div>
-                    {activePortfolio.holdings.length > 0 && (
-                      <span className="text-[11px] font-tabular text-muted-foreground">
-                        {activePortfolio.holdings.length} stock
-                        {activePortfolio.holdings.length !== 1 ? "s" : ""}
-                      </span>
-                    )}
+                    <p className="mb-1 text-sm font-medium text-ink-3">
+                      No holdings yet
+                    </p>
+                    <p className="mx-auto max-w-xs text-xs text-ink-3">
+                      Use the Quick Trade search above to buy your first stock in
+                      this portfolio.
+                    </p>
                   </div>
+                ) : (
+                  <>
+                    {/* Column headers */}
+                    <div className="grid grid-cols-[2.2fr_.9fr_1fr_1fr_1.1fr_1fr_84px] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+                      <button
+                        onClick={() => toggleSort("symbol")}
+                        className="text-left hover:text-ink"
+                      >
+                        STOCK
+                      </button>
+                      <span className="text-right">QTY</span>
+                      <span className="text-right">AVG</span>
+                      <span className="text-right">CURRENT</span>
+                      <button
+                        onClick={() => toggleSort("value")}
+                        className="text-right hover:text-ink"
+                      >
+                        VALUE
+                      </button>
+                      <button
+                        onClick={() => toggleSort("pnl")}
+                        className="text-right hover:text-ink"
+                      >
+                        P&L
+                      </button>
+                      <span />
+                    </div>
 
-                  {activePortfolio.holdings.length === 0 ? (
-                    <div className="text-center py-12">
-                      <div className="mx-auto w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-3">
-                        <PackageOpen className="h-6 w-6 text-muted-foreground" />
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">
-                        No holdings yet
-                      </p>
-                      <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-                        Use the Quick Trade section above to search and buy your
-                        first stock in this portfolio.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto -mx-1">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            <th
-                              className="text-left font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
-                              onClick={() => toggleSort("symbol")}
+                    {/* Rows */}
+                    {holdingRows.map((h) => {
+                      const hUp = h.pnl >= 0;
+                      const c = tint(h.symbol);
+                      return (
+                        <div
+                          key={h.id}
+                          className="grid grid-cols-[2.2fr_.9fr_1fr_1fr_1.1fr_1fr_84px] items-center gap-2 border-b border-line-soft px-[22px] py-[11px] hover:bg-ink/[.03]"
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span
+                              className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-[12px] font-bold"
+                              style={{ background: `${c}22`, color: c }}
                             >
-                              <span className="inline-flex items-center gap-0.5">
-                                Stock
-                                <SortCaret active={sortKey === "symbol"} dir={sortDir} />
-                              </span>
-                            </th>
-                            <th className="text-center font-medium py-2 px-1 hidden md:table-cell">
-                              Trend
-                            </th>
-                            <th className="text-right font-medium py-2 px-1 hidden sm:table-cell">
-                              Qty
-                            </th>
-                            <th className="text-right font-medium py-2 px-1 hidden sm:table-cell">
-                              Avg
-                            </th>
-                            <th className="text-right font-medium py-2 px-1">
-                              Current
-                            </th>
-                            <th
-                              className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
-                              onClick={() => toggleSort("value")}
-                            >
-                              <span className="inline-flex items-center justify-end gap-0.5">
-                                Value
-                                <SortCaret active={sortKey === "value"} dir={sortDir} />
-                              </span>
-                            </th>
-                            <th
-                              className="text-right font-medium py-2 px-1 cursor-pointer select-none hover:text-foreground"
-                              onClick={() => toggleSort("pnl")}
-                            >
-                              <span className="inline-flex items-center justify-end gap-0.5">
-                                P&amp;L
-                                <SortCaret active={sortKey === "pnl"} dir={sortDir} />
-                              </span>
-                            </th>
-                            <th className="text-right font-medium py-2 px-1" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {holdingRows.map((h) => {
-                            const c =
-                              h.pnl >= 0
-                                ? "var(--color-profit)"
-                                : "var(--color-loss)";
-                            return (
-                              <tr
-                                key={h.id}
-                                className="border-t border-border hover:bg-muted/40 transition-colors"
-                              >
-                                <td className="py-2.5 px-1">
-                                  <Link
-                                    href={`/stock/${h.symbol}`}
-                                    className="block group"
-                                  >
-                                    <p className="font-semibold group-hover:text-primary transition-colors">
-                                      {h.symbol}
-                                    </p>
-                                    <p className="text-[11px] text-muted-foreground line-clamp-1">
-                                      {h.companyName}
-                                    </p>
-                                  </Link>
-                                </td>
-                                <td className="py-2.5 px-1 hidden md:table-cell">
-                                  <div className="flex justify-center">
-                                    <Sparkline
-                                      data={h.trend}
-                                      width={72}
-                                      height={24}
-                                      fill
-                                    />
-                                  </div>
-                                </td>
-                                <td className="py-2.5 px-1 text-right font-tabular text-muted-foreground hidden sm:table-cell">
-                                  {h.quantity.toLocaleString()}
-                                </td>
-                                <td className="py-2.5 px-1 text-right font-tabular text-muted-foreground hidden sm:table-cell">
-                                  {formatPKR(h.avgPrice)}
-                                </td>
-                                <td className="py-2.5 px-1 text-right font-tabular font-medium">
-                                  {formatPKR(h.currentPrice)}
-                                </td>
-                                <td className="py-2.5 px-1 text-right font-tabular font-semibold">
-                                  {formatPKR(h.value, { decimals: 0 })}
-                                </td>
-                                <td className="py-2.5 px-1 text-right">
-                                  <span
-                                    className="font-semibold font-tabular"
-                                    style={{ color: c }}
-                                  >
-                                    {h.pnl >= 0 ? "+" : ""}
-                                    {formatPKR(h.pnl, { decimals: 0 })}
-                                  </span>
-                                  <span
-                                    className="block text-[11px] font-tabular"
-                                    style={{ color: c }}
-                                  >
-                                    {h.pnlPercent >= 0 ? "+" : ""}
-                                    {h.pnlPercent.toFixed(2)}%
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-1 text-right">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-xs h-7"
-                                    onClick={() =>
-                                      setTradeStock({
-                                        symbol: h.symbol,
-                                        company: h.companyName,
-                                        price: h.currentPrice,
-                                        portfolioId: activePortfolio.id,
-                                      })
-                                    }
-                                  >
-                                    Trade
-                                  </Button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                              {h.symbol.slice(0, 2)}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="text-[13px] font-semibold">
+                                {h.symbol}
+                              </div>
+                              <div className="truncate text-[11px] text-ink-3">
+                                {h.companyName}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="num text-right text-[12.5px]">
+                            {h.quantity.toLocaleString()}
+                          </span>
+                          <span className="num text-right text-[12.5px] text-ink-2">
+                            {formatPKR(h.avgPrice)}
+                          </span>
+                          <span className="num text-right text-[12.5px] font-semibold">
+                            {formatPKR(h.currentPrice)}
+                          </span>
+                          <span className="num text-right text-[12.5px] font-semibold">
+                            Rs {formatPKR(h.value, { decimals: 0 })}
+                          </span>
+                          <span
+                            className="num text-right text-[12.5px] font-semibold"
+                            style={{
+                              color: hUp
+                                ? "var(--color-gain)"
+                                : "var(--color-loss-strong)",
+                            }}
+                          >
+                            {hUp ? "+" : "−"}
+                            {Math.abs(h.pnlPercent).toFixed(2)}%
+                          </span>
+                          <button
+                            onClick={() =>
+                              setTradeStock({
+                                symbol: h.symbol,
+                                company: h.companyName,
+                                price: h.currentPrice,
+                                portfolioId: activePortfolio.id,
+                              })
+                            }
+                            className="h-[30px] justify-self-end rounded-lg border border-line px-3 text-[12px] font-semibold text-brand hover:bg-ink/[.04]"
+                          >
+                            Trade
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </section>
+            </>
           )}
         </>
       )}
 
       {/* Create Portfolio Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="rounded-xl">
+        <DialogContent className="rounded-2xl border-line bg-card">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">
+            <DialogTitle className="text-lg font-bold">
               Create New Portfolio
             </DialogTitle>
           </DialogHeader>
@@ -813,13 +749,13 @@ export default function PortfolioPage() {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g. My Trading Portfolio"
-                className="rounded-xl"
+                className="rounded-[10px]"
               />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Type</Label>
               <Select value={newType} onValueChange={(v) => v && setNewType(v)}>
-                <SelectTrigger className="rounded-xl">
+                <SelectTrigger className="rounded-[10px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -836,26 +772,26 @@ export default function PortfolioPage() {
                 type="number"
                 value={newCash}
                 onChange={(e) => setNewCash(e.target.value)}
-                className="rounded-xl font-tabular"
+                className="num rounded-[10px]"
               />
             </div>
-            <Button
+            <button
               onClick={handleCreatePortfolio}
-              className="w-full rounded-xl"
               disabled={!newName.trim()}
+              className="flex h-[42px] w-full items-center justify-center gap-2 rounded-[10px] bg-brand text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105 disabled:opacity-50"
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="h-4 w-4" />
               Create Portfolio
-            </Button>
+            </button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Edit Portfolio Dialog */}
       <Dialog open={showEdit} onOpenChange={setShowEdit}>
-        <DialogContent className="rounded-xl">
+        <DialogContent className="rounded-2xl border-line bg-card">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               <Pencil className="h-4 w-4" />
               Edit Portfolio
             </DialogTitle>
@@ -869,7 +805,7 @@ export default function PortfolioPage() {
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   placeholder="Portfolio name"
-                  className="rounded-xl"
+                  className="rounded-[10px]"
                 />
               </div>
 
@@ -880,7 +816,7 @@ export default function PortfolioPage() {
                   value={editType}
                   onValueChange={(v) => v && setEditType(v)}
                 >
-                  <SelectTrigger className="rounded-xl">
+                  <SelectTrigger className="rounded-[10px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -892,69 +828,64 @@ export default function PortfolioPage() {
                 </Select>
               </div>
 
-              <Separator />
+              <Separator className="bg-line" />
 
               {/* Cash Management */}
               <div className="space-y-3">
                 <p className="text-sm font-medium">Cash Management</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-ink-3">
                   Current balance:{" "}
-                  <span className="font-tabular font-semibold text-foreground">
-                    PKR {formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
+                  <span className="num font-semibold text-ink">
+                    Rs {formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
                   </span>
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">
-                      Add Cash
-                    </Label>
+                    <Label className="text-xs text-ink-3">Add Cash</Label>
                     <Input
                       type="number"
                       value={addCashAmount}
                       onChange={(e) => setAddCashAmount(e.target.value)}
                       placeholder="0"
-                      className="rounded-xl font-tabular"
+                      className="num rounded-[10px]"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">
-                      Remove Cash
-                    </Label>
+                    <Label className="text-xs text-ink-3">Remove Cash</Label>
                     <Input
                       type="number"
                       value={removeCashAmount}
                       onChange={(e) => setRemoveCashAmount(e.target.value)}
                       placeholder="0"
-                      className="rounded-xl font-tabular"
+                      className="num rounded-[10px]"
                     />
                   </div>
                 </div>
               </div>
 
-              <Button
+              <button
                 onClick={handleEditPortfolio}
-                className="w-full rounded-xl"
                 disabled={editLoading}
+                className="flex h-[42px] w-full items-center justify-center rounded-[10px] bg-brand text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105 disabled:opacity-50"
               >
-                {editLoading ? "Saving..." : "Save Changes"}
-              </Button>
+                {editLoading ? "Saving…" : "Save Changes"}
+              </button>
 
-              <Separator />
+              <Separator className="bg-line" />
 
               {/* Danger Zone */}
               <div className="space-y-3">
-                <p className="text-xs font-medium text-destructive uppercase tracking-wide">
+                <p className="text-xs font-medium uppercase tracking-wide text-loss-strong">
                   Danger Zone
                 </p>
-                <Button
-                  variant="destructive"
-                  className="w-full rounded-xl"
+                <button
                   onClick={handleDeletePortfolio}
                   disabled={editLoading}
+                  className="flex h-[42px] w-full items-center justify-center gap-2 rounded-[10px] bg-loss-50 text-[13px] font-semibold text-loss-strong hover:brightness-95 disabled:opacity-50"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-4 w-4" />
                   Delete Portfolio
-                </Button>
+                </button>
               </div>
             </div>
           )}
@@ -978,50 +909,6 @@ export default function PortfolioPage() {
           onSuccess={fetchData}
         />
       )}
-    </div>
-  );
-}
-
-function Metric({
-  icon,
-  label,
-  value,
-  valueColor,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  valueColor?: string;
-}) {
-  return (
-    <div className="px-4 py-3.5">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        {icon}
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
-      </div>
-      <p
-        className="text-lg font-semibold font-tabular"
-        style={valueColor ? { color: valueColor } : undefined}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function SortCaret({
-  active,
-  dir,
-}: {
-  active: boolean;
-  dir: "asc" | "desc";
-}) {
-  if (!active) return <ChevronDown className="h-3 w-3 opacity-30" />;
-  return dir === "desc" ? (
-    <ChevronDown className="h-3 w-3" />
-  ) : (
-    <ChevronUp className="h-3 w-3" />
+    </>
   );
 }

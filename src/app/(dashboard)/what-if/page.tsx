@@ -1,19 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Calculator,
-  Search,
-  ArrowUpRight,
-  ArrowDownRight,
-  Plus,
-  Trash2,
-  PieChart,
-} from "lucide-react";
+import { Search, Plus, X } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+
+const TINTS = ["#2563EB", "#7C3AED", "#0D9488", "#DB2777", "#CA8A04", "#0891B2", "#16A34A", "#4F46E5"];
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
+}
 
 interface SearchStock {
   symbol: string;
@@ -145,8 +141,7 @@ export default function WhatIfPage() {
       const actualInvested = shares * s.currentPrice;
       const targetValue = shares * s.targetPrice;
       const pnl = targetValue - actualInvested;
-      const pnlPct =
-        actualInvested > 0 ? (pnl / actualInvested) * 100 : 0;
+      const pnlPct = actualInvested > 0 ? (pnl / actualInvested) * 100 : 0;
       return {
         ...s,
         shares,
@@ -158,17 +153,14 @@ export default function WhatIfPage() {
     });
   }, [stocks]);
 
-  const totalInvested = simResults.reduce(
-    (sum, s) => sum + s.actualInvested,
-    0
-  );
-  const totalTargetValue = simResults.reduce(
-    (sum, s) => sum + s.targetValue,
-    0
-  );
+  const totalInvested = simResults.reduce((sum, s) => sum + s.actualInvested, 0);
+  const totalTargetValue = simResults.reduce((sum, s) => sum + s.targetValue, 0);
   const totalSimPnL = totalTargetValue - totalInvested;
   const totalSimPnLPct =
     totalInvested > 0 ? (totalSimPnL / totalInvested) * 100 : 0;
+
+  const budget = parseFloat(totalBudget) || 0;
+  const budgetUsedPct = budget > 0 ? Math.round((totalInvested / budget) * 100) : 0;
 
   // Current portfolio impact
   const currentPortfolioValue = portfolios.reduce(
@@ -185,277 +177,260 @@ export default function WhatIfPage() {
   const newPortfolioValue = currentPortfolioValue + totalSimPnL;
 
   return (
-    <div className="space-y-6 lg:space-y-8 max-w-[1200px]">
+    <>
       {/* Header */}
-      <div className="animate-in-up flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card">
-          <Calculator className="h-5 w-5 text-muted-foreground" />
-        </div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
-            What-If Calculator
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            Model hypothetical investments and outcomes
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">
+            What-If Simulator
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Simulate investments and see potential returns before committing
-          </p>
         </div>
       </div>
 
-      {/* Scenario Inputs */}
-      <Card className="rounded-xl border border-border bg-card animate-in-up-delay-1">
-        <CardContent className="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-5 pb-5">
-          <div className="lg:col-span-1">
-            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Investment Budget
-            </Label>
-            <Input
-              type="number"
-              value={totalBudget}
-              onChange={(e) => setTotalBudget(e.target.value)}
-              className="mt-2 rounded-lg border border-border bg-card font-tabular text-lg h-12 focus-visible:ring-ring"
-              placeholder="100000"
+      {/* Investment Budget */}
+      <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+        <div className="mb-2 text-[12.5px] font-medium text-ink-2">
+          Investment Budget
+        </div>
+        <div className="num flex items-center gap-2 text-[30px] font-bold">
+          <span className="text-ink-3">Rs</span>
+          <input
+            type="number"
+            value={totalBudget}
+            onChange={(e) => setTotalBudget(e.target.value)}
+            className="w-full bg-transparent outline-none"
+          />
+        </div>
+      </section>
+
+      {/* Summary cards */}
+      <div className="mb-[18px] grid gap-[18px] sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+            Total Invested
+          </div>
+          <div className="num text-[22px] font-bold tracking-[-.025em]">
+            Rs {formatPKR(totalInvested, { decimals: 0 })}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+            Target Value
+          </div>
+          <div className="num text-[22px] font-bold tracking-[-.025em]">
+            Rs {formatPKR(totalTargetValue, { decimals: 0 })}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+            Simulated P&amp;L
+          </div>
+          <div
+            className="num text-[22px] font-bold tracking-[-.025em]"
+            style={{
+              color:
+                totalSimPnL >= 0
+                  ? "var(--color-gain)"
+                  : "var(--color-loss-strong)",
+            }}
+          >
+            {totalSimPnL >= 0 ? "+" : "-"}Rs{" "}
+            {formatPKR(Math.abs(totalSimPnL), { decimals: 0 })}
+          </div>
+          <div
+            className="num mt-1 text-[12px]"
+            style={{
+              color:
+                totalSimPnL >= 0
+                  ? "var(--color-gain)"
+                  : "var(--color-loss-strong)",
+            }}
+          >
+            {totalSimPnLPct >= 0 ? "+" : ""}
+            {totalSimPnLPct.toFixed(2)}%
+          </div>
+        </div>
+        <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
+            Portfolio Impact
+          </div>
+          <div className="num text-[22px] font-bold tracking-[-.025em]">
+            {budgetUsedPct}%
+          </div>
+          <div className="num mt-1 text-[12px] text-ink-3">
+            Rs {formatPKR(currentPortfolioValue, { decimals: 0 })} &rarr;{" "}
+            <span
+              style={{
+                color:
+                  newPortfolioValue >= currentPortfolioValue
+                    ? "var(--color-gain)"
+                    : "var(--color-loss-strong)",
+              }}
+            >
+              Rs {formatPKR(newPortfolioValue, { decimals: 0 })}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Simulation */}
+      <section className="rounded-2xl border border-line bg-card pb-2 shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] pb-3.5 pt-[22px]">
+          <h2 className="text-[16px] font-bold">Simulation</h2>
+          <label className="relative flex min-w-[220px] items-center">
+            <Search className="absolute left-3 h-[15px] w-[15px] opacity-50" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search PSX stocks…"
+              className="h-[38px] w-full rounded-[10px] border border-line bg-canvas pl-8 pr-3 text-[13px] outline-none focus:border-brand"
             />
-            <p className="text-[11px] text-muted-foreground mt-1.5">
-              Total amount you want to simulate investing
-            </p>
-          </div>
-
-          <div className="lg:col-span-2">
-            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Add Stocks to Simulate
-            </Label>
-            <div className="relative mt-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search PSX stocks..."
-                className="pl-9 rounded-lg border border-border bg-card h-12 focus-visible:ring-ring"
-              />
-            </div>
-            {searchResults.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-2">
-                {searchResults.map((stock) => (
-                  <button
-                    key={stock.symbol}
-                    onClick={() => addStock(stock)}
-                    className="flex items-center justify-between px-3 py-2 rounded-lg bg-card border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors text-left group"
-                  >
-                    <div className="min-w-0">
-                      <span className="font-semibold text-sm group-hover:text-primary">
-                        {stock.symbol}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground ml-2 truncate">
-                        {stock.company}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs font-tabular text-muted-foreground">
-                        PKR {formatPKR(stock.current)}
-                      </span>
-                      <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {searchLoading && searchQuery.length > 0 && (
-              <p className="text-xs text-muted-foreground mt-2">Searching...</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Simulation Table */}
-      {stocks.length > 0 && (
-        <Card className="rounded-xl border border-border bg-card animate-in-up-delay-2">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <PieChart className="h-4 w-4 text-muted-foreground" />
-              Simulation ({stocks.length} stock{stocks.length !== 1 ? "s" : ""})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border">
-                    <th className="text-left py-2 px-2 font-semibold">Stock</th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Current
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Invest (PKR)
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Shares
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">
-                      Target Price
-                    </th>
-                    <th className="text-right py-2 px-2 font-semibold">P&L</th>
-                    <th className="text-center py-2 px-2 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {simResults.map((s) => (
-                    <tr
-                      key={s.symbol}
-                      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
-                    >
-                      <td className="py-3 px-2">
-                        <p className="font-semibold">{s.symbol}</p>
-                        <p className="text-[11px] text-muted-foreground truncate max-w-[120px]">
-                          {s.companyName}
-                        </p>
-                      </td>
-                      <td className="text-right py-3 px-2 font-tabular text-muted-foreground">
-                        {formatPKR(s.currentPrice)}
-                      </td>
-                      <td className="text-right py-3 px-2">
-                        <Input
-                          type="number"
-                          value={s.investAmount}
-                          onChange={(e) =>
-                            updateStock(
-                              s.symbol,
-                              "investAmount",
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                          className="w-24 h-7 rounded-lg border border-border bg-card text-right font-tabular text-xs ml-auto focus-visible:ring-ring"
-                        />
-                      </td>
-                      <td className="text-right py-3 px-2 font-tabular font-semibold">
-                        {s.shares}
-                      </td>
-                      <td className="text-right py-3 px-2">
-                        <Input
-                          type="number"
-                          value={s.targetPrice}
-                          onChange={(e) =>
-                            updateStock(
-                              s.symbol,
-                              "targetPrice",
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                          className="w-24 h-7 rounded-lg border border-border bg-card text-right font-tabular text-xs ml-auto focus-visible:ring-ring"
-                        />
-                      </td>
-                      <td className="text-right py-3 px-2">
-                        <div
-                          className="font-tabular font-semibold"
-                          style={{
-                            color:
-                              s.pnl >= 0
-                                ? "var(--color-profit)"
-                                : "var(--color-loss)",
-                          }}
+            {(searchResults.length > 0 ||
+              (searchLoading && searchQuery.length > 0)) && (
+              <div className="absolute left-0 right-0 top-[44px] z-20 overflow-hidden rounded-[12px] border border-line bg-card shadow-pop">
+                {searchLoading && searchResults.length === 0 ? (
+                  <div className="px-3.5 py-3 text-[12px] text-ink-3">
+                    Searching…
+                  </div>
+                ) : (
+                  searchResults.map((stock) => {
+                    const c = tint(stock.symbol);
+                    return (
+                      <button
+                        key={stock.symbol}
+                        onClick={() => addStock(stock)}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-ink/[.04]"
+                      >
+                        <span
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-[9px] text-[9.5px] font-bold"
+                          style={{ background: `${c}22`, color: c }}
                         >
-                          <span className="flex items-center justify-end gap-0.5">
-                            {s.pnl >= 0 ? (
-                              <ArrowUpRight className="h-3 w-3" />
-                            ) : (
-                              <ArrowDownRight className="h-3 w-3" />
-                            )}
-                            {formatPKR(Math.abs(s.pnl), { decimals: 0 })}
-                          </span>
-                          <span className="text-[11px] opacity-80">
-                            {s.pnlPct >= 0 ? "+" : ""}
-                            {s.pnlPct.toFixed(2)}%
-                          </span>
+                          {stock.symbol.slice(0, 2)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13px] font-semibold">
+                            {stock.symbol}
+                          </div>
+                          <div className="truncate text-[11px] text-ink-3">
+                            {stock.company}
+                          </div>
                         </div>
-                      </td>
-                      <td className="text-center py-3 px-2">
-                        <button
-                          onClick={() => removeStock(s.symbol)}
-                          className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <span className="num shrink-0 text-[12px] text-ink-2">
+                          Rs {formatPKR(stock.current, { decimals: 1 })}
+                        </span>
+                        <Plus className="h-3.5 w-3.5 shrink-0 text-ink-3" />
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </label>
+        </div>
 
-            {/* Summary metric cells */}
-            <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-px rounded-lg border border-border overflow-hidden bg-border">
-              <div className="bg-card p-4">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">
-                  Total Invested
-                </p>
-                <p className="text-lg font-semibold font-tabular mt-1">
-                  PKR {formatPKR(totalInvested, { decimals: 0 })}
-                </p>
-              </div>
-              <div className="bg-card p-4">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">
-                  Target Value
-                </p>
-                <p className="text-lg font-semibold font-tabular mt-1">
-                  PKR {formatPKR(totalTargetValue, { decimals: 0 })}
-                </p>
-              </div>
-              <div className="bg-card p-4">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">
-                  Simulated P&L
-                </p>
-                <p
-                  className="text-lg font-semibold font-tabular mt-1"
-                  style={{
-                    color:
-                      totalSimPnL >= 0
-                        ? "var(--color-profit)"
-                        : "var(--color-loss)",
-                  }}
-                >
-                  {totalSimPnL >= 0 ? "+" : ""}
-                  {formatPKR(totalSimPnL, { decimals: 0 })} (
-                  {totalSimPnLPct >= 0 ? "+" : ""}
-                  {totalSimPnLPct.toFixed(2)}%)
-                </p>
-              </div>
-              <div className="bg-card p-4">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">
-                  Portfolio Impact
-                </p>
-                <p className="text-lg font-semibold font-tabular mt-1">
-                  PKR {formatPKR(currentPortfolioValue, { decimals: 0 })} &rarr;{" "}
-                  <span
-                    style={{
-                      color:
-                        newPortfolioValue >= currentPortfolioValue
-                          ? "var(--color-profit)"
-                          : "var(--color-loss)",
-                    }}
-                  >
-                    {formatPKR(newPortfolioValue, { decimals: 0 })}
-                  </span>
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Empty State */}
-      {stocks.length === 0 && (
-        <Card className="rounded-xl border border-border bg-card animate-in-up-delay-2">
-          <CardContent className="py-16 text-center">
-            <div className="h-12 w-12 rounded-lg border border-border bg-card flex items-center justify-center mx-auto mb-4">
-              <Calculator className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <h3 className="font-semibold text-lg">Start a Simulation</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+        {stocks.length === 0 ? (
+          <div className="px-[22px] py-16 text-center">
+            <Search className="mx-auto mb-3 h-9 w-9 text-ink-3 opacity-50" />
+            <p className="text-sm font-medium text-ink-2">Start a simulation</p>
+            <p className="mx-auto mt-1 max-w-sm text-xs text-ink-3">
               Search and add stocks above to simulate potential investments.
               Adjust invest amounts and target prices to see projected returns.
             </p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          </div>
+        ) : (
+          <>
+            {/* Column headers */}
+            <div className="grid grid-cols-[1.5fr_1fr_1.1fr_.9fr_1fr_1fr_40px] gap-2.5 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+              <span>STOCK</span>
+              <span className="text-right">PRICE</span>
+              <span className="text-right">INVEST</span>
+              <span className="text-right">SHARES</span>
+              <span className="text-right">TARGET</span>
+              <span className="text-right">P&amp;L</span>
+              <span></span>
+            </div>
+
+            {simResults.map((s) => {
+              const c = tint(s.symbol);
+              const up = s.pnl >= 0;
+              return (
+                <div
+                  key={s.symbol}
+                  className="grid grid-cols-[1.5fr_1fr_1.1fr_.9fr_1fr_1fr_40px] items-center gap-2.5 border-b border-line-soft px-[22px] py-2.5"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[10px] text-[9.9px] font-bold"
+                      style={{ background: `${c}22`, color: c }}
+                    >
+                      {s.symbol.slice(0, 2)}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-semibold">
+                        {s.symbol}
+                      </div>
+                      <div className="truncate text-[11px] text-ink-3">
+                        {s.companyName}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="num text-right text-[12.5px] text-ink-2">
+                    {formatPKR(s.currentPrice, { decimals: 1 })}
+                  </span>
+                  <input
+                    type="number"
+                    value={s.investAmount}
+                    onChange={(e) =>
+                      updateStock(
+                        s.symbol,
+                        "investAmount",
+                        parseFloat(e.target.value) || 0
+                      )
+                    }
+                    className="num h-[34px] w-full rounded-lg border border-line bg-canvas px-2.5 text-right text-[13px] font-semibold outline-none focus:border-brand"
+                  />
+                  <span className="num text-right text-[12.5px] font-semibold">
+                    {s.shares}
+                  </span>
+                  <input
+                    type="number"
+                    value={s.targetPrice}
+                    onChange={(e) =>
+                      updateStock(
+                        s.symbol,
+                        "targetPrice",
+                        parseFloat(e.target.value) || 0
+                      )
+                    }
+                    className="num h-[34px] w-full rounded-lg border border-line bg-canvas px-2.5 text-right text-[13px] font-semibold outline-none focus:border-brand"
+                  />
+                  <span
+                    className="num text-right text-[12.5px] font-semibold"
+                    style={{
+                      color: up
+                        ? "var(--color-gain)"
+                        : "var(--color-loss-strong)",
+                    }}
+                  >
+                    {up ? "+" : "-"}
+                    {formatPKR(Math.abs(s.pnl), { decimals: 0 })}
+                  </span>
+                  <button
+                    onClick={() => removeStock(s.symbol)}
+                    title="Remove"
+                    className="grid h-7 w-7 place-items-center justify-self-end rounded-lg text-ink-3 hover:bg-ink/[.04]"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </section>
+    </>
   );
 }

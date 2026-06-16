@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Upload,
   FileText,
   Trash2,
   CheckCircle2,
@@ -188,103 +183,142 @@ export default function ImportPage() {
     importTrades(valid);
   };
 
+  const validManualCount = manualTrades.filter(
+    (t) => t.symbol.trim() && parseInt(t.quantity) > 0 && parseFloat(t.price) > 0
+  ).length;
+
   return (
-    <div className="space-y-6 lg:space-y-8 max-w-[1000px]">
+    <>
       {/* Header */}
-      <div className="animate-in-up flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card">
-          <Upload className="h-5 w-5 text-muted-foreground" />
-        </div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            Bulk import from CSV
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">
             Import Trades
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Import trades from CSV or enter them manually
-          </p>
         </div>
       </div>
 
-      {/* Step 1: Target Portfolio */}
-      <Card className="rounded-xl border border-border bg-card animate-in-up-delay-1">
-        <CardContent className="pt-5 pb-5">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-primary/10 text-[11px] font-semibold text-primary font-tabular">
-              1
-            </span>
-            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Target Portfolio
-            </Label>
+      {/* Stepper */}
+      <div className="mb-[18px] flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-brand bg-brand text-[12px] font-bold text-white">
+            1
           </div>
-          <select
-            value={selectedPortfolio}
-            onChange={(e) => setSelectedPortfolio(e.target.value)}
-            className="w-full h-10 rounded-lg border border-border bg-card px-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {portfolios.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} (Cash: PKR {formatPKR(p.cashBalance, { decimals: 0 })})
-              </option>
-            ))}
-          </select>
-        </CardContent>
-      </Card>
+          <span className="text-[13px] font-semibold text-ink">Target</span>
+        </div>
+        <div className="h-px w-7 bg-line" />
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-line bg-canvas text-[12px] font-bold text-ink-3">
+            2
+          </div>
+          <span className="text-[13px] font-semibold text-ink-3">Paste CSV</span>
+        </div>
+        <div className="h-px w-7 bg-line" />
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-line bg-canvas text-[12px] font-bold text-ink-3">
+            3
+          </div>
+          <span className="text-[13px] font-semibold text-ink-3">
+            Review &amp; Import
+          </span>
+        </div>
+      </div>
 
-      {/* Step 2: CSV Import */}
-      <Card className="rounded-xl border border-border bg-card animate-in-up-delay-2">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-primary/10 text-[11px] font-semibold text-primary font-tabular">
-              2
-            </span>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-            Import from CSV
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Paste CSV Data
-            </Label>
-            <p className="text-[11px] text-muted-foreground mb-2 mt-1">
-              Required columns: Symbol, Quantity, Price. Optional: Type
-              (BUY/SELL), Company
-            </p>
-            <textarea
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              placeholder={`Type,Symbol,Company,Quantity,Price\nBUY,HASCOL,Hascol Petroleum,100,16.50\nBUY,PPL,Pakistan Petroleum,50,290.00`}
-              className="w-full h-40 rounded-lg border border-dashed border-border bg-card px-4 py-3 text-sm font-mono resize-none focus:outline-none focus:border-solid focus-visible:ring-2 focus-visible:ring-ring"
-            />
+      <div className="space-y-[18px]">
+        {/* Step 1: Target Portfolio */}
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="text-[15px] font-bold">Choose target portfolio</div>
+          <div className="mb-[18px] mt-1.5 text-[13px] text-ink-3">
+            Imported trades will be added to this portfolio.
           </div>
-          <div className="flex gap-3">
-            <Button
+          {portfolios.length === 0 ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-[68px] animate-pulse rounded-xl bg-line-soft"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {portfolios.map((p) => {
+                const active = selectedPortfolio === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedPortfolio(p.id)}
+                    className={`rounded-xl border p-4 text-left ${
+                      active
+                        ? "border-brand bg-brand-50"
+                        : "border-line bg-card hover:border-brand/40"
+                    }`}
+                  >
+                    <div className="text-[14px] font-bold">{p.name}</div>
+                    <div className="num mt-0.5 text-[12px] text-ink-3">
+                      Cash · Rs {formatPKR(p.cashBalance, { decimals: 0 })}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Step 2: CSV Import */}
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 flex items-center gap-2.5">
+            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-line bg-canvas text-[12px] font-bold text-ink-3">
+              2
+            </div>
+            <FileText className="h-4 w-4 text-ink-3" />
+            <div className="text-[15px] font-bold">Import from CSV</div>
+          </div>
+
+          <div className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+            Paste CSV data
+          </div>
+          <p className="mb-2 mt-1 text-[12px] text-ink-3">
+            Required columns: Symbol, Quantity, Price. Optional: Type (BUY/SELL),
+            Company.
+          </p>
+          <textarea
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            placeholder={`Type,Symbol,Company,Quantity,Price\nBUY,HASCOL,Hascol Petroleum,100,16.50\nBUY,PPL,Pakistan Petroleum,50,290.00`}
+            className="num h-40 w-full resize-none rounded-xl border border-dashed border-line bg-canvas px-4 py-3 text-[13px] outline-none focus:border-solid focus:border-brand"
+          />
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
               onClick={parseCsv}
               disabled={!csvText.trim()}
-              variant="outline"
-              className="rounded-lg"
+              className="flex h-10 items-center gap-2 rounded-[11px] border border-line bg-card px-4 text-[13px] font-semibold text-ink hover:bg-ink/[.04] disabled:opacity-50"
             >
               Parse CSV
-            </Button>
+            </button>
             {parsedTrades.length > 0 && (
-              <Button
+              <button
                 onClick={() => importTrades(parsedTrades)}
                 disabled={importing}
-                className="rounded-lg"
+                className="flex h-10 items-center gap-2 rounded-[11px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105 disabled:opacity-50"
               >
                 {importing
-                  ? "Importing..."
+                  ? "Importing…"
                   : `Import ${parsedTrades.length} Trade(s)`}
-              </Button>
+              </button>
             )}
           </div>
 
           {parseError && (
             <div
-              className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg"
+              className="mt-4 flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium"
               style={{
-                color: "var(--color-loss)",
-                backgroundColor: "var(--color-loss-bg)",
+                color: "var(--color-loss-strong)",
+                background: "var(--color-loss-50)",
               }}
             >
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -293,53 +327,49 @@ export default function ImportPage() {
           )}
 
           {parsedTrades.length > 0 && (
-            <div className="overflow-x-auto border border-border rounded-lg">
-              <table className="w-full text-sm">
+            <div className="mt-4 overflow-x-auto rounded-xl border border-line">
+              <table className="w-full text-[13px]">
                 <thead>
-                  <tr className="text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border bg-muted/40">
-                    <th className="text-left py-2 px-3 font-semibold">Type</th>
-                    <th className="text-left py-2 px-3 font-semibold">Symbol</th>
-                    <th className="text-left py-2 px-3 font-semibold">Company</th>
-                    <th className="text-right py-2 px-3 font-semibold">Qty</th>
-                    <th className="text-right py-2 px-3 font-semibold">Price</th>
-                    <th className="text-right py-2 px-3 font-semibold">Total</th>
+                  <tr className="border-b border-line bg-canvas text-[11px] font-semibold uppercase tracking-[.03em] text-ink-3">
+                    <th className="px-3 py-2.5 text-left">Type</th>
+                    <th className="px-3 py-2.5 text-left">Symbol</th>
+                    <th className="px-3 py-2.5 text-left">Company</th>
+                    <th className="px-3 py-2.5 text-right">Qty</th>
+                    <th className="px-3 py-2.5 text-right">Price</th>
+                    <th className="px-3 py-2.5 text-right">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {parsedTrades.map((t, i) => (
                     <tr
                       key={i}
-                      className="border-b border-border last:border-0"
+                      className="border-b border-line-soft last:border-0"
                     >
-                      <td className="py-2 px-3">
+                      <td className="px-3 py-2.5">
                         <span
                           className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
                           style={{
                             color:
                               t.type === "BUY"
-                                ? "var(--color-profit)"
-                                : "var(--color-loss)",
-                            backgroundColor:
+                                ? "var(--color-gain)"
+                                : "var(--color-loss-strong)",
+                            background:
                               t.type === "BUY"
-                                ? "var(--color-profit-bg)"
-                                : "var(--color-loss-bg)",
+                                ? "var(--color-gain-50)"
+                                : "var(--color-loss-50)",
                           }}
                         >
                           {t.type}
                         </span>
                       </td>
-                      <td className="py-2 px-3 font-semibold">{t.symbol}</td>
-                      <td className="py-2 px-3 text-muted-foreground">
-                        {t.companyName}
+                      <td className="px-3 py-2.5 font-semibold">{t.symbol}</td>
+                      <td className="px-3 py-2.5 text-ink-3">{t.companyName}</td>
+                      <td className="num px-3 py-2.5 text-right">{t.quantity}</td>
+                      <td className="num px-3 py-2.5 text-right">
+                        Rs {formatPKR(t.price)}
                       </td>
-                      <td className="py-2 px-3 text-right font-tabular">
-                        {t.quantity}
-                      </td>
-                      <td className="py-2 px-3 text-right font-tabular">
-                        {formatPKR(t.price)}
-                      </td>
-                      <td className="py-2 px-3 text-right font-tabular font-semibold">
-                        {formatPKR(t.quantity * t.price, { decimals: 0 })}
+                      <td className="num px-3 py-2.5 text-right font-semibold">
+                        Rs {formatPKR(t.quantity * t.price, { decimals: 0 })}
                       </td>
                     </tr>
                   ))}
@@ -347,44 +377,39 @@ export default function ImportPage() {
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </section>
 
-      {/* Manual Entry */}
-      <Card className="rounded-xl border border-border bg-card animate-in-up-delay-3">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-primary/10 text-[11px] font-semibold text-primary font-tabular">
+        {/* Step 3: Manual Entry */}
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-line bg-canvas text-[12px] font-bold text-ink-3">
                 3
-              </span>
-              <Plus className="h-4 w-4 text-muted-foreground" />
-              Manual Entry
-            </CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
+              </div>
+              <Plus className="h-4 w-4 text-ink-3" />
+              <div className="text-[15px] font-bold">Manual Entry</div>
+            </div>
+            <button
               onClick={addManualTrade}
-              className="h-7 text-xs rounded-lg"
+              className="flex h-9 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-[13px] font-semibold text-ink hover:bg-ink/[.04]"
             >
-              <Plus className="h-3 w-3 mr-1" />
+              <Plus className="h-3.5 w-3.5" />
               Add Row
-            </Button>
+            </button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
+
           {manualTrades.length === 0 ? (
-            <div className="text-center py-8 rounded-lg border border-dashed border-border">
-              <p className="text-sm text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-line py-8 text-center">
+              <p className="text-[13px] text-ink-3">
                 Click &quot;Add Row&quot; to manually enter trades
               </p>
             </div>
           ) : (
-            <>
+            <div className="space-y-3">
               {manualTrades.map((trade, i) => (
                 <div
                   key={i}
-                  className="flex flex-wrap items-center gap-2 p-2.5 rounded-lg bg-card border border-border"
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-card p-2.5"
                 >
                   <select
                     value={trade.type}
@@ -397,12 +422,12 @@ export default function ImportPage() {
                         )
                       )
                     }
-                    className="h-8 rounded-lg border border-border bg-card px-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="h-9 rounded-[10px] border border-line bg-card px-2 text-[12px] font-semibold outline-none focus:border-brand"
                   >
                     <option value="BUY">BUY</option>
                     <option value="SELL">SELL</option>
                   </select>
-                  <Input
+                  <input
                     placeholder="Symbol"
                     value={trade.symbol}
                     onChange={(e) =>
@@ -414,9 +439,9 @@ export default function ImportPage() {
                         )
                       )
                     }
-                    className="w-24 h-8 rounded-lg border border-border bg-card text-xs font-semibold focus-visible:ring-ring"
+                    className="h-9 w-24 rounded-[10px] border border-line bg-card px-2.5 text-[12px] font-semibold outline-none focus:border-brand"
                   />
-                  <Input
+                  <input
                     placeholder="Company"
                     value={trade.companyName}
                     onChange={(e) =>
@@ -426,9 +451,9 @@ export default function ImportPage() {
                         )
                       )
                     }
-                    className="flex-1 min-w-[100px] h-8 rounded-lg border border-border bg-card text-xs focus-visible:ring-ring"
+                    className="h-9 min-w-[100px] flex-1 rounded-[10px] border border-line bg-card px-2.5 text-[12px] outline-none focus:border-brand"
                   />
-                  <Input
+                  <input
                     type="number"
                     placeholder="Qty"
                     value={trade.quantity}
@@ -439,9 +464,9 @@ export default function ImportPage() {
                         )
                       )
                     }
-                    className="w-20 h-8 rounded-lg border border-border bg-card text-xs font-tabular text-right focus-visible:ring-ring"
+                    className="num h-9 w-20 rounded-[10px] border border-line bg-card px-2.5 text-right text-[12px] outline-none focus:border-brand"
                   />
-                  <Input
+                  <input
                     type="number"
                     placeholder="Price"
                     value={trade.price}
@@ -452,59 +477,53 @@ export default function ImportPage() {
                         )
                       )
                     }
-                    className="w-24 h-8 rounded-lg border border-border bg-card text-xs font-tabular text-right focus-visible:ring-ring"
+                    className="num h-9 w-24 rounded-[10px] border border-line bg-card px-2.5 text-right text-[12px] outline-none focus:border-brand"
                   />
                   <button
                     onClick={() =>
-                      setManualTrades((prev) => prev.filter((_, idx) => idx !== i))
+                      setManualTrades((prev) =>
+                        prev.filter((_, idx) => idx !== i)
+                      )
                     }
-                    className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    className="grid h-9 w-9 place-items-center rounded-[10px] text-ink-3 hover:bg-ink/[.04] hover:text-ink"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ))}
-              <Button
+              <button
                 onClick={importManual}
-                disabled={
-                  importing ||
-                  manualTrades.filter(
-                    (t) =>
-                      t.symbol.trim() &&
-                      parseInt(t.quantity) > 0 &&
-                      parseFloat(t.price) > 0
-                  ).length === 0
-                }
-                className="rounded-lg"
+                disabled={importing || validManualCount === 0}
+                className="flex h-10 items-center gap-2 rounded-[11px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105 disabled:opacity-50"
               >
-                {importing ? "Importing..." : "Import Manual Trades"}
-              </Button>
-            </>
+                {importing ? "Importing…" : "Import Manual Trades"}
+              </button>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </section>
 
-      {/* Import Result */}
-      {importResult && (
-        <div
-          className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium animate-in-up"
-          style={{
-            color: importResult.success
-              ? "var(--color-profit)"
-              : "var(--color-loss)",
-            backgroundColor: importResult.success
-              ? "var(--color-profit-bg)"
-              : "var(--color-loss-bg)",
-          }}
-        >
-          {importResult.success ? (
-            <CheckCircle2 className="h-5 w-5 shrink-0" />
-          ) : (
-            <AlertCircle className="h-5 w-5 shrink-0" />
-          )}
-          {importResult.message}
-        </div>
-      )}
-    </div>
+        {/* Import Result */}
+        {importResult && (
+          <div
+            className="flex items-center gap-2 rounded-xl px-4 py-3 text-[13px] font-medium"
+            style={{
+              color: importResult.success
+                ? "var(--color-gain)"
+                : "var(--color-loss-strong)",
+              background: importResult.success
+                ? "var(--color-gain-50)"
+                : "var(--color-loss-50)",
+            }}
+          >
+            {importResult.success ? (
+              <CheckCircle2 className="h-5 w-5 shrink-0" />
+            ) : (
+              <AlertCircle className="h-5 w-5 shrink-0" />
+            )}
+            {importResult.message}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

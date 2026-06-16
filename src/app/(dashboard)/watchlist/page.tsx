@@ -1,20 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Eye,
-  Trash2,
-  ShoppingCart,
-  TrendingUp,
-  TrendingDown,
-  Star,
-} from "lucide-react";
+import { Star, ArrowLeftRight, X } from "lucide-react";
 import Link from "next/link";
 import { StockSearch } from "@/components/StockSearch";
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
-import { PageSkeleton } from "@/components/ui/skeleton";
 
 interface WatchlistItem {
   id: string;
@@ -39,6 +30,13 @@ interface Portfolio {
   cashBalance: number;
 }
 
+const TINTS = ["#2563EB", "#7C3AED", "#0D9488", "#DB2777", "#CA8A04", "#0891B2", "#16A34A", "#4F46E5"];
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
+}
+
 export default function WatchlistPage() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [marketData, setMarketData] = useState<Map<string, MarketStock>>(
@@ -47,6 +45,7 @@ export default function WatchlistPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [tradeStock, setTradeStock] = useState<MarketStock | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [showSearch, setShowSearch] = useState(false);
 
   const fetchData = useCallback(async () => {
     const [watchRes, marketRes, portfolioRes] = await Promise.all([
@@ -90,160 +89,152 @@ export default function WatchlistPage() {
         companyName: stock.company,
       }),
     });
+    setShowSearch(false);
     fetchData();
   };
 
-  if (initialLoading) return <PageSkeleton />;
+  const count = watchlist.length;
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex items-end justify-between animate-in-up">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card">
-            <Eye className="h-4.5 w-4.5 text-primary" />
+    <>
+      {/* Header */}
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            {count} tracked {count === 1 ? "stock" : "stocks"}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Watchlist</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">
-              Track stocks you&apos;re interested in
-            </p>
-          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">Watchlist</h1>
         </div>
-        <span className="text-xs text-muted-foreground font-tabular">
-          {watchlist.length} {watchlist.length === 1 ? "stock" : "stocks"}
-        </span>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowSearch((v) => !v)}
+            className="flex h-10 items-center rounded-[11px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)]"
+          >
+            + Add to Watchlist
+          </button>
+        </div>
       </div>
 
-      {/* Add to Watchlist */}
-      <div className="border border-border bg-card rounded-xl p-4 animate-in-up-delay-1">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2.5">
-          Add to Watchlist
-        </p>
-        <StockSearch
-          onSelect={(stock) => handleAdd(stock)}
-          placeholder="Search and add stocks to watchlist..."
-        />
-      </div>
+      {/* Add to Watchlist search */}
+      {showSearch && (
+        <div className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <p className="mb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+            ADD TO WATCHLIST
+          </p>
+          <StockSearch
+            onSelect={(stock) => handleAdd(stock)}
+            placeholder="Search and add stocks to watchlist…"
+          />
+        </div>
+      )}
 
-      {/* Watchlist Items */}
-      <div className="border border-border bg-card rounded-xl overflow-hidden animate-in-up-delay-2">
-        {watchlist.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="flex items-center justify-center h-12 w-12 rounded-xl border border-border bg-card mb-4">
-              <Star className="h-6 w-6 text-muted-foreground" />
+      {/* Table */}
+      <section className="rounded-2xl border border-line bg-card pb-2 pt-[22px] shadow-card">
+        <div className="grid grid-cols-[1.8fr_1.1fr_1fr_1.1fr_116px] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+          <span>SYMBOL</span>
+          <span className="text-right">PRICE</span>
+          <span className="text-right">CHANGE</span>
+          <span className="text-right">VOLUME</span>
+          <span className="text-right">ACTIONS</span>
+        </div>
+
+        {initialLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1.8fr_1.1fr_1fr_1.1fr_116px] gap-2 border-b border-line-soft px-[22px] py-[11px]"
+            >
+              {Array.from({ length: 5 }).map((_, j) => (
+                <div key={j} className="h-4 animate-pulse rounded bg-line-soft" />
+              ))}
             </div>
-            <p className="text-sm font-medium">Your watchlist is empty</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Search and add stocks above to start tracking
+          ))
+        ) : watchlist.length === 0 ? (
+          <div className="py-16 text-center">
+            <Star className="mx-auto mb-3 h-9 w-9 text-ink-3 opacity-50" />
+            <p className="text-sm font-medium text-ink-2">Your watchlist is empty</p>
+            <p className="mt-1 text-xs text-ink-3">
+              Add stocks above to start tracking
             </p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-2.5 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Symbol
-                </th>
-                <th className="text-right py-2.5 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Price
-                </th>
-                <th className="text-right py-2.5 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Change
-                </th>
-                <th className="text-right py-2.5 px-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hidden sm:table-cell">
-                  Volume
-                </th>
-                <th className="py-2.5 px-4 w-px" />
-              </tr>
-            </thead>
-            <tbody>
-              {watchlist.map((item) => {
-                const stock = marketData.get(item.symbol);
-                const isGain = stock ? stock.change >= 0 : true;
-
-                return (
-                  <tr
-                    key={item.id}
-                    className="table-row-hover border-b border-border last:border-0 transition-colors"
+          watchlist.map((item) => {
+            const stock = marketData.get(item.symbol);
+            const c = tint(item.symbol);
+            const sUp = stock ? stock.change >= 0 : true;
+            return (
+              <div
+                key={item.id}
+                className="grid grid-cols-[1.8fr_1.1fr_1fr_1.1fr_116px] items-center gap-2 border-b border-line-soft px-[22px] py-[11px] hover:bg-ink/[.03]"
+              >
+                <Link
+                  href={`/stock/${item.symbol}`}
+                  className="flex min-w-0 items-center gap-2.5"
+                >
+                  <span
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-[10.56px] font-bold"
+                    style={{ background: `${c}22`, color: c }}
                   >
-                    <td className="py-3 px-4">
-                      <Link
-                        href={`/stock/${item.symbol}`}
-                        className="block min-w-0 hover:text-primary transition-colors"
-                      >
-                        <span className="font-semibold">{item.symbol}</span>
-                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                          {item.companyName}
-                        </p>
-                      </Link>
-                    </td>
-                    <td className="text-right py-3 px-4">
-                      {stock ? (
-                        <span className="font-tabular font-semibold">
-                          PKR {formatPKR(stock.current)}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground animate-pulse">
-                          Loading...
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-right py-3 px-4">
-                      {stock && (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold font-tabular"
-                          style={{
-                            color: isGain
-                              ? "var(--color-profit)"
-                              : "var(--color-loss)",
-                            background: isGain
-                              ? "var(--color-profit-bg)"
-                              : "var(--color-loss-bg)",
-                          }}
-                        >
-                          {isGain ? (
-                            <TrendingUp className="h-3 w-3" />
-                          ) : (
-                            <TrendingDown className="h-3 w-3" />
-                          )}
-                          {isGain ? "+" : ""}
-                          {stock.changePercent.toFixed(2)}%
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-right py-3 px-4 text-xs text-muted-foreground font-tabular hidden sm:table-cell">
-                      {stock ? stock.volume.toLocaleString() : "—"}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 rounded-lg hover:bg-primary/10 hover:text-primary"
-                          onClick={() => {
-                            if (stock) setTradeStock(stock);
-                          }}
-                        >
-                          <ShoppingCart className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
-                          onClick={() => handleRemove(item.symbol)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    {item.symbol.slice(0, 2)}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold">{item.symbol}</div>
+                    <div className="truncate text-[11px] text-ink-3">
+                      {item.companyName}
+                    </div>
+                  </div>
+                </Link>
+                {stock ? (
+                  <span className="num text-right text-[13px] font-semibold">
+                    {formatPKR(stock.current, { decimals: 2 })}
+                  </span>
+                ) : (
+                  <span className="text-right text-[11px] text-ink-3 animate-pulse">
+                    …
+                  </span>
+                )}
+                {stock ? (
+                  <span
+                    className="num text-right text-[12.5px] font-semibold"
+                    style={{
+                      color: sUp
+                        ? "var(--color-gain)"
+                        : "var(--color-loss-strong)",
+                    }}
+                  >
+                    {sUp ? "+" : ""}
+                    {stock.changePercent.toFixed(2)}%
+                  </span>
+                ) : (
+                  <span className="text-right text-[12px] text-ink-3">—</span>
+                )}
+                <span className="num text-right text-[12px] text-ink-2">
+                  {stock ? formatPKR(stock.volume, { compact: true }) : "—"}
+                </span>
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    onClick={() => {
+                      if (stock) setTradeStock(stock);
+                    }}
+                    disabled={!stock}
+                    title="Trade"
+                    className="h-[30px] rounded-lg border border-line px-3 text-[12px] font-semibold text-brand hover:bg-ink/[.04] disabled:opacity-40"
+                  >
+                    Trade
+                  </button>
+                  <button
+                    onClick={() => handleRemove(item.symbol)}
+                    title="Remove"
+                    className="grid h-[30px] w-[30px] place-items-center rounded-lg border border-line text-ink-3 hover:bg-loss-50 hover:text-loss-strong"
+                  >
+                    <X className="h-[14px] w-[14px]" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
         )}
-      </div>
+      </section>
 
       {tradeStock && (
         <TradeDialog
@@ -256,6 +247,6 @@ export default function WatchlistPage() {
           onSuccess={fetchData}
         />
       )}
-    </div>
+    </>
   );
 }

@@ -1,26 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Search,
-  ArrowUpDown,
-  Eye,
-  ShoppingCart,
-} from "lucide-react";
+import { Search, Star, ArrowLeftRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
-import { PageSkeleton } from "@/components/ui/skeleton";
+import { sectorName } from "@/lib/sectors";
 
 interface MarketStock {
   symbol: string;
@@ -42,16 +27,11 @@ interface Portfolio {
   cashBalance: number;
 }
 
-function ShimmerRow() {
-  return (
-    <tr className="border-b border-border/60">
-      {Array.from({ length: 7 }).map((_, i) => (
-        <td key={i} className="py-2.5 px-3">
-          <div className="h-3.5 rounded bg-muted animate-pulse" />
-        </td>
-      ))}
-    </tr>
-  );
+const TINTS = ["#2563EB", "#7C3AED", "#0D9488", "#DB2777", "#CA8A04", "#0891B2", "#16A34A", "#4F46E5"];
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
 }
 
 export default function MarketPage() {
@@ -63,6 +43,7 @@ export default function MarketPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [tradeStock, setTradeStock] = useState<MarketStock | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [watchedSymbols, setWatchedSymbols] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     const [marketRes, portfolioRes] = await Promise.all([
@@ -83,56 +64,42 @@ export default function MarketPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const sectors = useMemo(() => {
-    const s = new Set(stocks.map((s) => s.sector).filter(Boolean));
-    return Array.from(s).sort();
-  }, [stocks]);
+  useEffect(() => {
+    fetch("/api/watchlist")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data))
+          setWatchedSymbols(new Set(data.map((w: { symbol: string }) => w.symbol)));
+      })
+      .catch(() => {});
+  }, []);
 
-  const activeStocks = useMemo(
-    () => stocks.filter((s) => s.current > 0),
-    [stocks]
-  );
+  const activeStocks = useMemo(() => stocks.filter((s) => s.current > 0), [stocks]);
+
+  const sectors = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of stocks) if (s.sector) map.set(s.sector, sectorName(s.sector));
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [stocks]);
 
   const filteredStocks = useMemo(() => {
     let result = activeStocks;
-
     if (search) {
       const q = search.toUpperCase();
       result = result.filter(
-        (s) =>
-          s.symbol.toUpperCase().includes(q) ||
-          s.company.toUpperCase().includes(q)
+        (s) => s.symbol.toUpperCase().includes(q) || s.company.toUpperCase().includes(q)
       );
     }
-
-    if (sectorFilter !== "all") {
-      result = result.filter((s) => s.sector === sectorFilter);
-    }
-
-    result.sort((a, b) => {
+    if (sectorFilter !== "all") result = result.filter((s) => s.sector === sectorFilter);
+    result = [...result].sort((a, b) => {
       let diff = 0;
       if (sortBy === "symbol") diff = a.symbol.localeCompare(b.symbol);
       else if (sortBy === "change") diff = a.changePercent - b.changePercent;
       else diff = a.volume - b.volume;
       return sortDir === "desc" ? -diff : diff;
     });
-
     return result;
   }, [activeStocks, search, sectorFilter, sortBy, sortDir]);
-
-  const [watchedSymbols, setWatchedSymbols] = useState<Set<string>>(new Set());
-
-  // Load existing watchlist
-  useEffect(() => {
-    fetch("/api/watchlist")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setWatchedSymbols(new Set(data.map((w: { symbol: string }) => w.symbol)));
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const handleAddToWatchlist = async (symbol: string, company: string) => {
     const res = await fetch("/api/watchlist", {
@@ -140,382 +107,182 @@ export default function MarketPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol, companyName: company }),
     });
-    if (res.ok) {
-      setWatchedSymbols((prev) => new Set(prev).add(symbol));
-    }
+    if (res.ok) setWatchedSymbols((prev) => new Set(prev).add(symbol));
   };
-
-  const isLoading = stocks.length === 0;
 
   const topGainers = useMemo(
-    () => [...activeStocks].sort((a, b) => b.changePercent - a.changePercent).slice(0, 3),
+    () => [...activeStocks].sort((a, b) => b.changePercent - a.changePercent).slice(0, 2),
     [activeStocks]
   );
-
   const topVolume = useMemo(
-    () => [...activeStocks].sort((a, b) => b.volume - a.volume).slice(0, 1)[0],
+    () => [...activeStocks].sort((a, b) => b.volume - a.volume)[0],
     [activeStocks]
   );
-
-  if (initialLoading) return <PageSkeleton />;
-
-  // ── Sortable column header helper ───────────────────────────────
-  const toggleSort = (col: "symbol" | "change" | "volume") => {
-    if (sortBy === col) {
-      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-    } else {
-      setSortBy(col);
-      setSortDir("desc");
-    }
-  };
-
-  const sortIndicator = (col: "symbol" | "change" | "volume") =>
-    sortBy === col ? (
-      <span className="text-primary">{sortDir === "desc" ? "↓" : "↑"}</span>
-    ) : (
-      <ArrowUpDown className="h-3 w-3 opacity-40" />
-    );
 
   return (
-    <div className="space-y-5">
+    <>
       {/* Header */}
-      <div className="flex items-end justify-between animate-in-up">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Market</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Browse all PSX listed stocks
-          </p>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            All Pakistan Stock Exchange listings
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">Market</h1>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground border border-border bg-card rounded-lg px-3 py-1.5">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-profit)] opacity-75" />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--color-profit)]" />
-          </span>
-          <span className="font-tabular font-semibold text-foreground">
-            {activeStocks.length}
-          </span>{" "}
-          active
+        <div className="flex items-center gap-2 text-[12.5px] font-medium text-ink-3">
+          <span className="h-2 w-2 rounded-full bg-gain" />
+          Live · {activeStocks.length} symbols
         </div>
       </div>
 
-      {/* Quick Stats */}
-      {!isLoading && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 animate-in-up-delay-1">
-          {topGainers.length > 0 && (
-            <Card className="border border-border bg-card rounded-xl">
-              <CardContent className="py-4">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Top Gainer
-                </p>
-                <div className="flex items-baseline justify-between mt-2">
-                  <Link
-                    href={`/stock/${topGainers[0].symbol}`}
-                    className="font-semibold text-sm hover:text-primary transition-colors"
-                  >
-                    {topGainers[0].symbol}
-                  </Link>
-                  <span
-                    className="font-tabular text-lg font-semibold"
-                    style={{ color: "var(--color-profit)" }}
-                  >
-                    +{topGainers[0].changePercent.toFixed(2)}%
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                  {topGainers[0].company}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-          {topGainers.length > 1 && (
-            <Card className="border border-border bg-card rounded-xl">
-              <CardContent className="py-4">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  2nd Gainer
-                </p>
-                <div className="flex items-baseline justify-between mt-2">
-                  <Link
-                    href={`/stock/${topGainers[1].symbol}`}
-                    className="font-semibold text-sm hover:text-primary transition-colors"
-                  >
-                    {topGainers[1].symbol}
-                  </Link>
-                  <span
-                    className="font-tabular text-lg font-semibold"
-                    style={{ color: "var(--color-profit)" }}
-                  >
-                    +{topGainers[1].changePercent.toFixed(2)}%
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                  {topGainers[1].company}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-          {topVolume && (
-            <Card className="border border-border bg-card rounded-xl">
-              <CardContent className="py-4">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Highest Volume
-                </p>
-                <div className="flex items-baseline justify-between mt-2">
-                  <Link
-                    href={`/stock/${topVolume.symbol}`}
-                    className="font-semibold text-sm hover:text-primary transition-colors"
-                  >
-                    {topVolume.symbol}
-                  </Link>
-                  <span className="font-tabular text-lg font-semibold text-foreground">
-                    {formatPKR(topVolume.volume, { compact: true })}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                  {topVolume.company}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+      {/* Quick stats */}
+      <div className="mb-[18px] grid gap-[18px] sm:grid-cols-3">
+        <QuickStat label="Top Gainer" stock={topGainers[0]} kind="change" />
+        <QuickStat label="2nd Gainer" stock={topGainers[1]} kind="change" />
+        <QuickStat label="Highest Volume" stock={topVolume} kind="volume" />
+      </div>
 
       {/* Toolbar */}
-      <div className="animate-in-up-delay-2 flex flex-wrap gap-2.5 items-center">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
+      <div className="mb-[18px] flex flex-wrap gap-2.5">
+        <label className="relative flex min-w-[200px] flex-1 items-center">
+          <Search className="absolute left-3.5 h-[15px] w-[15px] opacity-50" />
+          <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by symbol or company name..."
-            className="pl-10 h-9 rounded-lg border border-border bg-card focus:border-primary/40 transition-colors"
+            placeholder="Search symbol or company…"
+            className="h-10 w-full rounded-[10px] border border-line bg-card pl-9 pr-3 text-[13px] shadow-card outline-none focus:border-brand"
           />
-        </div>
-        <Select
-          value={sectorFilter}
-          onValueChange={(v) => v && setSectorFilter(v)}
-        >
-          <SelectTrigger className="w-[200px] h-9 rounded-lg border border-border bg-card">
-            <SelectValue placeholder="All Sectors">
-              {(value: string | null) => (!value || value === "all") ? "All Sectors" : value}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Sectors</SelectItem>
-            {sectors.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
+        </label>
+        <div className="relative">
+          <select
+            value={sectorFilter}
+            onChange={(e) => setSectorFilter(e.target.value)}
+            className="h-10 appearance-none rounded-[10px] border border-line bg-card pl-3.5 pr-9 text-[13px] font-medium shadow-card outline-none focus:border-brand"
+          >
+            <option value="all">All Sectors</option>
+            {sectors.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
             ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={`${sortBy}-${sortDir}`}
-          onValueChange={(v) => {
-            if (!v) return;
-            const [by, dir] = v.split("-") as [
-              "symbol" | "change" | "volume",
-              "asc" | "desc",
-            ];
-            setSortBy(by);
-            setSortDir(dir);
-          }}
-        >
-          <SelectTrigger className="w-[180px] h-9 rounded-lg border border-border bg-card">
-            <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue>
-              {(value: string | null) => {
-                const labels: Record<string, string> = {
-                  "volume-desc": "Volume (High)", "volume-asc": "Volume (Low)",
-                  "change-desc": "Gainers", "change-asc": "Losers",
-                  "symbol-asc": "Symbol (A-Z)", "symbol-desc": "Symbol (Z-A)",
-                };
-                return value ? (labels[value] || value) : "Sort by";
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="volume-desc">Volume (High)</SelectItem>
-            <SelectItem value="volume-asc">Volume (Low)</SelectItem>
-            <SelectItem value="change-desc">Gainers</SelectItem>
-            <SelectItem value="change-asc">Losers</SelectItem>
-            <SelectItem value="symbol-asc">Symbol (A-Z)</SelectItem>
-            <SelectItem value="symbol-desc">Symbol (Z-A)</SelectItem>
-          </SelectContent>
-        </Select>
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
+        </div>
+        <div className="relative">
+          <select
+            value={`${sortBy}-${sortDir}`}
+            onChange={(e) => {
+              const [by, dir] = e.target.value.split("-") as [
+                "symbol" | "change" | "volume",
+                "asc" | "desc",
+              ];
+              setSortBy(by);
+              setSortDir(dir);
+            }}
+            className="h-10 appearance-none rounded-[10px] border border-line bg-card pl-3.5 pr-9 text-[13px] font-medium shadow-card outline-none focus:border-brand"
+          >
+            <option value="volume-desc">Sort: Volume (High)</option>
+            <option value="volume-asc">Sort: Volume (Low)</option>
+            <option value="change-desc">Sort: Gainers</option>
+            <option value="change-asc">Sort: Losers</option>
+            <option value="symbol-asc">Sort: Symbol (A-Z)</option>
+            <option value="symbol-desc">Sort: Symbol (Z-A)</option>
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
+        </div>
       </div>
 
-      {!isLoading && (
-        <p className="text-xs text-muted-foreground -mt-2">
-          Showing{" "}
-          <span className="font-tabular font-medium text-foreground">
-            {Math.min(filteredStocks.length, 100)}
-          </span>{" "}
-          of{" "}
-          <span className="font-tabular font-medium text-foreground">
-            {filteredStocks.length}
-          </span>{" "}
-          results
-        </p>
-      )}
+      {/* Table */}
+      <section className="rounded-2xl border border-line bg-card pb-2 pt-[22px] shadow-card">
+        <div className="grid grid-cols-[1.6fr_1.1fr_1fr_1fr_1.2fr_1fr_92px] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+          <span>SYMBOL</span>
+          <span>SECTOR</span>
+          <span className="text-right">PRICE</span>
+          <span className="text-right">CHANGE</span>
+          <span className="text-right">HIGH / LOW</span>
+          <span className="text-right">VOLUME</span>
+          <span className="text-right">ACTIONS</span>
+        </div>
 
-      {/* Stock Table */}
-      <Card className="border border-border bg-card rounded-xl overflow-hidden animate-in-up-delay-3">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="text-left py-2.5 px-4">
-                    <button
-                      onClick={() => toggleSort("symbol")}
-                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Symbol {sortIndicator("symbol")}
-                    </button>
-                  </th>
-                  <th className="text-left py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Sector
-                  </th>
-                  <th className="text-right py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Price
-                  </th>
-                  <th className="text-right py-2.5 px-3">
-                    <button
-                      onClick={() => toggleSort("change")}
-                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Change {sortIndicator("change")}
-                    </button>
-                  </th>
-                  <th className="text-right py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    High / Low
-                  </th>
-                  <th className="text-right py-2.5 px-3">
-                    <button
-                      onClick={() => toggleSort("volume")}
-                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors ml-auto"
-                    >
-                      Volume {sortIndicator("volume")}
-                    </button>
-                  </th>
-                  <th className="text-right py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading
-                  ? Array.from({ length: 12 }).map((_, i) => (
-                      <ShimmerRow key={i} />
-                    ))
-                  : filteredStocks.slice(0, 100).map((s) => (
-                      <tr
-                        key={s.symbol}
-                        className="table-row-hover border-b border-border/60 last:border-0 transition-colors"
-                      >
-                        <td className="py-2.5 px-4">
-                          <Link
-                            href={`/stock/${s.symbol}`}
-                            className="group inline-block"
-                          >
-                            <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                              {s.symbol}
-                            </span>
-                            <br />
-                            <span className="text-xs text-muted-foreground line-clamp-1 max-w-[180px]">
-                              {s.company}
-                            </span>
-                          </Link>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="inline-block text-xs text-muted-foreground border border-border rounded-md px-2 py-0.5">
-                            {s.sector}
-                          </span>
-                        </td>
-                        <td className="text-right py-2.5 px-3">
-                          <span className="font-tabular font-semibold">
-                            {formatPKR(s.current, { decimals: 2 })}
-                          </span>
-                        </td>
-                        <td className="text-right py-2.5 px-3">
-                          <span
-                            className="inline-flex font-tabular text-xs font-semibold rounded-md px-2 py-0.5"
-                            style={{
-                              color:
-                                s.change >= 0
-                                  ? "var(--color-profit)"
-                                  : "var(--color-loss)",
-                              backgroundColor:
-                                s.change >= 0
-                                  ? "var(--color-profit-bg)"
-                                  : "var(--color-loss-bg)",
-                            }}
-                          >
-                            {s.change >= 0 ? "+" : ""}
-                            {s.changePercent.toFixed(2)}%
-                          </span>
-                        </td>
-                        <td className="text-right py-2.5 px-3">
-                          <span className="font-tabular text-xs text-muted-foreground">
-                            {formatPKR(s.high, { decimals: 2 })}
-                            {" / "}
-                            {formatPKR(s.low, { decimals: 2 })}
-                          </span>
-                        </td>
-                        <td className="text-right py-2.5 px-3">
-                          <span className="font-tabular font-medium">
-                            {formatPKR(s.volume, { compact: true })}
-                          </span>
-                        </td>
-                        <td className="text-right py-2.5 px-4">
-                          <div className="flex gap-1.5 justify-end">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className={`h-8 w-8 p-0 rounded-lg transition-colors ${
-                                watchedSymbols.has(s.symbol)
-                                  ? "bg-primary/10 text-primary"
-                                  : "hover:bg-muted text-muted-foreground"
-                              }`}
-                              onClick={() =>
-                                handleAddToWatchlist(s.symbol, s.company)
-                              }
-                              title={
-                                watchedSymbols.has(s.symbol)
-                                  ? "In Watchlist"
-                                  : "Add to Watchlist"
-                              }
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="h-8 rounded-lg px-3 text-xs font-semibold gap-1.5"
-                              onClick={() => setTradeStock(s)}
-                            >
-                              <ShoppingCart className="h-3.5 w-3.5" />
-                              Trade
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-              </tbody>
-            </table>
-            {!isLoading && filteredStocks.length === 0 && (
-              <div className="text-center py-16">
-                <Search className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                <p className="text-muted-foreground text-sm font-medium">
-                  No stocks found
-                </p>
-                <p className="text-muted-foreground/60 text-xs mt-1">
-                  Try adjusting your search or filter criteria
-                </p>
-              </div>
-            )}
+        {initialLoading ? (
+          Array.from({ length: 10 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1.6fr_1.1fr_1fr_1fr_1.2fr_1fr_92px] gap-2 border-b border-line-soft px-[22px] py-2.5"
+            >
+              {Array.from({ length: 7 }).map((_, j) => (
+                <div key={j} className="h-4 animate-pulse rounded bg-line-soft" />
+              ))}
+            </div>
+          ))
+        ) : filteredStocks.length === 0 ? (
+          <div className="py-16 text-center">
+            <Search className="mx-auto mb-3 h-9 w-9 text-ink-3 opacity-50" />
+            <p className="text-sm font-medium text-ink-2">No stocks found</p>
+            <p className="mt-1 text-xs text-ink-3">Try adjusting your search or filter</p>
           </div>
-        </CardContent>
-      </Card>
+        ) : (
+          filteredStocks.slice(0, 100).map((s) => {
+            const c = tint(s.symbol);
+            const sUp = s.change >= 0;
+            const watched = watchedSymbols.has(s.symbol);
+            return (
+              <div
+                key={s.symbol}
+                className="grid grid-cols-[1.6fr_1.1fr_1fr_1fr_1.2fr_1fr_92px] items-center gap-2 border-b border-line-soft px-[22px] py-2.5 hover:bg-ink/[.03]"
+              >
+                <Link href={`/stock/${s.symbol}`} className="flex min-w-0 items-center gap-2.5">
+                  <span
+                    className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[10px] text-[9.9px] font-bold"
+                    style={{ background: `${c}22`, color: c }}
+                  >
+                    {s.symbol.slice(0, 2)}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold">{s.symbol}</div>
+                    <div className="truncate text-[11px] text-ink-3">{s.company}</div>
+                  </div>
+                </Link>
+                <span className="truncate text-[12px] text-ink-2">{sectorName(s.sector)}</span>
+                <span className="num text-right text-[13px] font-semibold">
+                  {formatPKR(s.current, { decimals: 2 })}
+                </span>
+                <span
+                  className="num text-right text-[12.5px] font-semibold"
+                  style={{ color: sUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+                >
+                  {sUp ? "+" : ""}
+                  {s.changePercent.toFixed(2)}%
+                </span>
+                <span className="num text-right text-[11.5px] text-ink-3">
+                  {formatPKR(s.high, { decimals: 1 })} / {formatPKR(s.low, { decimals: 1 })}
+                </span>
+                <span className="num text-right text-[12px] text-ink-2">
+                  {formatPKR(s.volume, { compact: true })}
+                </span>
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    onClick={() => handleAddToWatchlist(s.symbol, s.company)}
+                    title={watched ? "In watchlist" : "Add to watchlist"}
+                    className={`grid h-[30px] w-[30px] place-items-center rounded-lg border border-line ${
+                      watched ? "bg-brand/10 text-brand" : "text-ink-3 hover:bg-ink/[.04]"
+                    }`}
+                  >
+                    <Star className="h-[14px] w-[14px]" fill={watched ? "currentColor" : "none"} />
+                  </button>
+                  <button
+                    onClick={() => setTradeStock(s)}
+                    title="Trade"
+                    className="grid h-[30px] w-[30px] place-items-center rounded-lg border border-line text-brand hover:bg-ink/[.04]"
+                  >
+                    <ArrowLeftRight className="h-[14px] w-[14px]" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </section>
 
       {tradeStock && (
         <TradeDialog
@@ -528,6 +295,65 @@ export default function MarketPage() {
           onSuccess={fetchData}
         />
       )}
-    </div>
+    </>
+  );
+}
+
+function QuickStat({
+  label,
+  stock,
+  kind,
+}: {
+  label: string;
+  stock?: MarketStock;
+  kind: "change" | "volume";
+}) {
+  if (!stock) {
+    return (
+      <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+        <div className="mb-3 text-[12px] font-medium text-ink-2">{label}</div>
+        <div className="h-10 animate-pulse rounded bg-line-soft" />
+      </div>
+    );
+  }
+  const c = tint(stock.symbol);
+  const up = stock.change >= 0;
+  return (
+    <Link href={`/stock/${stock.symbol}`} className="rounded-2xl border border-line bg-card p-[22px] shadow-card hover:border-brand">
+      <div className="mb-3 text-[12px] font-medium text-ink-2">{label}</div>
+      <div className="flex items-center gap-3">
+        <span
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] text-[13px] font-bold"
+          style={{ background: `${c}22`, color: c }}
+        >
+          {stock.symbol.slice(0, 2)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-bold">{stock.symbol}</div>
+          <div className="truncate text-[11.5px] text-ink-3">{stock.company}</div>
+        </div>
+        <div className="text-right">
+          <div className="num text-[15px] font-bold">
+            {formatPKR(stock.current, { decimals: 1 })}
+          </div>
+          {kind === "change" ? (
+            <span
+              className="num rounded-lg px-2.5 py-1 text-[12.5px] font-semibold"
+              style={{
+                color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
+                background: up ? "var(--color-gain-50)" : "var(--color-loss-50)",
+              }}
+            >
+              {up ? "+" : ""}
+              {stock.changePercent.toFixed(2)}%
+            </span>
+          ) : (
+            <div className="num text-[12px] text-ink-3">
+              {formatPKR(stock.volume, { compact: true })} vol
+            </div>
+          )}
+        </div>
+      </div>
+    </Link>
   );
 }

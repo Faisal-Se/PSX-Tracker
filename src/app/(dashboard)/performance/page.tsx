@@ -1,16 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-  TrendingUp,
-  BarChart3,
-  RefreshCw,
-  ArrowUpRight,
-  ArrowDownRight,
-  Activity,
-} from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -18,10 +9,6 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid,
-  BarChart,
-  Bar,
-  Cell,
 } from "recharts";
 import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -104,13 +91,22 @@ function modelToPortfolio(m: ModelPortfolio): Portfolio {
   };
 }
 
-const chartTooltipStyle = {
-  background: "var(--popover)",
-  border: "1px solid var(--border)",
-  borderRadius: "0.5rem",
-  fontSize: "12px",
-  color: "var(--popover-foreground)",
-} as const;
+/* Avatar tint palette (per ticker) — multi-series, never used for P&L. */
+const TINTS = [
+  "#2563EB",
+  "#7C3AED",
+  "#0D9488",
+  "#DB2777",
+  "#CA8A04",
+  "#0891B2",
+  "#16A34A",
+  "#4F46E5",
+];
+function tint(symbol: string) {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
+}
 
 export default function PerformancePage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -118,7 +114,7 @@ export default function PerformancePage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [period, setPeriod] = useState<Period>("1M");
+  const [period, setPeriod] = useState<Period>("1Y");
   const [scope, setScope] = useState<Scope>("all");
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -312,6 +308,12 @@ export default function PerformancePage() {
       .sort((a, b) => b.pnl - a.pnl);
   }, [activePortfolios, priceMap]);
 
+  // Max absolute P&L — scales the centered horizontal bars in "P&L by Stock".
+  const maxAbsPnL = useMemo(
+    () => stockPnL.reduce((m, s) => Math.max(m, Math.abs(s.pnl)), 0) || 1,
+    [stockPnL]
+  );
+
   const periods: Period[] = ["1W", "1M", "3M", "6M", "1Y", "ALL"];
   const scopes: { value: Scope; label: string }[] = [
     { value: "all", label: "All" },
@@ -322,333 +324,239 @@ export default function PerformancePage() {
   if (initialLoading) return <PageSkeleton />;
 
   const stats = [
-    {
-      label: "Net Worth",
-      value: formatPKR(netWorth, { decimals: 0 }),
-    },
-    {
-      label: "Invested",
-      value: formatPKR(totalInvested, { decimals: 0 }),
-    },
-    {
-      label: "Cash",
-      value: formatPKR(totalCash, { decimals: 0 }),
-    },
+    { label: "Net Worth", value: formatPKR(netWorth, { decimals: 0 }) },
+    { label: "Invested", value: formatPKR(totalInvested, { decimals: 0 }) },
+    { label: "Cash", value: formatPKR(totalCash, { decimals: 0 }) },
   ];
 
+  const pnlUp = totalPnL >= 0;
+
   return (
-    <div className="space-y-6 lg:space-y-8 max-w-[1400px]">
-      {/* Header */}
-      <div className="flex items-end justify-between animate-in-up">
+    <>
+      {/* Page header */}
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Portfolio
-          </p>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1">
-            Performance
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Track your portfolio returns and P&L over time
-          </p>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            Returns &amp; P&amp;L trends
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">Performance</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-0.5 rounded-lg border border-border p-0.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex gap-1 rounded-[11px] border border-line bg-canvas p-1">
             {scopes.map((s) => (
               <button
                 key={s.value}
                 onClick={() => setScope(s.value)}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                className={`rounded-lg px-3.5 py-[7px] text-[13px] font-semibold transition-colors ${
                   scope === s.value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-brand text-white"
+                    : "text-ink-2 hover:text-ink"
                 }`}
               >
                 {s.label}
               </button>
             ))}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
+          <button
             onClick={fetchData}
             disabled={refreshing}
-            className="h-8 text-xs gap-1.5 rounded-lg"
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04] disabled:opacity-70"
           >
-            <RefreshCw
-              className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-[15px] w-[15px] ${refreshing ? "animate-spin" : ""}`} />
             Refresh
-          </Button>
+          </button>
         </div>
       </div>
 
-      {/* Summary Hero Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border border-border bg-border animate-in-up-delay-1">
+      {/* Summary strip */}
+      <div className="mb-[18px] grid grid-cols-2 gap-[18px] lg:grid-cols-4">
         {/* Total P&L — featured */}
-        <div className="bg-card p-5 col-span-2 lg:col-span-1 flex flex-col justify-between">
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-            Total P&amp;L
-          </p>
-          <div className="mt-2">
-            <p
-              className="text-2xl lg:text-3xl font-semibold font-tabular leading-none"
-              style={{ color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-            >
-              {totalPnL >= 0 ? "+" : ""}
-              {formatPKR(totalPnL, { decimals: 0 })}
-            </p>
-            <span
-              className="inline-flex items-center gap-0.5 mt-2 px-1.5 py-0.5 rounded-md text-xs font-semibold font-tabular"
-              style={{
-                color: totalPnL >= 0 ? "var(--color-profit)" : "var(--color-loss)",
-                background: totalPnL >= 0 ? "var(--color-profit-bg)" : "var(--color-loss-bg)",
-              }}
-            >
-              {totalPnL >= 0 ? (
-                <ArrowUpRight className="h-3 w-3" />
-              ) : (
-                <ArrowDownRight className="h-3 w-3" />
-              )}
-              {totalPnLPct >= 0 ? "+" : ""}
-              {totalPnLPct.toFixed(2)}%
-            </span>
+        <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">Total P&amp;L</div>
+          <div
+            className="num text-[26px] font-bold tracking-[-.025em]"
+            style={{ color: pnlUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+          >
+            {pnlUp ? "+" : "−"}Rs {formatPKR(Math.abs(totalPnL), { decimals: 0 })}
+          </div>
+          <div
+            className="num mt-1 text-[12px] font-semibold"
+            style={{ color: pnlUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+          >
+            {totalPnLPct >= 0 ? "+" : ""}
+            {totalPnLPct.toFixed(2)}%
           </div>
         </div>
 
         {stats.map((s) => (
-          <div key={s.label} className="bg-card p-5 flex flex-col justify-between">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-              {s.label}
-            </p>
-            <p className="text-xl lg:text-2xl font-semibold font-tabular mt-2 leading-none">
-              {s.value}
-            </p>
+          <div
+            key={s.label}
+            className="rounded-2xl border border-line bg-card p-[22px] shadow-card"
+          >
+            <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">{s.label}</div>
+            <div className="num text-[22px] font-bold tracking-[-.025em]">
+              Rs {s.value}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Investment Timeline Chart */}
-      <Card className="border border-border bg-card rounded-xl animate-in-up-delay-2">
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
-              Investment Timeline
-            </CardTitle>
-            <div className="flex gap-1 rounded-lg border border-border p-0.5">
-              {periods.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-                    period === p
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
+      {/* Investment Timeline */}
+      <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="text-[15px] font-bold">Investment Timeline</div>
+          <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
+            {periods.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                  period === p ? "bg-brand text-white" : "text-ink-2 hover:text-ink"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
           </div>
-        </CardHeader>
-        <CardContent>
-          {chartData.length === 0 ? (
-            <div className="text-center py-16">
-              <BarChart3 className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">
+        </div>
+        <div className="-mx-1.5 -mb-1 mt-4 h-[260px]">
+          {chartData.length < 2 ? (
+            <div className="flex h-full items-center justify-center">
+              <p className="text-xs text-ink-3">
                 No transaction data yet. Start trading to see your timeline.
               </p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={350}>
-              <AreaChart data={chartData}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
                 <defs>
-                  <linearGradient
-                    id="investedGradient"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="var(--chart-1)"
-                      stopOpacity={0.28}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--chart-1)"
-                      stopOpacity={0}
-                    />
+                  <linearGradient id="timelineFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#059669" stopOpacity={0.26} />
+                    <stop offset="100%" stopColor="#059669" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid
-                  vertical={false}
-                  stroke="var(--border)"
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) =>
-                    v >= 1000000
-                      ? `${(v / 1000000).toFixed(1)}M`
-                      : v >= 1000
-                        ? `${(v / 1000).toFixed(0)}K`
-                        : v.toString()
-                  }
-                />
+                <XAxis dataKey="label" hide />
+                <YAxis domain={["dataMin", "dataMax"]} hide />
                 <Tooltip
-                  contentStyle={chartTooltipStyle}
-                  cursor={{ stroke: "var(--border)" }}
-                  formatter={(value) => [
-                    `PKR ${formatPKR(Number(value), { decimals: 0 })}`,
-                    "Net Invested",
-                  ]}
+                  cursor={{ stroke: "var(--color-line)", strokeWidth: 1 }}
+                  contentStyle={{
+                    background: "var(--color-card)",
+                    border: "1px solid var(--color-line)",
+                    borderRadius: 12,
+                    fontSize: 12,
+                    color: "var(--color-ink)",
+                    boxShadow: "var(--shadow-pop)",
+                  }}
+                  formatter={(v) => [`Rs ${formatPKR(Number(v), { decimals: 0 })}`, "Net Invested"]}
                 />
                 <Area
                   type="monotone"
                   dataKey="invested"
-                  stroke="var(--chart-1)"
-                  fill="url(#investedGradient)"
-                  strokeWidth={2}
+                  stroke="#059669"
+                  strokeWidth={2.2}
+                  fill="url(#timelineFill)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#059669" }}
+                  isAnimationActive
+                  animationDuration={1100}
                 />
               </AreaChart>
             </ResponsiveContainer>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      {/* Per-stock P&L Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in-up-delay-3">
-        {/* P&L Bar Chart */}
-        <Card className="border border-border bg-card rounded-xl">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-primary" />
-              P&L by Stock
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stockPnL.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-12">
-                No holdings to display
-              </p>
-            ) : (
-              <ResponsiveContainer width="100%" height={Math.max(250, stockPnL.length * 45)}>
-                <BarChart
-                  data={stockPnL.slice(0, 10)}
-                  layout="vertical"
-                  margin={{ left: 10, right: 10 }}
-                >
-                  <CartesianGrid
-                    stroke="var(--border)"
-                    horizontal={false}
-                  />
-                  <XAxis
-                    type="number"
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v) =>
-                      v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v.toString()
-                    }
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="symbol"
-                    tick={{ fontSize: 11, fontWeight: 600, fill: "var(--muted-foreground)" }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={70}
-                  />
-                  <Tooltip
-                    contentStyle={chartTooltipStyle}
-                    cursor={{ fill: "var(--border)", opacity: 0.3 }}
-                    formatter={(value) => [
-                      `PKR ${formatPKR(Number(value), { decimals: 0 })}`,
-                      "P&L",
-                    ]}
-                  />
-                  <Bar dataKey="pnl" radius={[0, 6, 6, 0]}>
-                    {stockPnL.slice(0, 10).map((entry, i) => (
-                      <Cell
-                        key={i}
-                        fill={
-                          entry.pnl >= 0
-                            ? "var(--color-profit)"
-                            : "var(--color-loss)"
-                        }
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* P&L List */}
-        <Card className="border border-border bg-card rounded-xl">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-primary" />
-              Stock Returns
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stockPnL.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-12">
-                No holdings to display
-              </p>
-            ) : (
-              <div className="divide-y divide-border">
-                {stockPnL.map((stock) => (
+      {/* P&L by Stock + Stock Returns */}
+      <div className="grid items-start gap-[18px] lg:grid-cols-[1.2fr_1fr]">
+        {/* P&L by Stock — centered horizontal bars */}
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 text-[15px] font-bold">P&amp;L by Stock</div>
+          {stockPnL.length === 0 ? (
+            <p className="py-12 text-center text-sm text-ink-3">No holdings to display</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {stockPnL.slice(0, 10).map((s) => {
+                const up = s.pnl >= 0;
+                const width = (Math.abs(s.pnl) / maxAbsPnL) * 50;
+                return (
                   <div
-                    key={stock.symbol}
-                    className="flex items-center justify-between py-2.5 px-1 transition-colors hover:bg-muted/40"
+                    key={s.symbol}
+                    className="grid grid-cols-[60px_1fr_82px] items-center gap-2.5"
                   >
-                    <div>
-                      <p className="text-sm font-semibold">{stock.symbol}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Invested: PKR {formatPKR(stock.invested, { decimals: 0 })}
-                      </p>
+                    <span className="text-[12px] font-semibold">{s.symbol}</span>
+                    <div className="relative flex h-[18px] justify-center">
+                      <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
+                      <div
+                        className="absolute top-[3px] h-3 rounded-[3px]"
+                        style={{
+                          width: `${width}%`,
+                          background: up
+                            ? "var(--color-gain)"
+                            : "var(--color-loss-strong)",
+                          left: up ? "50%" : undefined,
+                          right: up ? undefined : "50%",
+                        }}
+                      />
                     </div>
-                    <div className="text-right">
-                      <p
-                        className="text-sm font-semibold font-tabular flex items-center gap-0.5 justify-end"
-                        style={{ color: stock.pnl >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-                      >
-                        {stock.pnl >= 0 ? (
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        ) : (
-                          <ArrowDownRight className="h-3.5 w-3.5" />
-                        )}
-                        {stock.pnl >= 0 ? "+" : ""}
-                        {formatPKR(stock.pnl, { decimals: 0 })}
-                      </p>
-                      <p
-                        className="text-[11px] font-tabular font-semibold"
-                        style={{ color: stock.pnlPct >= 0 ? "var(--color-profit)" : "var(--color-loss)" }}
-                      >
-                        {stock.pnlPct >= 0 ? "+" : ""}
-                        {stock.pnlPct.toFixed(2)}%
-                      </p>
+                    <span
+                      className="num text-right text-[11.5px] font-semibold"
+                      style={{
+                        color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
+                      }}
+                    >
+                      {up ? "+" : "−"}
+                      {formatPKR(Math.abs(s.pnl), { decimals: 0 })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Stock Returns list */}
+        <section className="rounded-2xl border border-line bg-card shadow-card">
+          <div className="px-[22px] pb-2 pt-[22px] text-[15px] font-bold">Stock Returns</div>
+          {stockPnL.length === 0 ? (
+            <p className="border-t border-line-soft px-[22px] py-12 text-center text-sm text-ink-3">
+              No holdings to display
+            </p>
+          ) : (
+            stockPnL.map((s) => {
+              const up = s.pnlPct >= 0;
+              const c = tint(s.symbol);
+              return (
+                <div
+                  key={s.symbol}
+                  className="flex items-center gap-2.5 border-t border-line-soft px-[22px] py-2.5"
+                >
+                  <span
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-[10px] text-[9.24px] font-bold"
+                    style={{ background: `${c}22`, color: c }}
+                  >
+                    {s.symbol.slice(0, 2)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold">{s.symbol}</div>
+                    <div className="num text-[11px] text-ink-3">
+                      Rs {formatPKR(s.current, { decimals: 0 })}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <span
+                    className="num text-[12.5px] font-semibold"
+                    style={{
+                      color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
+                    }}
+                  >
+                    {up ? "+" : "−"}
+                    {Math.abs(s.pnlPct).toFixed(2)}%
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </section>
       </div>
-    </div>
+    </>
   );
 }

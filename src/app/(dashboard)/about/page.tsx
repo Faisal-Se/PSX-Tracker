@@ -1,148 +1,184 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import {
-  Info,
-  Briefcase,
+  LineChart,
   Layers,
-  TrendingUp,
-  Eye,
+  ArrowRightLeft,
+  ShieldCheck,
   BarChart3,
-  ArrowLeftRight,
-  ExternalLink,
-  Code2,
-  Star,
+  TrendingUp,
 } from "lucide-react";
 
+/** Instagram glyph — lucide-react v1 doesn't export `Instagram`. */
+function Instagram({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="17.5" cy="6.5" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
 const features = [
-  { label: "Portfolio Management", icon: Briefcase },
-  { label: "Model Portfolios", icon: Layers },
-  { label: "Market Data", icon: TrendingUp },
-  { label: "Watchlist", icon: Eye },
-  { label: "Analytics", icon: BarChart3 },
-  { label: "Transaction History", icon: ArrowLeftRight },
+  {
+    icon: LineChart,
+    title: "Live PSX Data",
+    desc: "KSE-100, full market watch and per-stock history — straight from the source.",
+  },
+  {
+    icon: Layers,
+    title: "Model Portfolios",
+    desc: "Target allocations with rebalance, SIP and bulk-trade tooling.",
+  },
+  {
+    icon: ArrowRightLeft,
+    title: "Virtual Trading",
+    desc: "Practise BUY / SELL with virtual cash across multiple portfolios.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Private by Design",
+    desc: "Your data lives in your own Google Drive — never on a server.",
+  },
+  {
+    icon: BarChart3,
+    title: "Deep Analytics",
+    desc: "Allocation, sector and P&L breakdowns with CSV exports.",
+  },
+  {
+    icon: TrendingUp,
+    title: "What-If Simulator",
+    desc: "Model hypothetical investments before you commit a rupee.",
+  },
 ];
 
 const techStack = [
-  "Next.js",
   "React",
-  "React Native",
-  "iOS",
-  "Android",
-  "TypeScript",
-  "Tailwind CSS",
-  "Python",
-  "AI / Agentic",
+  "Recharts",
   "Google Drive API",
-  "Google OAuth 2.0",
+  "PSX Live Data",
+  "PWA",
+  "Service Workers",
+];
+
+const stats = [
+  { value: "14", label: "Screens" },
+  { value: "500+", label: "Stocks" },
+  { value: "100%", label: "Yours" },
 ];
 
 export default function AboutPage() {
   return (
-    <div className="space-y-6 max-w-3xl">
+    <>
       {/* Page Header */}
-      <div className="flex items-center gap-3 animate-in-up">
-        <div className="flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card">
-          <Info className="h-4.5 w-4.5 text-primary" />
-        </div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">About</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Learn more about PSX Tracker
-          </p>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            The story &amp; the maker
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">About</h1>
         </div>
       </div>
 
-      {/* App Info */}
-      <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-1">
-        <div className="flex items-center gap-3.5">
-          <div className="h-12 w-12 rounded-xl border border-border bg-card flex items-center justify-center">
-            <TrendingUp className="h-6 w-6 text-primary" strokeWidth={2.25} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-semibold tracking-tight">
-                PSX Tracker
-              </h2>
-              <Badge variant="secondary" className="text-[10px] font-semibold">
-                v1.0.0
-              </Badge>
+      {/* Hero card */}
+      <section className="relative mb-[18px] overflow-hidden rounded-2xl border border-line bg-card p-[30px] shadow-card">
+        <div className="absolute -right-16 -top-24 h-[260px] w-[260px] rounded-full bg-brand-50" />
+        <div className="relative flex flex-wrap items-start justify-between gap-7">
+          <div className="max-w-[580px]">
+            <div className="mb-3 text-[12px] font-bold tracking-[.1em] text-brand">
+              DESIGNED &amp; BUILT BY
             </div>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground leading-relaxed mt-4">
-          A comprehensive Pakistan Stock Exchange portfolio tracker for managing
-          investments, model portfolios, and market analysis.
-        </p>
-      </div>
-
-      {/* Features */}
-      <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-2">
-        <div className="flex items-center gap-2 mb-4">
-          <Star className="h-4 w-4 text-primary" />
-          <h2 className="text-sm font-semibold">Features</h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-          {features.map((feature) => (
             <div
-              key={feature.label}
-              className="flex items-center gap-2.5 p-3 rounded-lg border border-border"
+              className="text-[66px] leading-[.95]"
+              style={{ fontFamily: "var(--font-signature), cursive" }}
             >
-              <feature.icon className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-sm font-medium">{feature.label}</span>
+              Faisal Qayyum
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Developer */}
-        <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-3">
-          <div className="flex items-center gap-2 mb-4">
-            <Code2 className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">Developer</h2>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl border border-border bg-card flex items-center justify-center text-primary font-bold text-lg shrink-0">
-              F
+            <div className="mb-[18px] mt-3 text-[14px] font-medium text-ink-2">
+              Product Designer &amp; Developer
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">Faisal Qayyum</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Full-Stack &amp; Mobile Developer
-              </p>
+            <p className="text-[14.5px] leading-[1.65] text-ink-2">
+              I built PSX Tracker because I wanted a fast, calm and genuinely
+              beautiful way to follow the Pakistan Stock Exchange and practise
+              investing — without handing my data to anyone.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2.5">
               <a
-                href="https://www.instagram.com/faisiheree/"
+                href="https://instagram.com/faisalqayyum"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-primary hover:underline transition-colors"
+                className="flex h-10 items-center gap-2 rounded-[11px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Instagram
+                <Instagram className="h-4 w-4" />
+                @faisalqayyum
+              </a>
+              <a
+                href="mailto:asadqayyum.rec@gmail.com"
+                className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+              >
+                Get in touch
               </a>
             </div>
           </div>
+          <div className="flex flex-col items-center gap-3">
+            <div className="grid h-24 w-24 place-items-center rounded-full bg-gradient-to-br from-brand to-[#3B82F6] text-[34px] font-bold text-white shadow-[0_10px_30px_rgba(37,99,235,.25)]">
+              FQ
+            </div>
+          </div>
         </div>
+      </section>
 
-        {/* Tech Stack */}
-        <div className="border border-border bg-card rounded-xl p-6 animate-in-up-delay-3">
-          <div className="flex items-center gap-2 mb-4">
-            <Info className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">Tech Stack</h2>
+      {/* What's inside */}
+      <div className="mb-3.5 px-0.5 text-[13px] font-bold tracking-[.06em] text-ink-3">
+        WHAT&apos;S INSIDE
+      </div>
+      <div className="mb-[18px] grid grid-cols-1 gap-[18px] sm:grid-cols-2 lg:grid-cols-3">
+        {features.map((feature) => (
+          <div
+            key={feature.title}
+            className="rounded-2xl border border-line bg-card p-[22px] shadow-card"
+          >
+            <div className="mb-3.5 grid h-9 w-9 place-items-center rounded-[11px] bg-brand/10 text-brand">
+              <feature.icon className="h-[18px] w-[18px]" />
+            </div>
+            <div className="mb-1.5 text-[14.5px] font-bold">{feature.title}</div>
+            <div className="text-[12.5px] leading-[1.5] text-ink-3">
+              {feature.desc}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Built with + stats */}
+      <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1.3fr_1fr]">
+        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-3.5 text-[13px] font-semibold tracking-[.04em] text-ink-3">
+            BUILT WITH
           </div>
           <div className="flex flex-wrap gap-2">
             {techStack.map((tech) => (
-              <Badge
+              <span
                 key={tech}
-                variant="secondary"
-                className="px-3 py-1.5 text-xs font-medium"
+                className="rounded-full border border-line bg-canvas px-3 py-1.5 text-[12.5px] font-semibold text-ink-2"
               >
                 {tech}
-              </Badge>
+              </span>
             ))}
           </div>
-        </div>
+        </section>
+
+        <section className="flex items-center justify-around rounded-2xl border border-line bg-card p-[22px] text-center shadow-card">
+          {stats.map((stat) => (
+            <div key={stat.label}>
+              <div className="num text-[26px] font-bold tracking-[-.02em] text-brand">
+                {stat.value}
+              </div>
+              <div className="mt-0.5 text-[12px] text-ink-3">{stat.label}</div>
+            </div>
+          ))}
+        </section>
       </div>
-    </div>
+    </>
   );
 }

@@ -1,26 +1,24 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import Link from "next/link";
 import {
   Plus,
   Trash2,
   Layers,
-  PieChart,
-  Target,
   X,
   Search,
-  ArrowRight,
-  Wallet,
   Hash,
   Percent,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+import { Sparkline } from "@/components/Sparkline";
 import { PageSkeleton } from "@/components/ui/skeleton";
+
+/* Chart palette (allocation bars, NOT P&L) */
+const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#DB2777"];
+const CASH_COLOR = "#CBD5E1";
 
 interface Allocation {
   id?: string;
@@ -46,12 +44,25 @@ interface SearchStock {
   current: number;
 }
 
+interface HistoryPoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export default function ModelsPage() {
   const router = useRouter();
   const [models, setModels] = useState<ModelPortfolio[]>([]);
   const [showEditor, setShowEditor] = useState(false);
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
+
+  // Live prices + per-symbol history for card metrics
+  const [priceMap, setPriceMap] = useState<Map<string, number>>(new Map());
+  const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
 
   // Editor form state
   const [formName, setFormName] = useState("");
@@ -91,6 +102,105 @@ export default function ModelsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Live market prices for card P&L / cash% metrics
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/psx")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { symbol: string; current: number }[]) => {
+        if (cancelled || !Array.isArray(data)) return;
+        setPriceMap(new Map(data.map((s) => [s.symbol, s.current])));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Per-symbol price history for the card sparkline trend
+  const modelSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of models)
+      for (const a of m.allocations)
+        if (a.symbol !== "CASH" && a.shares > 0) set.add(a.symbol);
+    return Array.from(set).slice(0, 24);
+  }, [models]);
+
+  useEffect(() => {
+    if (modelSymbols.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        modelSymbols.map(async (sym) => {
+          try {
+            const res = await fetch(`/api/psx/history?symbol=${encodeURIComponent(sym)}`);
+            if (!res.ok) return [sym, [] as HistoryPoint[]] as const;
+            const data = (await res.json()) as HistoryPoint[];
+            return [sym, Array.isArray(data) ? data : []] as const;
+          } catch {
+            return [sym, [] as HistoryPoint[]] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      const map: Record<string, HistoryPoint[]> = {};
+      for (const [sym, data] of results) map[sym] = data;
+      setHistory(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [modelSymbols]);
+
+  // Per-model metrics + trend (mirrors the dashboard's model card data).
+  const modelMetrics = useMemo(() => {
+    return models.map((m) => {
+      const stocks = m.allocations.filter((a) => a.symbol !== "CASH");
+      let invested = 0;
+      let marketValue = 0;
+      for (const a of stocks) {
+        const cur = priceMap.get(a.symbol) || a.avgPrice;
+        invested += a.avgPrice * a.shares;
+        marketValue += cur * a.shares;
+      }
+      const total = marketValue + m.cashBalance;
+      const pnl = marketValue - invested;
+      const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+      const stockCount = stocks.filter((a) => a.shares > 0).length;
+      const cashPct = total > 0 ? (m.cashBalance / total) * 100 : 0;
+
+      const dateSet = new Set<string>();
+      for (const a of stocks)
+        for (const pt of history[a.symbol] || []) dateSet.add(pt.date);
+      const dates = Array.from(dateSet).sort().slice(-24);
+      const sorted: Record<string, HistoryPoint[]> = {};
+      for (const a of stocks)
+        sorted[a.symbol] = [...(history[a.symbol] || [])].sort((x, y) =>
+          x.date < y.date ? -1 : 1
+        );
+      const trend = dates.map((d) => {
+        let v = m.cashBalance;
+        for (const a of stocks) {
+          const hist = sorted[a.symbol] || [];
+          let close = a.avgPrice;
+          for (const pt of hist) {
+            if (pt.date <= d && pt.close > 0) close = pt.close;
+            else if (pt.date > d) break;
+          }
+          v += close * a.shares;
+        }
+        return v;
+      });
+
+      const bars = stocks
+        .filter((a) => a.shares > 0)
+        .map((a) => ({ symbol: a.symbol, pct: a.percentage }))
+        .sort((x, y) => y.pct - x.pct);
+
+      return { ...m, total, invested, pnl, pnlPct, stockCount, cashPct, trend, bars };
+    });
+  }, [models, priceMap, history]);
 
   // Debounced stock search
   useEffect(() => {
@@ -290,6 +400,7 @@ export default function ModelsPage() {
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
     e.stopPropagation();
     if (!confirm("Delete this model portfolio?")) return;
     const res = await fetch(`/api/model-portfolios/${id}`, {
@@ -300,147 +411,115 @@ export default function ModelsPage() {
 
   if (initialLoading) return <PageSkeleton />;
 
+  const validForm =
+    !!formName.trim() && Math.abs(totalPct - 100) <= 1 && cashAmount > 0;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-end justify-between animate-in-up">
+    <>
+      {/* Page header */}
+      <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Model Portfolios
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Self-contained investment accounts with their own cash and holdings
-          </p>
+          <div className="mb-1 text-[13px] font-medium text-ink-3">
+            Model portfolios
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-.03em]">Models</h1>
         </div>
-        <Button
+        <button
           onClick={openCreateEditor}
-          className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+          className="flex h-[38px] items-center gap-2 rounded-[10px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105"
         >
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="h-[15px] w-[15px]" />
           New Model
-        </Button>
+        </button>
       </div>
 
-      {/* Model Portfolio Cards */}
+      {/* Model grid */}
       {!loading && models.length === 0 && !showEditor ? (
-        <Card className="border border-border bg-card rounded-xl animate-in-up-delay-1">
-          <CardContent className="py-16 text-center">
-            <div className="mx-auto w-12 h-12 rounded-xl border border-border bg-muted/40 flex items-center justify-center mb-4">
-              <Layers className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <h3 className="text-base font-semibold mb-2">
-              No model portfolios yet
-            </h3>
-            <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
-              Create a model portfolio with starting cash. Pick stocks, set
-              percentages, and shares are auto-purchased at market price.
-            </p>
-            <Button
-              onClick={openCreateEditor}
-              className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create Your First Model
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center rounded-2xl border border-dashed border-line bg-card py-16 text-center shadow-card">
+          <div className="mb-4 grid h-12 w-12 place-items-center rounded-xl border border-line bg-canvas">
+            <Layers className="h-6 w-6 text-ink-3" />
+          </div>
+          <h3 className="mb-2 text-base font-semibold">No model portfolios yet</h3>
+          <p className="mx-auto mb-6 max-w-sm text-sm text-ink-3">
+            Create a model portfolio with starting cash. Pick stocks, set
+            percentages, and shares are auto-purchased at market price.
+          </p>
+          <button
+            onClick={openCreateEditor}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105"
+          >
+            <Plus className="h-[15px] w-[15px]" />
+            Create Your First Model
+          </button>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 animate-in-up-delay-1">
-          {models.map((model) => {
-            const stockCount = model.allocations.filter(
-              (a) => a.symbol !== "CASH" && a.shares > 0
-            ).length;
-
+        <div className="grid gap-[18px] sm:grid-cols-2 lg:grid-cols-3">
+          {modelMetrics.map((m) => {
+            const mUp = m.pnl >= 0;
             return (
-              <Card
-                key={model.id}
-                className="border border-border bg-card rounded-xl cursor-pointer transition-colors hover:border-primary/40"
-                onClick={() => router.push(`/models/${model.id}`)}
+              <Link
+                key={m.id}
+                href={`/models/${m.id}`}
+                className="group relative rounded-2xl border border-line bg-card p-[22px] shadow-card transition hover:-translate-y-[3px] hover:border-brand hover:shadow-[0_12px_34px_rgba(13,18,28,.10)]"
               >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-base font-semibold flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg border border-border bg-muted/40 flex items-center justify-center">
-                          <PieChart className="h-3.5 w-3.5 text-muted-foreground" />
-                        </div>
-                        {model.name}
-                      </CardTitle>
-                      {model.description && (
-                        <p className="text-xs text-muted-foreground mt-1 ml-9">
-                          {model.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                        onClick={(e) => handleDelete(e, model.id)}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                <button
+                  onClick={(e) => handleDelete(e, m.id)}
+                  title="Delete"
+                  className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-lg text-ink-3 opacity-0 transition hover:bg-ink/[.04] hover:text-loss-strong group-hover:opacity-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+                <div className="flex items-start justify-between gap-2.5 pr-7">
+                  <div>
+                    <div className="text-[15.5px] font-bold tracking-[-.02em]">{m.name}</div>
+                    <div className="mt-0.5 text-[12px] text-ink-3">
+                      {m.stockCount} stocks · {m.cashPct.toFixed(0)}% cash
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Allocation Bars */}
-                  <div className="space-y-2">
-                    {model.allocations.map((alloc) => {
-                      const isCash = alloc.symbol === "CASH";
-                      return (
-                        <div key={alloc.symbol} className="group">
-                          <div className="flex items-center justify-between text-xs mb-1">
-                            <span className="font-medium">
-                              {isCash ? "Cash" : alloc.symbol}
-                              {!isCash && alloc.shares > 0 && (
-                                <span className="text-muted-foreground font-normal ml-1.5">
-                                  {alloc.shares} shares
-                                </span>
-                              )}
-                            </span>
-                            <span className="font-tabular font-semibold">
-                              {alloc.percentage.toFixed(1)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                isCash ? "bg-muted-foreground/40" : "bg-primary"
-                              }`}
-                              style={{ width: `${alloc.percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Stats */}
-                  <div className="flex items-center justify-between pt-3 border-t border-border">
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <Wallet className="h-3.5 w-3.5" />
-                        <span className="font-tabular font-semibold text-foreground">
-                          PKR {formatPKR(model.cashBalance, { decimals: 0 })}
-                        </span>
-                      </span>
-                      <span>
-                        <span className="font-tabular font-semibold text-foreground">
-                          {stockCount}
-                        </span>{" "}
-                        stocks
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
-                      View
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  <span
+                    className="num rounded-lg px-2.5 py-1 text-[12px] font-semibold"
+                    style={{
+                      color: mUp ? "var(--color-gain)" : "var(--color-loss-strong)",
+                      background: mUp ? "var(--color-gain-50)" : "var(--color-loss-50)",
+                    }}
+                  >
+                    {mUp ? "+" : ""}
+                    {m.pnlPct.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="num mb-0.5 mt-2.5 text-[27px] font-bold tracking-[-.03em]">
+                  Rs {formatPKR(m.total, { decimals: 0 })}
+                </div>
+                <div className="text-[12px] text-ink-2">
+                  {mUp ? "Up" : "Down"} Rs {formatPKR(Math.abs(m.pnl), { decimals: 0 })}
+                </div>
+                <div className="-mx-1 mt-3 h-11">
+                  {m.trend.length >= 2 ? (
+                    <Sparkline
+                      data={m.trend}
+                      width={240}
+                      height={44}
+                      strokeWidth={1.8}
+                      color={mUp ? "var(--color-gain)" : "var(--color-loss-strong)"}
+                      className="h-full w-full"
+                    />
+                  ) : null}
+                </div>
+                <div className="mt-3 flex h-[5px] overflow-hidden rounded bg-canvas">
+                  {m.bars.map((b, i) => (
+                    <span
+                      key={b.symbol}
+                      style={{
+                        width: `${b.pct}%`,
+                        background: ALLOC_COLORS[i % ALLOC_COLORS.length],
+                      }}
+                    />
+                  ))}
+                  {m.cashPct > 0 && (
+                    <span style={{ width: `${m.cashPct}%`, background: CASH_COLOR }} />
+                  )}
+                </div>
+              </Link>
             );
           })}
         </div>
@@ -450,103 +529,101 @@ export default function ModelsPage() {
       {/* Create Model Editor                */}
       {/* ═══════════════════════════════════ */}
       {showEditor && (
-        <Card className="border border-border bg-card rounded-xl animate-scale-in">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <div className="h-7 w-7 rounded-lg border border-border bg-muted/40 flex items-center justify-center">
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                </div>
-                Create Model Portfolio
-              </CardTitle>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 w-8 p-0"
-                onClick={() => setShowEditor(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
+        <div className="mt-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-[18px] font-bold tracking-[-.02em]">
+              Create Model Portfolio
+            </h2>
+            <button
+              onClick={() => setShowEditor(false)}
+              className="grid h-8 w-8 place-items-center rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-ink"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="space-y-5">
             {/* Name, Description, Cash */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Model Name</Label>
-                <Input
+                <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                  Model Name
+                </label>
+                <input
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. Blue Chip Mix"
-                  className="rounded-lg"
+                  className="h-10 w-full rounded-[10px] border border-line bg-card px-3 text-[13px] outline-none focus:border-brand"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
                   Description (optional)
-                </Label>
-                <Input
+                </label>
+                <input
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   placeholder="Strategy description"
-                  className="rounded-lg"
+                  className="h-10 w-full rounded-[10px] border border-line bg-card px-3 text-[13px] outline-none focus:border-brand"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
                   Starting Cash (PKR)
-                </Label>
-                <Input
+                </label>
+                <input
                   type="number"
                   min="0"
                   value={formCash}
                   onChange={(e) => setFormCash(e.target.value)}
                   placeholder="e.g. 100000"
-                  className="rounded-lg font-tabular"
+                  className="num h-10 w-full rounded-[10px] border border-line bg-card px-3 text-[13px] outline-none focus:border-brand"
                 />
               </div>
             </div>
 
             {/* Stock Search */}
             <div className="space-y-2">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Add Stocks</Label>
+              <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                Add Stocks
+              </label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
+                <input
                   value={stockQuery}
                   onChange={(e) => setStockQuery(e.target.value)}
-                  placeholder="Search stocks to add..."
-                  className="pl-9 rounded-lg"
+                  placeholder="Search stocks to add…"
+                  className="h-10 w-full rounded-[10px] border border-line bg-card pl-9 pr-3 text-[13px] outline-none focus:border-brand"
                 />
               </div>
               {stockResults.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
                   {stockResults.map((stock) => (
                     <button
                       key={stock.symbol}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-card hover:bg-muted/50 border border-border hover:border-primary/40 transition-colors text-left group"
+                      className="group flex items-center justify-between rounded-[10px] border border-line bg-card px-3 py-2 text-left transition hover:border-brand hover:bg-ink/[.03]"
                       onClick={() => handleAddStock(stock)}
                     >
                       <div className="min-w-0">
-                        <span className="font-semibold text-sm group-hover:text-primary transition-colors">
+                        <span className="text-sm font-semibold group-hover:text-brand">
                           {stock.symbol}
                         </span>
-                        <p className="text-[11px] text-muted-foreground truncate">
+                        <p className="truncate text-[11px] text-ink-3">
                           {stock.company}
                         </p>
                       </div>
-                      <div className="text-right shrink-0 ml-2">
-                        <p className="text-xs font-tabular font-semibold">
-                          PKR {formatPKR(stock.current)}
+                      <div className="ml-2 shrink-0 text-right">
+                        <p className="num text-xs font-semibold">
+                          Rs {formatPKR(stock.current)}
                         </p>
-                        <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary ml-auto" />
+                        <Plus className="ml-auto h-3.5 w-3.5 text-ink-3 group-hover:text-brand" />
                       </div>
                     </button>
                   ))}
                 </div>
               )}
               {searchLoading && stockQuery.length > 0 && (
-                <p className="text-xs text-muted-foreground">Searching...</p>
+                <p className="text-xs text-ink-3">Searching…</p>
               )}
             </div>
 
@@ -554,15 +631,17 @@ export default function ModelsPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Allocations</Label>
-                  <div className="flex items-center bg-muted rounded-lg p-0.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                    Allocations
+                  </label>
+                  <div className="flex items-center rounded-[10px] bg-canvas p-0.5">
                     <button
                       type="button"
                       onClick={() => setAllocMode("percent")}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
                         allocMode === "percent"
-                          ? "bg-background text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "bg-card text-ink shadow-card"
+                          : "text-ink-3 hover:text-ink"
                       }`}
                     >
                       <Percent className="h-3 w-3" />
@@ -585,10 +664,10 @@ export default function ModelsPage() {
                           );
                         }
                       }}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
                         allocMode === "shares"
-                          ? "bg-background text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "bg-card text-ink shadow-card"
+                          : "text-ink-3 hover:text-ink"
                       }`}
                     >
                       <Hash className="h-3 w-3" />
@@ -597,11 +676,11 @@ export default function ModelsPage() {
                   </div>
                 </div>
                 <span
-                  className="text-xs font-semibold font-tabular"
+                  className="num text-xs font-semibold"
                   style={{
                     color:
                       Math.abs(totalPct - 100) < 1
-                        ? "var(--color-profit)"
+                        ? "var(--color-gain)"
                         : undefined,
                   }}
                 >
@@ -610,18 +689,19 @@ export default function ModelsPage() {
               </div>
 
               {/* Progress bar */}
-              <div className="h-2 bg-muted rounded-full overflow-hidden flex">
+              <div className="flex h-2 overflow-hidden rounded-full bg-canvas">
                 {allocations
                   .filter((a) => a.percentage > 0)
-                  .map((a) => (
+                  .map((a, i) => (
                     <div
                       key={a.symbol}
-                      className={`h-full transition-all ${
-                        a.symbol === "CASH" ? "bg-muted-foreground/40" : "bg-primary"
-                      }`}
+                      className="h-full transition-all"
                       style={{
                         width: `${a.percentage}%`,
-                        opacity: a.symbol === "CASH" ? 1 : undefined,
+                        background:
+                          a.symbol === "CASH"
+                            ? CASH_COLOR
+                            : ALLOC_COLORS[i % ALLOC_COLORS.length],
                       }}
                       title={`${a.symbol}: ${a.percentage}%`}
                     />
@@ -642,17 +722,17 @@ export default function ModelsPage() {
                   return (
                     <div
                       key={alloc.symbol}
-                      className="p-3 rounded-lg bg-card border border-border"
+                      className="rounded-[10px] border border-line bg-card p-3"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">
                             {alloc.symbol === "CASH"
                               ? "Cash Reserve"
                               : alloc.symbol}
                           </p>
                           {alloc.symbol !== "CASH" && (
-                            <p className="text-[11px] text-muted-foreground truncate">
+                            <p className="truncate text-[11px] text-ink-3">
                               {alloc.companyName}
                             </p>
                           )}
@@ -660,7 +740,7 @@ export default function ModelsPage() {
                         <div className="flex items-center gap-2">
                           {allocMode === "percent" || alloc.symbol === "CASH" ? (
                             <>
-                              <Input
+                              <input
                                 type="number"
                                 min="0"
                                 max="100"
@@ -672,16 +752,16 @@ export default function ModelsPage() {
                                     parseFloat(e.target.value) || 0
                                   )
                                 }
-                                className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                                className="num h-8 w-20 rounded-[10px] border border-line bg-card text-center text-sm outline-none focus:border-brand disabled:opacity-60"
                                 disabled={allocMode === "shares" && alloc.symbol === "CASH"}
                               />
-                              <span className="text-xs text-muted-foreground font-semibold">
+                              <span className="text-xs font-semibold text-ink-3">
                                 %
                               </span>
                             </>
                           ) : (
                             <>
-                              <Input
+                              <input
                                 type="number"
                                 min="0"
                                 step="1"
@@ -692,37 +772,35 @@ export default function ModelsPage() {
                                     parseInt(e.target.value) || 0
                                   )
                                 }
-                                className="w-20 h-8 rounded-lg font-tabular text-center text-sm"
+                                className="num h-8 w-20 rounded-[10px] border border-line bg-card text-center text-sm outline-none focus:border-brand"
                               />
-                              <span className="text-xs text-muted-foreground font-semibold">
+                              <span className="text-xs font-semibold text-ink-3">
                                 shares
                               </span>
-                              <span className="text-[11px] text-muted-foreground font-tabular">
+                              <span className="num text-[11px] text-ink-3">
                                 ({alloc.percentage.toFixed(1)}%)
                               </span>
                             </>
                           )}
                           {alloc.symbol !== "CASH" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            <button
                               onClick={() => handleRemoveAlloc(alloc.symbol)}
+                              className="grid h-7 w-7 place-items-center rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-ink"
                             >
                               <X className="h-3.5 w-3.5" />
-                            </Button>
+                            </button>
                           )}
                         </div>
                       </div>
 
                       {/* Price & shares row for stocks */}
                       {alloc.symbol !== "CASH" && (
-                        <div className="flex items-center gap-3 mt-2 pl-0">
+                        <div className="mt-2 flex items-center gap-3 pl-0">
                           <div className="flex items-center gap-1.5">
-                            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">
+                            <label className="whitespace-nowrap text-[11px] text-ink-3">
                               Buy @
-                            </Label>
-                            <Input
+                            </label>
+                            <input
                               type="number"
                               min="0.01"
                               step="0.01"
@@ -752,30 +830,30 @@ export default function ModelsPage() {
                                   return updated;
                                 });
                               }}
-                              className="w-24 h-7 rounded-lg font-tabular text-center text-xs"
+                              className="num h-7 w-24 rounded-[10px] border border-line bg-card text-center text-xs outline-none focus:border-brand"
                             />
                           </div>
                           {mktPrice > 0 && (
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-[10px] text-ink-3">
                               Mkt: {formatPKR(mktPrice)}
                             </span>
                           )}
                           {allocMode === "shares" ? (
                             usePrice > 0 && (alloc.inputShares ?? 0) > 0 && (
-                              <span className="text-[11px] text-muted-foreground ml-auto">
-                                = PKR{" "}
-                                <span className="font-semibold text-foreground">
+                              <span className="ml-auto text-[11px] text-ink-3">
+                                = Rs{" "}
+                                <span className="font-semibold text-ink">
                                   {formatPKR((alloc.inputShares ?? 0) * usePrice, { decimals: 0 })}
                                 </span>
                               </span>
                             )
                           ) : (
                             usePrice > 0 && cashAmount > 0 && (
-                              <span className="text-[11px] text-muted-foreground ml-auto">
-                                <span className="font-semibold text-foreground">
+                              <span className="ml-auto text-[11px] text-ink-3">
+                                <span className="font-semibold text-ink">
                                   {estShares} shares
                                 </span>{" "}
-                                = PKR {formatPKR(estCost, { decimals: 0 })}
+                                = Rs {formatPKR(estCost, { decimals: 0 })}
                               </span>
                             )
                           )}
@@ -784,8 +862,8 @@ export default function ModelsPage() {
 
                       {/* Cash info */}
                       {alloc.symbol === "CASH" && cashAmount > 0 && (
-                        <p className="text-[11px] text-muted-foreground mt-1.5">
-                          PKR {formatPKR(allocAmount, { decimals: 0 })} reserved
+                        <p className="mt-1.5 text-[11px] text-ink-3">
+                          Rs {formatPKR(allocAmount, { decimals: 0 })} reserved
                           {allocMode === "shares" && (
                             <span className="ml-1">({alloc.percentage.toFixed(1)}%)</span>
                           )}
@@ -799,29 +877,23 @@ export default function ModelsPage() {
 
             {/* Save Button */}
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="rounded-lg"
+              <button
                 onClick={() => setShowEditor(false)}
+                className="h-[38px] rounded-[10px] border border-line bg-card px-4 text-[13px] font-medium text-ink-2 hover:bg-ink/[.04]"
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
                 onClick={handleSave}
-                disabled={
-                  saving ||
-                  !formName.trim() ||
-                  Math.abs(totalPct - 100) > 1 ||
-                  cashAmount <= 0
-                }
-                className="flex-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={saving || !validForm}
+                className="flex h-[38px] flex-1 items-center justify-center rounded-[10px] bg-brand px-4 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.25)] hover:brightness-105 disabled:opacity-50"
               >
-                {saving ? "Creating..." : allocMode === "shares" ? "Create & Buy Shares" : "Create & Buy Stocks"}
-              </Button>
+                {saving ? "Creating…" : allocMode === "shares" ? "Create & Buy Shares" : "Create & Buy Stocks"}
+              </button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
