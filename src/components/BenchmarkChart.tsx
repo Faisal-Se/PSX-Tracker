@@ -12,12 +12,10 @@ import {
 import {
   buildNavSeries,
   sliceRange,
-  twrReturnPct,
   simpleReturnPct,
   indexReturnPct,
   type HoldingLike,
   type HistPt,
-  type CashFlow,
 } from "@/lib/returns";
 import { ChartSkeleton } from "@/components/ui/skeleton";
 
@@ -26,24 +24,20 @@ const KSE_COLOR = "#f59e0b";
 const PORT_COLOR = "var(--color-gain)";
 
 /**
- * Portfolio vs KSE-100 — cumulative TWR (or Simple) return overlay, with a
- * period selector and an out/under-performed delta footer. Fetches KSE-100
- * history itself. Theme-aware.
+ * Portfolio vs KSE-100 — cumulative simple return overlay, with a period
+ * selector and an out/under-performed delta footer. Fetches KSE-100 history
+ * itself. Theme-aware.
  */
 export function BenchmarkChart({
   holdings,
   cash,
   history,
-  cashFlows = [],
 }: {
   holdings: HoldingLike[];
   cash: number;
   history: Record<string, HistPt[]>;
-  /** External cash flows (+deposit / −withdrawal) for flow-neutral TWR. */
-  cashFlows?: CashFlow[];
 }) {
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
-  const [method, setMethod] = useState<"twr" | "simple">("twr");
   const [kse, setKse] = useState<HistPt[]>([]);
 
   useEffect(() => {
@@ -69,7 +63,7 @@ export function BenchmarkChart({
     const nav = sliceRange(fullNav, range);
     if (nav.length < 2) return { data: [], portFinal: 0, kseFinal: 0 };
     const dates = nav.map((p) => p.date);
-    const port = method === "twr" ? twrReturnPct(nav, cashFlows) : simpleReturnPct(nav);
+    const port = simpleReturnPct(nav);
     const idx = indexReturnPct(kse, dates);
     const idxMap = new Map(idx.map((p) => [p.date, p.pct]));
     const merged = port.map((p) => ({
@@ -82,7 +76,7 @@ export function BenchmarkChart({
       portFinal: port[port.length - 1]?.pct ?? 0,
       kseFinal: idx[idx.length - 1]?.pct ?? 0,
     };
-  }, [fullNav, range, method, kse, cashFlows]);
+  }, [fullNav, range, kse]);
 
   const delta = portFinal - kseFinal;
   const outperformed = delta >= 0;
@@ -103,29 +97,7 @@ export function BenchmarkChart({
           KSE100
         </span>
       </div>
-      <p className="mb-3.5 text-[12px] text-ink-3">
-        Cumulative {method === "twr" ? "time-weighted" : "simple"} return
-      </p>
-
-      {/* TWR / Simple toggle */}
-      <div className="mb-4 inline-flex gap-1 rounded-[10px] bg-canvas p-1">
-        <button
-          onClick={() => setMethod("twr")}
-          className={`rounded-lg px-3 py-1 text-[12px] font-semibold transition-colors ${
-            method === "twr" ? "bg-[#f59e0b] text-white" : "text-ink-2 hover:text-ink"
-          }`}
-        >
-          TWR %
-        </button>
-        <button
-          onClick={() => setMethod("simple")}
-          className={`rounded-lg px-3 py-1 text-[12px] font-semibold transition-colors ${
-            method === "simple" ? "bg-card text-ink shadow-card" : "text-ink-2 hover:text-ink"
-          }`}
-        >
-          Simple %
-        </button>
-      </div>
+      <p className="mb-4 text-[12px] text-ink-3">Cumulative return</p>
 
       {/* range pills */}
       <div className="mb-4 flex flex-wrap gap-1">

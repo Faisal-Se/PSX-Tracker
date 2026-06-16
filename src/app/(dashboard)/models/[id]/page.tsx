@@ -200,19 +200,6 @@ export default function ModelDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  // External cash flows (deposits/withdrawals) for flow-neutral TWR.
-  const cashFlows = useMemo(
-    () =>
-      (model?.transactions || [])
-        .filter((t) => t.type === "CASH_IN" || t.type === "CASH_OUT")
-        .map((t) => ({
-          date: (t.createdAt || "").slice(0, 10),
-          amount: t.type === "CASH_IN" ? t.total : -t.total,
-        }))
-        .filter((f) => f.date),
-    [model]
-  );
-
   // Per-symbol price history (for the NAV + benchmark charts).
   const chartHoldings = useMemo(
     () =>
@@ -1044,7 +1031,6 @@ export default function ModelDetailPage() {
           holdings={chartHoldings}
           cash={model.cashBalance}
           history={history}
-          cashFlows={cashFlows}
         />
       </div>
 
