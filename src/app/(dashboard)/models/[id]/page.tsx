@@ -1163,8 +1163,8 @@ export default function ModelDetailPage() {
         </section>
       )}
 
-      {/* ── Portfolio Composition (donut) ── */}
-      <div className="mb-[18px]">
+      {/* ── Portfolio Composition + P&L by Stock (half / half) ── */}
+      <div className="mb-[18px] grid items-start gap-[18px] lg:grid-cols-2">
         {/* Portfolio Composition donut */}
         <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
           <div className="mb-4 text-[15px] font-bold">Portfolio Composition</div>
@@ -1229,10 +1229,7 @@ export default function ModelDetailPage() {
             </div>
           )}
         </section>
-      </div>
 
-      {/* ── P&L by Stock (horizontal bars) + Transaction History ── */}
-      <div className="mb-[18px] grid items-start gap-[18px] lg:grid-cols-[1.2fr_1fr]">
         {/* P&L by Stock */}
         <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
           <div className="mb-4 text-[15px] font-bold">P&amp;L by Stock</div>
@@ -1274,8 +1271,10 @@ export default function ModelDetailPage() {
             </div>
           )}
         </section>
+      </div>
 
-        {/* Transaction History */}
+      {/* ── Transaction History (full width) ── */}
+      <div className="mb-[18px]">
         <section className="rounded-2xl border border-line bg-card shadow-card">
           <div className="flex items-center gap-2 px-[22px] pb-2 pt-[22px]">
             <Wallet className="h-4 w-4 text-ink-3" />
