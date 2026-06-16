@@ -14,7 +14,6 @@ export function Footer() {
           >
             Faisal Qayyum
           </span>
-          <span className="text-[12px] font-medium text-ink-3">PSX Tracker</span>
         </div>
         <div className="text-[12px] text-ink-3">
           © {year} · Designed &amp; built with care
