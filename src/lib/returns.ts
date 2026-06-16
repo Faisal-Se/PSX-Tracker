@@ -108,6 +108,39 @@ export function cumulativeReturnPct(series: NavPoint[]): { date: string; pct: nu
   return out;
 }
 
+export interface CashFlow {
+  date: string;
+  amount: number; // + deposit, − withdrawal
+}
+
+/**
+ * Flow-aware time-weighted return. On a day with an external cash flow, the
+ * flow is removed from that day's value change so deposits/withdrawals don't
+ * count as performance — the defining feature of TWR. With no flows this
+ * reduces to the plain chained daily return (== value-based return).
+ */
+export function twrReturnPct(
+  series: NavPoint[],
+  flows: CashFlow[]
+): { date: string; pct: number }[] {
+  if (series.length < 1) return [];
+  // Net external flow per date.
+  const flowByDate = new Map<string, number>();
+  for (const f of flows) flowByDate.set(f.date, (flowByDate.get(f.date) || 0) + f.amount);
+
+  let factor = 1;
+  const out: { date: string; pct: number }[] = [{ date: series[0].date, pct: 0 }];
+  for (let i = 1; i < series.length; i++) {
+    const prev = series[i - 1].value;
+    const cur = series[i].value;
+    const flow = flowByDate.get(series[i].date) || 0;
+    // Sub-period return excludes the external flow injected this day.
+    if (prev > 0) factor *= (cur - flow) / prev;
+    out.push({ date: series[i].date, pct: (factor - 1) * 100 });
+  }
+  return out;
+}
+
 /** Simple (value-based) cumulative return % vs the first point. */
 export function simpleReturnPct(series: NavPoint[]): { date: string; pct: number }[] {
   if (series.length < 1) return [];

@@ -199,6 +199,19 @@ export default function ModelDetailPage() {
     fetchData();
   }, [fetchData]);
 
+  // External cash flows (deposits/withdrawals) for flow-neutral TWR.
+  const cashFlows = useMemo(
+    () =>
+      (model?.transactions || [])
+        .filter((t) => t.type === "CASH_IN" || t.type === "CASH_OUT")
+        .map((t) => ({
+          date: (t.createdAt || "").slice(0, 10),
+          amount: t.type === "CASH_IN" ? t.total : -t.total,
+        }))
+        .filter((f) => f.date),
+    [model]
+  );
+
   // Per-symbol price history (for the NAV + benchmark charts).
   const chartHoldings = useMemo(
     () =>
@@ -372,17 +385,6 @@ export default function ModelDetailPage() {
   };
 
   // Unified breakdown (stocks + cash) used by the bar and legend.
-  const allocationBreakdown = [
-    ...stockAllocations.map((a) => ({
-      symbol: a.symbol,
-      label: a.symbol,
-      pct: livePct(a.symbol),
-    })),
-    { symbol: "CASH", label: "Cash", pct: livePct("CASH") },
-  ]
-    .filter((a) => a.pct > 0)
-    .sort((a, b) => b.pct - a.pct);
-
   const allocColor = (symbol: string, i: number) =>
     symbol === "CASH" ? CASH_COLOR : ALLOC_COLORS[i % ALLOC_COLORS.length];
 
@@ -1023,6 +1025,7 @@ export default function ModelDetailPage() {
           holdings={chartHoldings}
           cash={model.cashBalance}
           history={history}
+          cashFlows={cashFlows}
         />
       </div>
 
@@ -1113,44 +1116,55 @@ export default function ModelDetailPage() {
         )}
       </section>
 
-      {/* ── Allocation Breakdown + Portfolio Composition (donut) ── */}
-      <div className="mb-[18px] grid gap-[18px] lg:grid-cols-[1.2fr_1fr]">
-        {/* Allocation Breakdown bar + legend */}
-        <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
-          <div className="mb-4 text-[15px] font-bold">Allocation Breakdown</div>
-          {allocationBreakdown.length === 0 ? (
-            <div className="flex h-[120px] items-center justify-center">
-              <p className="text-xs text-ink-3">No allocation yet</p>
-            </div>
-          ) : (
-            <>
-              <div className="mb-[18px] flex h-3 overflow-hidden rounded-md">
-                {allocationBreakdown.map((a, i) => (
-                  <span
-                    key={a.symbol}
-                    style={{ width: `${a.pct}%`, background: allocColor(a.symbol, i) }}
-                    title={`${a.label}: ${a.pct.toFixed(1)}%`}
-                  />
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                {allocationBreakdown.map((a, i) => (
-                  <div key={a.symbol} className="flex items-center gap-2">
-                    <span
-                      className="h-[9px] w-[9px] shrink-0 rounded-[3px]"
-                      style={{ background: allocColor(a.symbol, i) }}
-                    />
-                    <span className="flex-1 text-[12px] font-medium">{a.label}</span>
-                    <span className="num text-[12px] font-semibold text-ink-2">
-                      {a.pct.toFixed(1)}%
-                    </span>
+      {/* ── Stock Returns (below Holdings) ── */}
+      {stockPnlData.length > 0 && (
+        <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="mb-4 text-[15px] font-bold">Stock Returns</div>
+          <div className="space-y-2">
+            {[...stockPnlData]
+              .sort((a, b) => b.pnlPct - a.pnlPct)
+              .map((stock) => {
+                const up = stock.pnl >= 0;
+                const color = up ? "var(--color-gain)" : "var(--color-loss-strong)";
+                return (
+                  <div
+                    key={stock.symbol}
+                    className="flex items-center gap-3 rounded-[10px] border border-line bg-card p-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold">{stock.symbol}</p>
+                      <p className="num text-[11px] text-ink-3">
+                        Cost: Rs {formatPKR(stock.costBasis, { decimals: 0 })} → Value: Rs{" "}
+                        {formatPKR(stock.currentValue, { decimals: 0 })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="num text-[13px] font-semibold" style={{ color }}>
+                        {up ? "+" : "−"}Rs {formatPKR(Math.abs(stock.pnl), { decimals: 0 })}
+                      </p>
+                      <p className="num text-[11px]" style={{ color }}>
+                        {up ? "+" : ""}
+                        {stock.pnlPct.toFixed(2)}%
+                      </p>
+                    </div>
+                    <div className="h-2 w-24 overflow-hidden rounded-full bg-canvas">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(100, Math.abs(stock.pnlPct))}%`,
+                          background: color,
+                        }}
+                      />
+                    </div>
                   </div>
-                ))}
-              </div>
-            </>
-          )}
+                );
+              })}
+          </div>
         </section>
+      )}
 
+      {/* ── Portfolio Composition (donut) ── */}
+      <div className="mb-[18px]">
         {/* Portfolio Composition donut */}
         <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
           <div className="mb-4 text-[15px] font-bold">Portfolio Composition</div>
@@ -1325,53 +1339,6 @@ export default function ModelDetailPage() {
           )}
         </section>
       </div>
-
-      {/* ── Stock Returns ── */}
-      {stockPnlData.length > 0 && (
-        <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
-          <div className="mb-4 text-[15px] font-bold">Stock Returns</div>
-          <div className="space-y-2">
-            {[...stockPnlData]
-              .sort((a, b) => b.pnlPct - a.pnlPct)
-              .map((stock) => {
-                const up = stock.pnl >= 0;
-                const color = up ? "var(--color-gain)" : "var(--color-loss-strong)";
-                return (
-                  <div
-                    key={stock.symbol}
-                    className="flex items-center gap-3 rounded-[10px] border border-line bg-card p-2.5"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold">{stock.symbol}</p>
-                      <p className="num text-[11px] text-ink-3">
-                        Cost: Rs {formatPKR(stock.costBasis, { decimals: 0 })} → Value: Rs{" "}
-                        {formatPKR(stock.currentValue, { decimals: 0 })}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="num text-[13px] font-semibold" style={{ color }}>
-                        {up ? "+" : "−"}Rs {formatPKR(Math.abs(stock.pnl), { decimals: 0 })}
-                      </p>
-                      <p className="num text-[11px]" style={{ color }}>
-                        {up ? "+" : ""}
-                        {stock.pnlPct.toFixed(2)}%
-                      </p>
-                    </div>
-                    <div className="h-2 w-24 overflow-hidden rounded-full bg-canvas">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.min(100, Math.abs(stock.pnlPct))}%`,
-                          background: color,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </section>
-      )}
 
       {/* ═══════════════════════════════════ */}
       {/* Add Cash Dialog                    */}

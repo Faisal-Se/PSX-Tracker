@@ -12,11 +12,12 @@ import {
 import {
   buildNavSeries,
   sliceRange,
-  cumulativeReturnPct,
+  twrReturnPct,
   simpleReturnPct,
   indexReturnPct,
   type HoldingLike,
   type HistPt,
+  type CashFlow,
 } from "@/lib/returns";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "ALL"] as const;
@@ -32,10 +33,13 @@ export function BenchmarkChart({
   holdings,
   cash,
   history,
+  cashFlows = [],
 }: {
   holdings: HoldingLike[];
   cash: number;
   history: Record<string, HistPt[]>;
+  /** External cash flows (+deposit / −withdrawal) for flow-neutral TWR. */
+  cashFlows?: CashFlow[];
 }) {
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
   const [method, setMethod] = useState<"twr" | "simple">("twr");
@@ -64,7 +68,7 @@ export function BenchmarkChart({
     const nav = sliceRange(fullNav, range);
     if (nav.length < 2) return { data: [], portFinal: 0, kseFinal: 0 };
     const dates = nav.map((p) => p.date);
-    const port = method === "twr" ? cumulativeReturnPct(nav) : simpleReturnPct(nav);
+    const port = method === "twr" ? twrReturnPct(nav, cashFlows) : simpleReturnPct(nav);
     const idx = indexReturnPct(kse, dates);
     const idxMap = new Map(idx.map((p) => [p.date, p.pct]));
     const merged = port.map((p) => ({
@@ -77,7 +81,7 @@ export function BenchmarkChart({
       portFinal: port[port.length - 1]?.pct ?? 0,
       kseFinal: idx[idx.length - 1]?.pct ?? 0,
     };
-  }, [fullNav, range, method, kse]);
+  }, [fullNav, range, method, kse, cashFlows]);
 
   const delta = portFinal - kseFinal;
   const outperformed = delta >= 0;
