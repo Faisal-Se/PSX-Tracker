@@ -20,6 +20,7 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { formatPKR, getMarketStatus } from "@/lib/market-status";
+import { STRIP_SECTORS, stripSectorLabel } from "@/lib/sectors";
 import { Sparkline } from "@/components/Sparkline";
 import {
   AreaChart,
@@ -191,6 +192,7 @@ export default function DashboardPage() {
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
   const [balancesHidden, setBalancesHidden] = useState(false);
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
+  const [kseTrend, setKseTrend] = useState<number[]>([]);
   const [range, setRange] = useState<Range>("1M");
   const [userName, setUserName] = useState<string>("");
 
@@ -266,6 +268,26 @@ export default function DashboardPage() {
     const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // KSE-100 sparkline series (the index history is fetchable as a symbol).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/psx/history?symbol=KSE100")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: HistoryPoint[]) => {
+        if (cancelled || !Array.isArray(d)) return;
+        setKseTrend(
+          d
+            .map((p) => p.close)
+            .filter((n) => n > 0)
+            .slice(-40)
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const uniqueSymbols = useMemo(() => {
     const set = new Set<string>();
@@ -350,7 +372,7 @@ export default function DashboardPage() {
   const topGainers = sortedByChange.slice(0, 4);
   const topLosers = sortedByChange.slice(-4).reverse();
 
-  // Sector averages for the KSE strip (live, from market data).
+  // Sector averages for the KSE strip — fixed, named PSX sectors (live %).
   const sectorMovers = useMemo(() => {
     const groups = new Map<string, { sum: number; n: number }>();
     for (const s of marketData) {
@@ -360,11 +382,36 @@ export default function DashboardPage() {
       g.n += 1;
       groups.set(s.sector, g);
     }
-    return Array.from(groups.entries())
-      .map(([name, g]) => ({ name, pct: g.sum / g.n, count: g.n }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+    return STRIP_SECTORS.map((code) => {
+      const g = groups.get(code);
+      return {
+        code,
+        name: stripSectorLabel(code),
+        pct: g && g.n > 0 ? g.sum / g.n : null,
+      };
+    }).filter((s) => s.pct !== null) as { code: string; name: string; pct: number }[];
   }, [marketData]);
+
+  // Total traded volume across the market (KSE index API reports 0 volume).
+  const marketVolume = useMemo(
+    () => marketData.reduce((sum, s) => sum + (s.volume || 0), 0),
+    [marketData]
+  );
+
+  // Market breadth — advancers vs decliners.
+  const breadth = useMemo(() => {
+    let up = 0;
+    let down = 0;
+    for (const s of marketData) {
+      if (s.changePercent > 0) up++;
+      else if (s.changePercent < 0) down++;
+    }
+    const total = up + down || 1;
+    return { up, down, upPct: (up / total) * 100 };
+  }, [marketData]);
+
+  // KSE-100 "open" ≈ previous close (current − change); index open isn't scraped.
+  const kseOpen = kse100 ? kse100.current - kse100.change : 0;
 
   const allHoldings = useMemo(
     () => portfolios.flatMap((p) => p.holdings),
@@ -507,6 +554,7 @@ export default function DashboardPage() {
   const market = getMarketStatus();
   const up = totalPnL >= 0;
   const todayUp = todayPnL >= 0;
+  const kseUp = (kse100?.change ?? 0) >= 0;
 
   const blur = (s: string) => (balancesHidden ? "balance-blur" : s);
 
@@ -518,7 +566,22 @@ export default function DashboardPage() {
           <div className="mb-1 text-[13px] font-medium text-ink-3">
             Welcome back{userName ? `, ${userName}` : ""}
           </div>
-          <h1 className="text-[26px] font-bold tracking-[-.03em]">Dashboard</h1>
+          <div className="flex items-center gap-3.5">
+            <h1 className="text-[26px] font-bold tracking-[-.03em]">Dashboard</h1>
+            <span
+              className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1.5 text-[12.5px] font-semibold"
+              style={{
+                color: market.status === "open" ? "var(--color-gain)" : "var(--color-ink-2)",
+              }}
+            >
+              <span
+                className="h-[7px] w-[7px] rounded-full"
+                style={{ background: market.status === "open" ? "var(--color-gain)" : "var(--color-ink-3)" }}
+              />
+              {market.label}
+            </span>
+            <span className="text-[12.5px] font-medium text-ink-3">{market.nextEvent}</span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -604,10 +667,17 @@ export default function DashboardPage() {
       {/* KSE-100 strip */}
       {isVisible("kse100") && (
         <div className="mb-[18px] flex items-center gap-6 overflow-x-auto rounded-2xl border border-line bg-card px-[22px] py-3.5 shadow-card">
-          <div className="flex shrink-0 items-center gap-3">
+          {/* index value + change + sparkline */}
+          <div className="flex shrink-0 items-center gap-4">
             <span className="relative h-[9px] w-[9px]">
-              <span className="absolute inset-0 rounded-full bg-gain" />
-              <span className="ping-dot absolute inset-0 rounded-full bg-gain" />
+              <span
+                className="absolute inset-0 rounded-full"
+                style={{ background: kseUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+              />
+              <span
+                className="ping-dot absolute inset-0 rounded-full"
+                style={{ background: kseUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+              />
             </span>
             <div>
               <div className="text-[11px] font-semibold tracking-[.04em] text-ink-3">
@@ -620,7 +690,7 @@ export default function DashboardPage() {
                 {kse100 && (
                   <span
                     className="num text-[12.5px] font-semibold"
-                    style={{ color: kse100.change >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+                    style={{ color: kseUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
                   >
                     {kse100.change >= 0 ? "+" : ""}
                     {formatPKR(kse100.change, { decimals: 2 })} ({kse100.changePercent >= 0 ? "+" : ""}
@@ -629,13 +699,43 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+            {kseTrend.length >= 2 && (
+              <div className="h-8 w-[110px]">
+                <Sparkline
+                  data={kseTrend}
+                  width={110}
+                  height={32}
+                  strokeWidth={1.6}
+                  color={kseUp ? "var(--color-gain)" : "var(--color-loss-strong)"}
+                  className="h-full w-full"
+                />
+              </div>
+            )}
           </div>
+
+          {/* OHLV */}
+          {kse100 && (
+            <>
+              <div className="h-[34px] w-px shrink-0 bg-line" />
+              <div className="flex shrink-0 gap-5">
+                <OHLV label="Open" value={formatPKR(kseOpen, { decimals: 0 })} />
+                <OHLV label="High" value={formatPKR(kse100.high, { decimals: 0 })} />
+                <OHLV label="Low" value={formatPKR(kse100.low, { decimals: 0 })} />
+                <OHLV
+                  label="Volume"
+                  value={marketVolume > 0 ? formatPKR(marketVolume, { compact: true }) : "—"}
+                />
+              </div>
+            </>
+          )}
+
+          {/* sector movers */}
           {sectorMovers.length > 0 && (
             <>
               <div className="h-[34px] w-px shrink-0 bg-line" />
               <div className="flex shrink-0 gap-5">
                 {sectorMovers.map((s) => (
-                  <div key={s.name} className="flex flex-col gap-0.5">
+                  <div key={s.code} className="flex flex-col gap-0.5">
                     <span className="text-[11px] font-medium text-ink-3">{s.name}</span>
                     <span
                       className="num text-[12.5px] font-semibold"
@@ -649,23 +749,27 @@ export default function DashboardPage() {
               </div>
             </>
           )}
+
           <div className="flex-1" />
-          <div className="flex shrink-0 flex-col items-end gap-[3px]">
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"
-              style={{
-                color: market.status === "open" ? "var(--color-gain)" : "var(--color-ink-2)",
-                background: market.status === "open" ? "var(--color-gain-50)" : "var(--color-line-soft)",
-              }}
-            >
-              <span
-                className="h-[7px] w-[7px] rounded-full"
-                style={{ background: market.status === "open" ? "var(--color-gain)" : "var(--color-ink-3)" }}
-              />
-              {market.label}
-            </span>
-            <span className="text-[10.5px] font-medium text-ink-3">{market.nextEvent}</span>
-          </div>
+
+          {/* breadth */}
+          {breadth.up + breadth.down > 0 && (
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="num inline-flex items-center gap-1 text-[12.5px] font-semibold text-gain">
+                ▲ {breadth.up}
+              </span>
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-[10px] font-medium text-ink-3">Breadth</span>
+                <div className="flex h-[5px] w-[120px] overflow-hidden rounded-full bg-line">
+                  <span style={{ width: `${breadth.upPct}%`, background: "var(--color-gain)" }} />
+                  <span style={{ width: `${100 - breadth.upPct}%`, background: "var(--color-loss-strong)" }} />
+                </div>
+              </div>
+              <span className="num inline-flex items-center gap-1 text-[12.5px] font-semibold text-loss-strong">
+                {breadth.down} ▼
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1123,6 +1227,15 @@ export default function DashboardPage() {
 }
 
 /* ────────────────────────── sub-components ────────────────────────── */
+
+function OHLV({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] font-medium text-ink-3">{label}</span>
+      <span className="num text-[12.5px] font-semibold">{value}</span>
+    </div>
+  );
+}
 
 function StatCard({
   label,
