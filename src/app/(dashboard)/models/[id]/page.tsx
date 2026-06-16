@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Dialog,
@@ -25,6 +25,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+import { NavProgressionChart } from "@/components/NavProgressionChart";
+import { BenchmarkChart } from "@/components/BenchmarkChart";
 import {
   ResponsiveContainer,
   Tooltip,
@@ -166,6 +168,7 @@ export default function ModelDetailPage() {
   const [stockQuery, setStockQuery] = useState("");
   const [stockResults, setStockResults] = useState<SearchStock[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [history, setHistory] = useState<Record<string, { date: string; close: number }[]>>({});
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -195,6 +198,48 @@ export default function ModelDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Per-symbol price history (for the NAV + benchmark charts).
+  const chartHoldings = useMemo(
+    () =>
+      (model?.allocations || [])
+        .filter((a) => a.symbol !== "CASH" && a.shares > 0)
+        .map((a) => ({ symbol: a.symbol, shares: a.shares, avgPrice: a.avgPrice })),
+    [model]
+  );
+
+  useEffect(() => {
+    const symbols = chartHoldings.map((h) => h.symbol).slice(0, 12);
+    if (symbols.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const missing = symbols.filter((s) => !history[s]);
+      if (missing.length === 0) return;
+      type Pt = { date: string; close: number };
+      const results = await Promise.all(
+        missing.map(async (sym): Promise<[string, Pt[]]> => {
+          try {
+            const res = await fetch(`/api/psx/history?symbol=${encodeURIComponent(sym)}`);
+            if (!res.ok) return [sym, []];
+            const data = await res.json();
+            return [sym, Array.isArray(data) ? (data as Pt[]) : []];
+          } catch {
+            return [sym, []];
+          }
+        })
+      );
+      if (cancelled) return;
+      setHistory((prev) => {
+        const next = { ...prev };
+        for (const [sym, data] of results) next[sym] = data;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartHoldings]);
 
   // Debounced stock search for rebalance
   useEffect(() => {
@@ -966,6 +1011,20 @@ export default function ModelDetailPage() {
           </div>
         </div>
       </section>
+
+      {/* ── NAV progression + benchmark ── */}
+      <div className="mb-[18px] grid gap-[18px] lg:grid-cols-2">
+        <NavProgressionChart
+          holdings={chartHoldings}
+          cash={model.cashBalance}
+          history={history}
+        />
+        <BenchmarkChart
+          holdings={chartHoldings}
+          cash={model.cashBalance}
+          history={history}
+        />
+      </div>
 
       {/* ── Holdings table ── */}
       <section className="mb-[18px] rounded-2xl border border-line bg-card shadow-card">

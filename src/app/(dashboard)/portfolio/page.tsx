@@ -30,6 +30,8 @@ import { TradeDialog } from "@/components/TradeDialog";
 import { StockSearch } from "@/components/StockSearch";
 import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { NavProgressionChart } from "@/components/NavProgressionChart";
+import { BenchmarkChart } from "@/components/BenchmarkChart";
 import {
   ResponsiveContainer,
   Tooltip,
@@ -181,6 +183,17 @@ export default function PortfolioPage() {
     if (!activePortfolio) return [] as string[];
     return Array.from(new Set(activePortfolio.holdings.map((h) => h.symbol))).slice(0, 12);
   }, [activePortfolio]);
+
+  // Holdings shaped for the NAV/benchmark charts.
+  const chartHoldings = useMemo(
+    () =>
+      (activePortfolio?.holdings || []).map((h) => ({
+        symbol: h.symbol,
+        shares: h.quantity,
+        avgPrice: h.avgPrice,
+      })),
+    [activePortfolio]
+  );
 
   // Fetch per-symbol price history for the active portfolio's holdings
   useEffect(() => {
@@ -578,6 +591,20 @@ export default function PortfolioPage() {
                     </div>
                   )}
                 </section>
+              </div>
+
+              {/* NAV progression + benchmark */}
+              <div className="mb-[18px] grid gap-[18px] lg:grid-cols-2">
+                <NavProgressionChart
+                  holdings={chartHoldings}
+                  cash={activePortfolio.cashBalance}
+                  history={history}
+                />
+                <BenchmarkChart
+                  holdings={chartHoldings}
+                  cash={activePortfolio.cashBalance}
+                  history={history}
+                />
               </div>
 
               {/* Holdings table */}
