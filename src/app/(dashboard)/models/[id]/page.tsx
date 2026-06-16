@@ -27,6 +27,7 @@ import {
 import { formatPKR } from "@/lib/market-status";
 import { NavProgressionChart } from "@/components/NavProgressionChart";
 import { BenchmarkChart } from "@/components/BenchmarkChart";
+import { Skeleton, TableSkeleton, ChartSkeleton } from "@/components/ui/skeleton";
 import {
   ResponsiveContainer,
   Tooltip,
@@ -350,8 +351,40 @@ export default function ModelDetailPage() {
 
   if (loading || !model) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <RefreshCw className="h-6 w-6 animate-spin text-ink-3" />
+      <div className="space-y-[18px]">
+        {/* header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-9 rounded-[10px]" />
+            <Skeleton className="h-7 w-48" />
+          </div>
+          <div className="hidden gap-2 sm:flex">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[38px] w-24 rounded-[10px]" />
+            ))}
+          </div>
+        </div>
+        {/* hero + metric strip */}
+        <div className="grid gap-[18px] lg:grid-cols-[1.4fr_1fr]">
+          <Skeleton className="h-[120px] rounded-2xl" />
+          <Skeleton className="h-[120px] rounded-2xl" />
+        </div>
+        {/* table */}
+        <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <Skeleton className="mb-4 h-5 w-28" />
+          <TableSkeleton rows={4} columns={6} />
+        </div>
+        {/* charts */}
+        <div className="grid gap-[18px] lg:grid-cols-2">
+          <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+            <Skeleton className="mb-4 h-5 w-40" />
+            <ChartSkeleton height={220} />
+          </div>
+          <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
+            <Skeleton className="mb-4 h-5 w-40" />
+            <ChartSkeleton height={220} />
+          </div>
+        </div>
       </div>
     );
   }
