@@ -25,6 +25,7 @@ import {
   ListFilter,
   Briefcase,
   PackageOpen,
+  Split,
 } from "lucide-react";
 import { TradeDialog } from "@/components/TradeDialog";
 import { StockSearch } from "@/components/StockSearch";
@@ -32,6 +33,7 @@ import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { NavProgressionChart } from "@/components/NavProgressionChart";
 import { BenchmarkChart } from "@/components/BenchmarkChart";
+import { SplitDialog } from "@/components/SplitDialog";
 import {
   ResponsiveContainer,
   Tooltip,
@@ -114,6 +116,8 @@ export default function PortfolioPage() {
     price: number;
     portfolioId?: string;
   } | null>(null);
+  const [showSplit, setShowSplit] = useState(false);
+  const [splitSymbol, setSplitSymbol] = useState("");
 
   // Edit portfolio state
   const [showEdit, setShowEdit] = useState(false);
@@ -373,6 +377,17 @@ export default function PortfolioPage() {
           <h1 className="text-[26px] font-bold tracking-[-.03em]">Portfolio</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => {
+              setSplitSymbol("");
+              setShowSplit(true);
+            }}
+            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+            title="Apply a stock split"
+          >
+            <Split className="h-[15px] w-[15px]" />
+            Split
+          </button>
           {activePortfolio && (
             <button
               onClick={openEditDialog}
@@ -936,6 +951,14 @@ export default function PortfolioPage() {
           onSuccess={fetchData}
         />
       )}
+
+      {/* Split Dialog */}
+      <SplitDialog
+        open={showSplit}
+        onOpenChange={setShowSplit}
+        initialSymbol={splitSymbol}
+        onSuccess={fetchData}
+      />
     </>
   );
 }

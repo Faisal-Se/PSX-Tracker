@@ -1294,15 +1294,18 @@ export default function ModelDetailPage() {
               const isBuy = tx.type === "BUY";
               const isSell = tx.type === "SELL";
               const isCashIn = tx.type === "CASH_IN";
+              const isSplit = tx.type === "SPLIT";
               const isCash = isCashIn || tx.type === "CASH_OUT";
 
               const badge = isBuy
                 ? { label: "BUY", color: "#059669" }
                 : isSell
                   ? { label: "SELL", color: "#E11D48" }
-                  : isCashIn
-                    ? { label: "CASH IN", color: "#2563EB" }
-                    : { label: "CASH OUT", color: "#CA8A04" };
+                  : isSplit
+                    ? { label: "SPLIT", color: "#7C3AED" }
+                    : isCashIn
+                      ? { label: "CASH IN", color: "#2563EB" }
+                      : { label: "CASH OUT", color: "#CA8A04" };
 
               return (
                 <div

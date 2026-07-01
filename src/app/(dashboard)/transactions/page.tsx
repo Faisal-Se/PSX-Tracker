@@ -24,6 +24,24 @@ interface Portfolio {
 }
 
 const TINTS = ["#2563EB", "#7C3AED", "#0D9488", "#DB2777", "#CA8A04", "#0891B2", "#16A34A", "#4F46E5"];
+/** Badge label + colors per transaction type (BUY/SELL/CASH/SPLIT). */
+function txBadge(type: string): { label: string; color: string; bg: string } {
+  switch (type) {
+    case "BUY":
+      return { label: "BUY", color: "var(--color-gain)", bg: "var(--color-gain-50)" };
+    case "SELL":
+      return { label: "SELL", color: "var(--color-loss-strong)", bg: "var(--color-loss-50)" };
+    case "CASH_IN":
+      return { label: "CASH IN", color: "#2563EB", bg: "#2563EB1e" };
+    case "CASH_OUT":
+      return { label: "CASH OUT", color: "#CA8A04", bg: "#CA8A041e" };
+    case "SPLIT":
+      return { label: "SPLIT", color: "#7C3AED", bg: "#7C3AED1e" };
+    default:
+      return { label: type, color: "var(--color-ink-2)", bg: "var(--color-line-soft)" };
+  }
+}
+
 function tint(symbol: string) {
   let h = 0;
   for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) >>> 0;
@@ -115,8 +133,8 @@ export default function TransactionsPage() {
           </div>
         ) : (
           transactions.map((tx) => {
-            const isBuy = tx.type === "BUY";
             const c = tint(tx.symbol);
+            const badge = txBadge(tx.type);
             return (
               <div
                 key={tx.id}
@@ -124,12 +142,9 @@ export default function TransactionsPage() {
               >
                 <span
                   className="num justify-self-start rounded-md px-1.5 py-[3px] text-[10px] font-bold tracking-[.03em]"
-                  style={{
-                    color: isBuy ? "var(--color-gain)" : "var(--color-loss-strong)",
-                    background: isBuy ? "var(--color-gain-50)" : "var(--color-loss-50)",
-                  }}
+                  style={{ color: badge.color, background: badge.bg }}
                 >
-                  {tx.type}
+                  {badge.label}
                 </span>
                 <Link href={`/stock/${tx.symbol}`} className="flex min-w-0 items-center gap-2.5">
                   <span
