@@ -15,6 +15,7 @@ import {
   X,
   Search,
   RefreshCw,
+  Split,
   DollarSign,
   Pencil,
   Minus,
@@ -27,6 +28,7 @@ import {
 import { formatPKR } from "@/lib/market-status";
 import { NavProgressionChart } from "@/components/NavProgressionChart";
 import { BenchmarkChart } from "@/components/BenchmarkChart";
+import { SplitDialog } from "@/components/SplitDialog";
 import { Skeleton, TableSkeleton, ChartSkeleton } from "@/components/ui/skeleton";
 import {
   ResponsiveContainer,
@@ -164,6 +166,9 @@ export default function ModelDetailPage() {
   const [sipLoading, setSipLoading] = useState(false);
   const [sipError, setSipError] = useState("");
   const [showSipConfirm, setShowSipConfirm] = useState(false);
+
+  // Split
+  const [showSplit, setShowSplit] = useState(false);
 
   // Stock search (shared for rebalance and bulk trade)
   const [stockQuery, setStockQuery] = useState("");
@@ -972,6 +977,14 @@ export default function ModelDetailPage() {
             >
               <RefreshCw className="h-[15px] w-[15px]" />
               Rebalance
+            </button>
+            <button
+              onClick={() => setShowSplit(true)}
+              className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+              title="Apply a stock split"
+            >
+              <Split className="h-[15px] w-[15px]" />
+              Split
             </button>
           </div>
         </div>
@@ -2417,6 +2430,13 @@ export default function ModelDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Split Dialog */}
+      <SplitDialog
+        open={showSplit}
+        onOpenChange={setShowSplit}
+        onSuccess={fetchData}
+      />
     </>
   );
 }
