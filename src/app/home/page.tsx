@@ -320,8 +320,10 @@ export default function LandingPage() {
             </span>
             <span className="text-[12px] font-medium text-ink-3">PSX Tracker</span>
           </div>
-          <div className="text-[12px] text-ink-3">
-            © 2026 · Designed &amp; built with care
+          <div className="flex items-center gap-4 text-[12px] text-ink-3">
+            <a href="/privacy" className="hover:text-ink">Privacy</a>
+            <a href="/terms" className="hover:text-ink">Terms</a>
+            <span>© 2026 · Built with care</span>
           </div>
         </div>
       </div>
