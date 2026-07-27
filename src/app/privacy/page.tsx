@@ -7,7 +7,7 @@ export const metadata = {
 };
 
 const UPDATED = "27 July 2026";
-const CONTACT = "asadqayyum.rec@gmail.com";
+const CONTACT = "faisalqayyum.se@gmail.com";
 
 export default function PrivacyPage() {
   return (

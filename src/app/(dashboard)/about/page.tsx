@@ -114,7 +114,7 @@ export default function AboutPage() {
                 @faisalqayyum
               </a>
               <a
-                href="mailto:asadqayyum.rec@gmail.com"
+                href="mailto:faisalqayyum.se@gmail.com"
                 className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
               >
                 Get in touch
