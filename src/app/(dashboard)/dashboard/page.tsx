@@ -23,6 +23,7 @@ import { formatPKR, getMarketStatus } from "@/lib/market-status";
 import { STRIP_SECTORS, stripSectorLabel } from "@/lib/sectors";
 import { Sparkline } from "@/components/Sparkline";
 import { ChartSkeleton, PageSkeleton } from "@/components/ui/skeleton";
+import { useStore } from "@/store/useStore";
 import {
   AreaChart,
   Area,
@@ -192,7 +193,7 @@ export default function DashboardPage() {
   const [loaded, setLoaded] = useState(false);
   const [widgets, setWidgets] = useState<WidgetConfig[]>(DEFAULT_WIDGETS);
   const [showWidgetSettings, setShowWidgetSettings] = useState(false);
-  const [balancesHidden, setBalancesHidden] = useState(false);
+  const balancesHidden = useStore((s) => s.balancesHidden);
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
   const [kseTrend, setKseTrend] = useState<number[]>([]);
   const [range, setRange] = useState<Range>("1M");
@@ -200,9 +201,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setWidgets(loadWidgets());
-    try {
-      setBalancesHidden(localStorage.getItem("psx-hide-balances") === "1");
-    } catch {}
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -211,16 +209,6 @@ export default function DashboardPage() {
       })
       .catch(() => {});
   }, []);
-
-  const toggleBalances = () => {
-    setBalancesHidden((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem("psx-hide-balances", next ? "1" : "0");
-      } catch {}
-      return next;
-    });
-  };
 
   const saveWidgets = (updated: WidgetConfig[]) => {
     setWidgets(updated);
@@ -579,13 +567,6 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={toggleBalances}
-            className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
-          >
-            {balancesHidden ? <EyeOff className="h-[15px] w-[15px]" /> : <Eye className="h-[15px] w-[15px]" />}
-            {balancesHidden ? "Show" : "Hide"}
-          </button>
           <button
             onClick={() => setShowWidgetSettings((v) => !v)}
             className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"

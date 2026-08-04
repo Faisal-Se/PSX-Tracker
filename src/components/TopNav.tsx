@@ -6,6 +6,8 @@ import {
   Search,
   Sun,
   Moon,
+  Eye,
+  EyeOff,
   ChevronDown,
   Menu,
   X,
@@ -67,6 +69,8 @@ export function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, setUser } = useStore();
+  const balancesHidden = useStore((s) => s.balancesHidden);
+  const toggleBalances = useStore((s) => s.toggleBalances);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -165,6 +169,20 @@ export function TopNav() {
               className="h-[38px] w-[180px] rounded-[10px] border border-line bg-canvas pl-8 pr-3 text-[13px] text-ink outline-none transition-[width] focus:w-[220px] focus:border-brand"
             />
           </form>
+
+          {mounted && (
+            <button
+              onClick={toggleBalances}
+              className="grid h-[38px] w-[38px] place-items-center rounded-[10px] border border-line bg-canvas text-ink-2 hover:bg-ink/[.04]"
+              title={balancesHidden ? "Show balances" : "Hide balances"}
+            >
+              {balancesHidden ? (
+                <EyeOff className="h-[17px] w-[17px]" />
+              ) : (
+                <Eye className="h-[17px] w-[17px]" />
+              )}
+            </button>
+          )}
 
           {mounted && (
             <button

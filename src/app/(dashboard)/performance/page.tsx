@@ -343,13 +343,13 @@ export default function PerformancePage() {
         <div className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
           <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">Total P&amp;L</div>
           <div
-            className="num text-[26px] font-bold tracking-[-.025em]"
+            className="num money text-[26px] font-bold tracking-[-.025em]"
             style={{ color: pnlUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
           >
             {pnlUp ? "+" : "−"}Rs {formatPKR(Math.abs(totalPnL), { decimals: 0 })}
           </div>
           <div
-            className="num mt-1 text-[12px] font-semibold"
+            className="num money mt-1 text-[12px] font-semibold"
             style={{ color: pnlUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
           >
             {totalPnLPct >= 0 ? "+" : ""}
@@ -363,7 +363,7 @@ export default function PerformancePage() {
             className="rounded-2xl border border-line bg-card p-[22px] shadow-card"
           >
             <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">{s.label}</div>
-            <div className="num text-[22px] font-bold tracking-[-.025em]">
+            <div className="num money text-[22px] font-bold tracking-[-.025em]">
               Rs {s.value}
             </div>
           </div>
@@ -413,7 +413,7 @@ export default function PerformancePage() {
                       />
                     </div>
                     <span
-                      className="num text-right text-[11.5px] font-semibold"
+                      className="num money text-right text-[11.5px] font-semibold"
                       style={{
                         color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
                       }}
@@ -457,7 +457,7 @@ export default function PerformancePage() {
                     </div>
                   </div>
                   <span
-                    className="num text-[12.5px] font-semibold"
+                    className="num money text-[12.5px] font-semibold"
                     style={{
                       color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
                     }}

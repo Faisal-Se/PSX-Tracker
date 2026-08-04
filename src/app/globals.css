@@ -438,6 +438,16 @@
   transition: filter 0.2s ease;
 }
 
+/* Global hide-balances: mark money figures with `.money`; when the app root
+   carries data-hide-balances="true", every one blurs at once. */
+.money {
+  transition: filter 0.2s ease;
+}
+[data-hide-balances="true"] .money {
+  filter: blur(7px);
+  user-select: none;
+}
+
 /* ═══════════════════════════════════════ */
 /*  TABLE & LIST STYLES                   */
 /* ═══════════════════════════════════════ */

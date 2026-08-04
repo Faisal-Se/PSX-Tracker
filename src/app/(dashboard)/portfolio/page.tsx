@@ -464,11 +464,11 @@ export default function PortfolioPage() {
                     Total Value
                   </div>
                   <div className="flex flex-wrap items-baseline gap-3">
-                    <div className="num whitespace-nowrap text-[40px] font-bold leading-none tracking-[-.035em]">
+                    <div className="num money whitespace-nowrap text-[40px] font-bold leading-none tracking-[-.035em]">
                       Rs {formatPKR(totalValue, { decimals: 0 })}
                     </div>
                     <span
-                      className="num rounded-lg px-2.5 py-1 text-[13px] font-semibold"
+                      className="num money rounded-lg px-2.5 py-1 text-[13px] font-semibold"
                       style={{
                         color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
                         background: up ? "var(--color-gain-50)" : "var(--color-loss-50)",
@@ -479,20 +479,20 @@ export default function PortfolioPage() {
                     </span>
                   </div>
                   <div className="mt-2.5 text-[13px] text-ink-3">
-                    {up ? "Up" : "Down"} Rs {formatPKR(Math.abs(pnl), { decimals: 0 })}{" "}
+                    {up ? "Up" : "Down"} <span className="money">Rs {formatPKR(Math.abs(pnl), { decimals: 0 })}</span>{" "}
                     all time
                   </div>
 
                   <div className="mt-[22px] flex flex-wrap gap-[22px] border-t border-line pt-5">
                     <div className="min-w-[90px] flex-1">
                       <div className="mb-1.5 text-[12px] text-ink-2">Cash</div>
-                      <div className="num text-[18px] font-bold">
+                      <div className="num money text-[18px] font-bold">
                         Rs {formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
                       </div>
                     </div>
                     <div className="min-w-[90px] flex-1">
                       <div className="mb-1.5 text-[12px] text-ink-2">Invested</div>
-                      <div className="num text-[18px] font-bold">
+                      <div className="num money text-[18px] font-bold">
                         Rs {formatPKR(totalInvested, { decimals: 0 })}
                       </div>
                     </div>
@@ -500,14 +500,14 @@ export default function PortfolioPage() {
                       <div className="mb-1.5 text-[12px] text-ink-2">
                         Market Value
                       </div>
-                      <div className="num text-[18px] font-bold">
+                      <div className="num money text-[18px] font-bold">
                         Rs {formatPKR(totalCurrent, { decimals: 0 })}
                       </div>
                     </div>
                     <div className="min-w-[90px] flex-1">
                       <div className="mb-1.5 text-[12px] text-ink-2">Total P&L</div>
                       <div
-                        className="num text-[18px] font-bold"
+                        className="num money text-[18px] font-bold"
                         style={{
                           color: up
                             ? "var(--color-gain)"
@@ -738,11 +738,11 @@ export default function PortfolioPage() {
                           <span className="num text-right text-[12.5px] font-semibold">
                             {formatPKR(h.currentPrice)}
                           </span>
-                          <span className="num text-right text-[12.5px] font-semibold">
+                          <span className="num money text-right text-[12.5px] font-semibold">
                             Rs {formatPKR(h.value, { decimals: 0 })}
                           </span>
                           <span
-                            className="text-right"
+                            className="money text-right"
                             style={{
                               color: hUp
                                 ? "var(--color-gain)"
@@ -882,7 +882,7 @@ export default function PortfolioPage() {
                 <p className="text-sm font-medium">Cash Management</p>
                 <p className="text-xs text-ink-3">
                   Current balance:{" "}
-                  <span className="num font-semibold text-ink">
+                  <span className="num money font-semibold text-ink">
                     Rs {formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
                   </span>
                 </p>

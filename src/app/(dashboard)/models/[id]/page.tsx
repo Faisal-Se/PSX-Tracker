@@ -995,11 +995,11 @@ export default function ModelDetailPage() {
       <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
         <div className="mb-2 text-[13px] font-medium text-ink-2">Total Value</div>
         <div className="flex flex-wrap items-baseline gap-3">
-          <div className="num whitespace-nowrap text-[38px] font-bold leading-none tracking-[-.035em]">
+          <div className="num money whitespace-nowrap text-[38px] font-bold leading-none tracking-[-.035em]">
             Rs {formatPKR(totalValue, { decimals: 0 })}
           </div>
           <span
-            className="num rounded-lg px-2.5 py-1 text-[13px] font-semibold"
+            className="num money rounded-lg px-2.5 py-1 text-[13px] font-semibold"
             style={{
               color: totalUp ? "var(--color-gain)" : "var(--color-loss-strong)",
               background: totalUp ? "var(--color-gain-50)" : "var(--color-loss-50)",
@@ -1010,24 +1010,24 @@ export default function ModelDetailPage() {
           </span>
         </div>
         <div className="mt-2.5 text-[13px] text-ink-3">
-          {totalUp ? "Up" : "Down"} Rs {formatPKR(Math.abs(totalPnl), { decimals: 0 })} all time
+          {totalUp ? "Up" : "Down"} <span className="money">Rs {formatPKR(Math.abs(totalPnl), { decimals: 0 })}</span> all time
         </div>
         <div className="mt-[22px] flex flex-wrap gap-[22px] border-t border-line pt-5">
           <div className="min-w-[90px] flex-1">
             <div className="mb-1.5 text-[12px] text-ink-2">Cash</div>
-            <div className="num text-[20px] font-bold tracking-[-.02em]">
+            <div className="num money text-[20px] font-bold tracking-[-.02em]">
               Rs {formatPKR(model.cashBalance, { decimals: 0 })}
             </div>
           </div>
           <div className="min-w-[90px] flex-1">
             <div className="mb-1.5 text-[12px] text-ink-2">Invested</div>
-            <div className="num text-[20px] font-bold tracking-[-.02em]">
+            <div className="num money text-[20px] font-bold tracking-[-.02em]">
               Rs {formatPKR(investedValue, { decimals: 0 })}
             </div>
           </div>
           <div className="min-w-[90px] flex-1">
             <div className="mb-1.5 text-[12px] text-ink-2">Market Value</div>
-            <div className="num text-[20px] font-bold tracking-[-.02em]">
+            <div className="num money text-[20px] font-bold tracking-[-.02em]">
               Rs {formatPKR(marketValue, { decimals: 0 })}
             </div>
           </div>
@@ -1110,11 +1110,11 @@ export default function ModelDetailPage() {
                     <span className="num text-right text-[12.5px] font-semibold">
                       {formatPKR(currentPrice)}
                     </span>
-                    <span className="num text-right text-[12.5px] font-semibold">
+                    <span className="num money text-right text-[12.5px] font-semibold">
                       {formatPKR(currentValue, { decimals: 0 })}
                     </span>
                     <span
-                      className="text-right"
+                      className="money text-right"
                       style={{ color: up ? "var(--color-gain)" : "var(--color-loss-strong)" }}
                     >
                       <span className="num block text-[12.5px] font-semibold">
@@ -1157,16 +1157,16 @@ export default function ModelDetailPage() {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-semibold">{stock.symbol}</p>
-                      <p className="num text-[11px] text-ink-3">
+                      <p className="num money text-[11px] text-ink-3">
                         Cost: Rs {formatPKR(stock.costBasis, { decimals: 0 })} → Value: Rs{" "}
                         {formatPKR(stock.currentValue, { decimals: 0 })}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="num text-[13px] font-semibold" style={{ color }}>
+                      <p className="num money text-[13px] font-semibold" style={{ color }}>
                         {up ? "+" : "−"}Rs {formatPKR(Math.abs(stock.pnl), { decimals: 0 })}
                       </p>
-                      <p className="num text-[11px]" style={{ color }}>
+                      <p className="num money text-[11px]" style={{ color }}>
                         {up ? "+" : ""}
                         {stock.pnlPct.toFixed(2)}%
                       </p>
@@ -1283,7 +1283,7 @@ export default function ModelDetailPage() {
                       />
                     </div>
                     <span
-                      className="num text-right text-[11.5px] font-semibold"
+                      className="num money text-right text-[11.5px] font-semibold"
                       style={{ color }}
                     >
                       {up ? "+" : "−"}
@@ -1355,12 +1355,12 @@ export default function ModelDetailPage() {
                         {tx.quantity} @ {formatPKR(tx.price)}
                       </div>
                     )}
-                    <div className="num text-[11px] text-ink-3">
+                    <div className="num money text-[11px] text-ink-3">
                       Rs {formatPKR(tx.total, { decimals: 0 })}
                     </div>
                     {isSell && tx.realizedPnl !== undefined && (
                       <div
-                        className="num text-[11px] font-semibold"
+                        className="num money text-[11px] font-semibold"
                         style={{
                           color: tx.realizedPnl >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)",
                         }}
@@ -1403,7 +1403,7 @@ export default function ModelDetailPage() {
               />
               <p className="text-[11px] text-ink-3">
                 Current balance:{" "}
-                <span className="num font-semibold text-ink">
+                <span className="num money font-semibold text-ink">
                   Rs {formatPKR(model.cashBalance, { decimals: 0 })}
                 </span>
               </p>
@@ -1446,7 +1446,7 @@ export default function ModelDetailPage() {
               />
               <p className="text-[11px] text-ink-3">
                 Available:{" "}
-                <span className="num font-semibold text-ink">
+                <span className="num money font-semibold text-ink">
                   Rs {formatPKR(model.cashBalance, { decimals: 0 })}
                 </span>
               </p>
@@ -2410,7 +2410,7 @@ export default function ModelDetailPage() {
             {/* Cash info */}
             <p className="text-[11px] text-ink-3">
               Available cash:{" "}
-              <span className="num font-semibold text-ink">
+              <span className="num money font-semibold text-ink">
                 Rs {formatPKR(model.cashBalance, { decimals: 0 })}
               </span>
             </p>

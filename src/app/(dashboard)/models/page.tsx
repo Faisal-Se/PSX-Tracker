@@ -477,7 +477,7 @@ export default function ModelsPage() {
                     </div>
                   </div>
                   <span
-                    className="num rounded-lg px-2.5 py-1 text-[12px] font-semibold"
+                    className="num money rounded-lg px-2.5 py-1 text-[12px] font-semibold"
                     style={{
                       color: mUp ? "var(--color-gain)" : "var(--color-loss-strong)",
                       background: mUp ? "var(--color-gain-50)" : "var(--color-loss-50)",
@@ -487,11 +487,11 @@ export default function ModelsPage() {
                     {m.pnlPct.toFixed(2)}%
                   </span>
                 </div>
-                <div className="num mb-0.5 mt-2.5 text-[27px] font-bold tracking-[-.03em]">
+                <div className="num money mb-0.5 mt-2.5 text-[27px] font-bold tracking-[-.03em]">
                   Rs {formatPKR(m.total, { decimals: 0 })}
                 </div>
                 <div className="text-[12px] text-ink-2">
-                  {mUp ? "Up" : "Down"} Rs {formatPKR(Math.abs(m.pnl), { decimals: 0 })}
+                  {mUp ? "Up" : "Down"} <span className="money">Rs {formatPKR(Math.abs(m.pnl), { decimals: 0 })}</span>
                 </div>
                 <div className="-mx-1 mt-3 h-11">
                   {m.trend.length >= 2 ? (

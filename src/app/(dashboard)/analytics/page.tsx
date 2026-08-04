@@ -301,7 +301,7 @@ export default function AnalyticsPage() {
               <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
                 Total Portfolio
               </div>
-              <div className="num text-[22px] font-bold tracking-[-.025em]">
+              <div className="num money text-[22px] font-bold tracking-[-.025em]">
                 Rs {formatPKR(totalValue, { decimals: 0 })}
               </div>
             </div>
@@ -309,7 +309,7 @@ export default function AnalyticsPage() {
               <div className="mb-2.5 text-[12.5px] font-medium text-ink-2">
                 Invested
               </div>
-              <div className="num text-[22px] font-bold tracking-[-.025em]">
+              <div className="num money text-[22px] font-bold tracking-[-.025em]">
                 Rs {formatPKR(totalInvested, { decimals: 0 })}
               </div>
             </div>
@@ -318,7 +318,7 @@ export default function AnalyticsPage() {
                 Total P&amp;L
               </div>
               <div
-                className="num text-[22px] font-bold tracking-[-.025em]"
+                className="num money text-[22px] font-bold tracking-[-.025em]"
                 style={{
                   color: totalPnL >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)",
                 }}
@@ -372,7 +372,7 @@ export default function AnalyticsPage() {
                   <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
                     <div>
                       <div className="text-[11px] text-ink-3">Total</div>
-                      <div className="num text-[14px] font-bold">
+                      <div className="num money text-[14px] font-bold">
                         {formatPKR(assetTotal, { compact: true })}
                       </div>
                     </div>
@@ -432,7 +432,7 @@ export default function AnalyticsPage() {
                   <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
                     <div>
                       <div className="text-[11px] text-ink-3">Total</div>
-                      <div className="num text-[14px] font-bold">
+                      <div className="num money text-[14px] font-bold">
                         {formatPKR(sectorTotal, { compact: true })}
                       </div>
                     </div>
@@ -530,7 +530,7 @@ export default function AnalyticsPage() {
                       {r.weight.toFixed(1)}%
                     </span>
                     <span
-                      className="num text-right text-[12px] font-semibold"
+                      className="num money text-right text-[12px] font-semibold"
                       style={{
                         color: up ? "var(--color-gain)" : "var(--color-loss-strong)",
                       }}

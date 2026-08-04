@@ -116,7 +116,7 @@ export default function TransactionsPage() {
         <div className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
           <div className="text-[12px] font-medium text-ink-2">Realized P&amp;L</div>
           <div
-            className="num mt-1 text-[26px] font-bold tracking-[-.025em]"
+            className="num money mt-1 text-[26px] font-bold tracking-[-.025em]"
             style={{ color: realizedUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
           >
             {realizedUp ? "+" : "−"}Rs {formatPKR(Math.abs(realizedTotal), { decimals: 0 })}
@@ -195,10 +195,10 @@ export default function TransactionsPage() {
                 <span className="num text-right text-[12.5px]">
                   {formatPKR(tx.price, { decimals: 1 })}
                 </span>
-                <span className="num text-right text-[12.5px] font-semibold">
+                <span className="num money text-right text-[12.5px] font-semibold">
                   Rs {formatPKR(tx.total, { decimals: 0 })}
                 </span>
-                <span className="num text-right text-[12.5px] font-semibold">
+                <span className="num money text-right text-[12.5px] font-semibold">
                   {tx.type === "SELL" && tx.realizedPnl !== undefined ? (
                     <span
                       style={{
