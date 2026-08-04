@@ -1163,9 +1163,15 @@ export default function DashboardPage() {
                           </div>
                           <div className="num text-[11.5px] text-ink-3">{h.quantity} sh</div>
                         </div>
-                        <div className="flex items-center justify-end">
+                        <div className="flex flex-col items-end gap-0.5">
                           <span
-                            className="num rounded-lg px-2.5 py-1 text-[12.5px] font-semibold"
+                            className={`num text-[12.5px] font-semibold ${blur("")}`}
+                            style={{ color: hUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+                          >
+                            {hUp ? "+" : "−"}Rs {formatPKR(Math.abs(h.pnl), { decimals: 0 })}
+                          </span>
+                          <span
+                            className="num rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
                             style={{
                               color: hUp ? "var(--color-gain)" : "var(--color-loss-strong)",
                               background: hUp ? "var(--color-gain-50)" : "var(--color-loss-50)",

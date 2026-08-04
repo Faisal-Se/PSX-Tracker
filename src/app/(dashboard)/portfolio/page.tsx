@@ -742,15 +742,20 @@ export default function PortfolioPage() {
                             Rs {formatPKR(h.value, { decimals: 0 })}
                           </span>
                           <span
-                            className="num text-right text-[12.5px] font-semibold"
+                            className="text-right"
                             style={{
                               color: hUp
                                 ? "var(--color-gain)"
                                 : "var(--color-loss-strong)",
                             }}
                           >
-                            {hUp ? "+" : "−"}
-                            {Math.abs(h.pnlPercent).toFixed(2)}%
+                            <span className="num block text-[12.5px] font-semibold">
+                              {hUp ? "+" : "−"}Rs {formatPKR(Math.abs(h.pnl), { decimals: 0 })}
+                            </span>
+                            <span className="num block text-[11px]">
+                              {hUp ? "+" : "−"}
+                              {Math.abs(h.pnlPercent).toFixed(2)}%
+                            </span>
                           </span>
                           <button
                             onClick={() =>

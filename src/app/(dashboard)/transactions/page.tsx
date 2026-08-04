@@ -16,6 +16,7 @@ interface Transaction {
   total: number;
   portfolioId: string;
   createdAt: string;
+  realizedPnl?: number;
 }
 
 interface Portfolio {
@@ -73,6 +74,14 @@ export default function TransactionsPage() {
 
   const portfolioMap = new Map(portfolios.map((p) => [p.id, p.name]));
 
+  // Realized P&L across the shown SELL transactions.
+  const realizedTotal = transactions.reduce(
+    (sum, t) => sum + (t.type === "SELL" ? t.realizedPnl ?? 0 : 0),
+    0
+  );
+  const sellCount = transactions.filter((t) => t.type === "SELL").length;
+  const realizedUp = realizedTotal >= 0;
+
   return (
     <>
       {/* Header */}
@@ -102,24 +111,41 @@ export default function TransactionsPage() {
         </div>
       </div>
 
+      {/* Realized P&L summary */}
+      {sellCount > 0 && (
+        <div className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
+          <div className="text-[12px] font-medium text-ink-2">Realized P&amp;L</div>
+          <div
+            className="num mt-1 text-[26px] font-bold tracking-[-.025em]"
+            style={{ color: realizedUp ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+          >
+            {realizedUp ? "+" : "−"}Rs {formatPKR(Math.abs(realizedTotal), { decimals: 0 })}
+          </div>
+          <div className="mt-1 text-[12px] text-ink-3">
+            Booked across {sellCount} sell{sellCount !== 1 ? "s" : ""}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <section className="rounded-2xl border border-line bg-card pb-2 pt-[22px] shadow-card">
-        <div className="grid grid-cols-[92px_1.4fr_1.2fr_.8fr_1fr_1.1fr] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
+        <div className="grid grid-cols-[86px_1.3fr_1fr_.7fr_.9fr_1fr_1fr] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
           <span>TYPE</span>
           <span>STOCK</span>
           <span>PORTFOLIO</span>
           <span className="text-right">QTY</span>
           <span className="text-right">PRICE</span>
           <span className="text-right">TOTAL</span>
+          <span className="text-right">REALIZED</span>
         </div>
 
         {initialLoading ? (
           Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
-              className="grid grid-cols-[92px_1.4fr_1.2fr_.8fr_1fr_1.1fr] gap-2 border-b border-line-soft px-[22px] py-[11px]"
+              className="grid grid-cols-[86px_1.3fr_1fr_.7fr_.9fr_1fr_1fr] gap-2 border-b border-line-soft px-[22px] py-[11px]"
             >
-              {Array.from({ length: 6 }).map((_, j) => (
+              {Array.from({ length: 7 }).map((_, j) => (
                 <div key={j} className="h-4 animate-pulse rounded bg-line-soft" />
               ))}
             </div>
@@ -138,7 +164,7 @@ export default function TransactionsPage() {
             return (
               <div
                 key={tx.id}
-                className="grid grid-cols-[92px_1.4fr_1.2fr_.8fr_1fr_1.1fr] items-center gap-2 border-b border-line-soft px-[22px] py-[11px] hover:bg-ink/[.03]"
+                className="grid grid-cols-[86px_1.3fr_1fr_.7fr_.9fr_1fr_1fr] items-center gap-2 border-b border-line-soft px-[22px] py-[11px] hover:bg-ink/[.03]"
               >
                 <span
                   className="num justify-self-start rounded-md px-1.5 py-[3px] text-[10px] font-bold tracking-[.03em]"
@@ -171,6 +197,20 @@ export default function TransactionsPage() {
                 </span>
                 <span className="num text-right text-[12.5px] font-semibold">
                   Rs {formatPKR(tx.total, { decimals: 0 })}
+                </span>
+                <span className="num text-right text-[12.5px] font-semibold">
+                  {tx.type === "SELL" && tx.realizedPnl !== undefined ? (
+                    <span
+                      style={{
+                        color: tx.realizedPnl >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)",
+                      }}
+                    >
+                      {tx.realizedPnl >= 0 ? "+" : "−"}
+                      {formatPKR(Math.abs(tx.realizedPnl), { decimals: 0 })}
+                    </span>
+                  ) : (
+                    <span className="text-ink-3">—</span>
+                  )}
                 </span>
               </div>
             );

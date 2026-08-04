@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -20,13 +20,21 @@ import {
 import { ChartSkeleton } from "@/components/ui/skeleton";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "ALL"] as const;
-const KSE_COLOR = "#f59e0b";
+const BENCH_COLOR = "#f59e0b";
 const PORT_COLOR = "var(--color-gain)";
 
+/** Selectable benchmark indices (all fetchable via /api/psx/history). */
+const INDICES = [
+  { code: "KSE100", label: "KSE-100" },
+  { code: "KMI30", label: "KMI-30" },
+] as const;
+type IndexCode = (typeof INDICES)[number]["code"];
+
 /**
- * Portfolio vs KSE-100 — cumulative simple return overlay, with a period
- * selector and an out/under-performed delta footer. Fetches KSE-100 history
- * itself. Theme-aware.
+ * Portfolio vs a PSX index — cumulative simple-return overlay, with a
+ * switchable benchmark (KSE-100 / KMI-30), a period selector, and an
+ * out/under-performed delta footer. Fetches index history itself (cached per
+ * index). Theme-aware.
  */
 export function BenchmarkChart({
   holdings,
@@ -38,64 +46,89 @@ export function BenchmarkChart({
   history: Record<string, HistPt[]>;
 }) {
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
-  const [kse, setKse] = useState<HistPt[]>([]);
+  const [benchmark, setBenchmark] = useState<IndexCode>("KSE100");
+  const [indexHist, setIndexHist] = useState<Record<string, HistPt[]>>({});
+  const cache = useRef<Record<string, HistPt[]>>({});
+
+  const benchLabel = INDICES.find((i) => i.code === benchmark)?.label ?? benchmark;
+  const bench = indexHist[benchmark] ?? [];
 
   useEffect(() => {
+    if (cache.current[benchmark]) {
+      setIndexHist((h) => ({ ...h, [benchmark]: cache.current[benchmark] }));
+      return;
+    }
     let cancelled = false;
-    fetch("/api/psx/history?symbol=KSE100")
+    fetch(`/api/psx/history?symbol=${benchmark}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d: { date: string; close: number }[]) => {
-        if (!cancelled && Array.isArray(d))
-          setKse(d.filter((p) => p.close > 0).map((p) => ({ date: p.date, close: p.close })));
+        if (cancelled || !Array.isArray(d)) return;
+        const clean = d.filter((p) => p.close > 0).map((p) => ({ date: p.date, close: p.close }));
+        cache.current[benchmark] = clean;
+        setIndexHist((h) => ({ ...h, [benchmark]: clean }));
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [benchmark]);
 
   const fullNav = useMemo(
     () => buildNavSeries(holdings, cash, history),
     [holdings, cash, history]
   );
 
-  const { data, portFinal, kseFinal } = useMemo(() => {
+  const { data, portFinal, benchFinal } = useMemo(() => {
     const nav = sliceRange(fullNav, range);
-    if (nav.length < 2) return { data: [], portFinal: 0, kseFinal: 0 };
+    if (nav.length < 2) return { data: [], portFinal: 0, benchFinal: 0 };
     const dates = nav.map((p) => p.date);
     const port = simpleReturnPct(nav);
-    const idx = indexReturnPct(kse, dates);
+    const idx = indexReturnPct(bench, dates);
     const idxMap = new Map(idx.map((p) => [p.date, p.pct]));
     const merged = port.map((p) => ({
       date: p.date,
       portfolio: p.pct,
-      kse: idxMap.get(p.date) ?? null,
+      bench: idxMap.get(p.date) ?? null,
     }));
     return {
       data: merged,
       portFinal: port[port.length - 1]?.pct ?? 0,
-      kseFinal: idx[idx.length - 1]?.pct ?? 0,
+      benchFinal: idx[idx.length - 1]?.pct ?? 0,
     };
-  }, [fullNav, range, kse]);
+  }, [fullNav, range, bench]);
 
-  const delta = portFinal - kseFinal;
+  const delta = portFinal - benchFinal;
   const outperformed = delta >= 0;
 
-  // Loading while KSE history or holdings' price history hasn't arrived.
+  // Loading while index history or holdings' price history hasn't arrived.
   const loading = useMemo(() => {
     const syms = holdings.filter((h) => h.shares > 0).map((h) => h.symbol);
     if (syms.length === 0) return false;
     const histMissing = syms.some((s) => !history[s] || history[s].length === 0);
-    return data.length < 2 && (kse.length === 0 || histMissing);
-  }, [holdings, history, kse, data]);
+    return data.length < 2 && (bench.length === 0 || histMissing);
+  }, [holdings, history, bench, data]);
 
   return (
     <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-[16px] font-bold tracking-[-.02em]">Portfolio vs KSE-100</h2>
-        <span className="rounded-md bg-[#f59e0b]/15 px-2 py-1 text-[12px] font-semibold text-[#d97706]">
-          KSE100
-        </span>
+        <h2 className="text-[16px] font-bold tracking-[-.02em]">Portfolio vs {benchLabel}</h2>
+        {/* benchmark selector */}
+        <div className="inline-flex gap-1 rounded-[10px] bg-canvas p-1">
+          {INDICES.map((i) => (
+            <button
+              key={i.code}
+              onClick={() => setBenchmark(i.code)}
+              className={`rounded-lg px-2.5 py-1 text-[12px] font-semibold transition-colors ${
+                benchmark === i.code
+                  ? "text-white"
+                  : "text-ink-2 hover:text-ink"
+              }`}
+              style={benchmark === i.code ? { background: BENCH_COLOR } : undefined}
+            >
+              {i.label}
+            </button>
+          ))}
+        </div>
       </div>
       <p className="mb-4 text-[12px] text-ink-3">Cumulative return</p>
 
@@ -166,7 +199,7 @@ export function BenchmarkChart({
                   }
                   formatter={(v, n) => [
                     v == null ? "—" : `${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(2)}%`,
-                    n === "portfolio" ? "Portfolio" : "KSE100",
+                    n === "portfolio" ? "Portfolio" : benchLabel,
                   ]}
                 />
                 <Area
@@ -181,8 +214,8 @@ export function BenchmarkChart({
                 />
                 <Area
                   type="monotone"
-                  dataKey="kse"
-                  stroke={KSE_COLOR}
+                  dataKey="bench"
+                  stroke={BENCH_COLOR}
                   strokeWidth={2.2}
                   fill="none"
                   dot={false}
@@ -201,8 +234,8 @@ export function BenchmarkChart({
               Portfolio
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: KSE_COLOR }} />
-              KSE100
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: BENCH_COLOR }} />
+              {benchLabel}
             </span>
           </div>
 
@@ -222,14 +255,14 @@ export function BenchmarkChart({
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-3">
-                KSE100
+                {benchLabel}
               </div>
               <div
                 className="num mt-0.5 text-[18px] font-bold"
-                style={{ color: kseFinal >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}
+                style={{ color: benchFinal >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)" }}
               >
-                {kseFinal >= 0 ? "+" : ""}
-                {kseFinal.toFixed(1)}%
+                {benchFinal >= 0 ? "+" : ""}
+                {benchFinal.toFixed(1)}%
               </div>
             </div>
             <div className="text-right">

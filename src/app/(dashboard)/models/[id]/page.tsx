@@ -56,6 +56,7 @@ interface ModelTransaction {
   price: number;
   total: number;
   createdAt: string;
+  realizedPnl?: number;
 }
 
 interface ModelPortfolio {
@@ -1113,11 +1114,16 @@ export default function ModelDetailPage() {
                       {formatPKR(currentValue, { decimals: 0 })}
                     </span>
                     <span
-                      className="num text-right text-[12.5px] font-semibold"
+                      className="text-right"
                       style={{ color: up ? "var(--color-gain)" : "var(--color-loss-strong)" }}
                     >
-                      {up ? "+" : ""}
-                      {pnlPct.toFixed(2)}%
+                      <span className="num block text-[12.5px] font-semibold">
+                        {up ? "+" : "−"}Rs {formatPKR(Math.abs(pnl), { decimals: 0 })}
+                      </span>
+                      <span className="num block text-[11px]">
+                        {up ? "+" : ""}
+                        {pnlPct.toFixed(2)}%
+                      </span>
                     </span>
                     <button
                       onClick={() => openEditHolding(alloc)}
@@ -1352,6 +1358,17 @@ export default function ModelDetailPage() {
                     <div className="num text-[11px] text-ink-3">
                       Rs {formatPKR(tx.total, { decimals: 0 })}
                     </div>
+                    {isSell && tx.realizedPnl !== undefined && (
+                      <div
+                        className="num text-[11px] font-semibold"
+                        style={{
+                          color: tx.realizedPnl >= 0 ? "var(--color-gain)" : "var(--color-loss-strong)",
+                        }}
+                      >
+                        {tx.realizedPnl >= 0 ? "+" : "−"}Rs{" "}
+                        {formatPKR(Math.abs(tx.realizedPnl), { decimals: 0 })} P&L
+                      </div>
+                    )}
                   </div>
                 </div>
               );

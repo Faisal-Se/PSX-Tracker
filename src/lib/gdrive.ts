@@ -84,6 +84,8 @@ export interface ModelTransactionData {
   price: number;
   total: number;
   createdAt: string;
+  /** Realized gain/loss, set on SELL = (price − avgCost) × qty. */
+  realizedPnl?: number;
 }
 
 function generateId(): string {

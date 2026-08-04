@@ -138,22 +138,11 @@ export async function POST(
       throw new Error("INSUFFICIENT_CASH");
     }
     for (const trade of resolvedTrades) {
-      // Record transaction
-      m.transactions.push({
-        id: generateId(),
-        type: trade.type,
-        symbol: trade.symbol,
-        companyName: trade.companyName,
-        quantity: trade.quantity,
-        price: trade.price,
-        total: trade.total,
-        createdAt: now,
-      });
-
-      // Update allocation
       const existingIdx = m.allocations.findIndex(
         (a) => a.symbol === trade.symbol
       );
+      // Cost basis before mutating, for realized P&L on a SELL.
+      const sellAvg = existingIdx >= 0 ? m.allocations[existingIdx].avgPrice : 0;
 
       if (trade.type === "BUY") {
         if (existingIdx >= 0) {
@@ -197,6 +186,21 @@ export async function POST(
           }
         }
       }
+
+      // Record transaction (realized P&L attached on SELL).
+      m.transactions.push({
+        id: generateId(),
+        type: trade.type,
+        symbol: trade.symbol,
+        companyName: trade.companyName,
+        quantity: trade.quantity,
+        price: trade.price,
+        total: trade.total,
+        createdAt: now,
+        ...(trade.type === "SELL"
+          ? { realizedPnl: (trade.price - sellAvg) * trade.quantity }
+          : {}),
+      });
     }
 
     m.cashBalance -= netCashNeeded;
