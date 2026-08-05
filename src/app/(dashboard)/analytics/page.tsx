@@ -459,6 +459,8 @@ export default function AnalyticsPage() {
           {/* P&L per Stock */}
           <section className="mb-[18px] rounded-2xl border border-line bg-card p-[22px] shadow-card">
             <div className="mb-3.5 text-[15px] font-bold">Profit &amp; Loss by Stock</div>
+            {/* whole chart wrapped in .money — its bar/axis values reveal amounts */}
+            <div className="money">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={pnlData}>
                 <CartesianGrid vertical={false} stroke="var(--color-line)" />
@@ -496,6 +498,7 @@ export default function AnalyticsPage() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            </div>
           </section>
 
           {/* Holdings Breakdown */}

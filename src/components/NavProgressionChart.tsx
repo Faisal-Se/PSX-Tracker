@@ -103,7 +103,7 @@ export function NavProgressionChart({
         </div>
       ) : (
         <>
-          <div className="h-[260px]">
+          <div className="money h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <defs>
@@ -168,7 +168,7 @@ export function NavProgressionChart({
 
           <div className="mt-4 flex items-end justify-between border-t border-line pt-4">
             <div>
-              <div className="num text-[30px] font-bold leading-none tracking-[-.03em]">
+              <div className="num money text-[30px] font-bold leading-none tracking-[-.03em]">
                 {compactK(last)} PKR
               </div>
               {ath.isAtAth ? (
@@ -177,7 +177,7 @@ export function NavProgressionChart({
                 </div>
               ) : (
                 <div className="mt-1.5 text-[13px] text-ink-3">
-                  ATH {compactK(ath.ath)} PKR
+                  ATH <span className="money">{compactK(ath.ath)} PKR</span>
                 </div>
               )}
             </div>
