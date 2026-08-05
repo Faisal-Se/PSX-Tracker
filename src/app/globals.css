@@ -433,18 +433,19 @@
 
 /* Balance privacy blur (hide/reveal) */
 .balance-blur {
-  filter: blur(7px);
+  filter: blur(0.42em);
   user-select: none;
   transition: filter 0.2s ease;
 }
 
 /* Global hide-balances: mark money figures with `.money`; when the app root
-   carries data-hide-balances="true", every one blurs at once. */
+   carries data-hide-balances="true", every one blurs at once. Blur scales with
+   the em size so large hero figures are just as unreadable as small ones. */
 .money {
   transition: filter 0.2s ease;
 }
 [data-hide-balances="true"] .money {
-  filter: blur(7px);
+  filter: blur(0.42em);
   user-select: none;
 }
 
