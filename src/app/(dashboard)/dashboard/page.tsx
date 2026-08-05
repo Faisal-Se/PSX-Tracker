@@ -18,6 +18,8 @@ import {
   ChevronDown,
   TrendingUp,
   TrendingDown,
+  Layers,
+  ArrowRight,
 } from "lucide-react";
 import { formatPKR, getMarketStatus } from "@/lib/market-status";
 import { STRIP_SECTORS, stripSectorLabel } from "@/lib/sectors";
@@ -982,40 +984,64 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Model portfolios */}
+      {/* Model portfolios — flagship, visually elevated section */}
       {isVisible("models") && (
-        <>
-          <div className="mb-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-[18px] font-bold tracking-[-.02em]">Model Portfolios</h2>
-              <span className="rounded-full bg-brand/10 px-2 py-[3px] text-[11px] font-semibold text-brand">
-                FLAGSHIP
+        <div
+          className="mb-[26px] overflow-hidden rounded-2xl border border-brand/25 p-[22px] shadow-[0_1px_2px_rgba(13,18,28,.04),0_12px_36px_-14px_rgba(37,99,235,.28)]"
+          style={{
+            background:
+              "linear-gradient(180deg, color-mix(in oklch, var(--color-brand) 8%, var(--color-card)) 0%, var(--color-card) 42%)",
+          }}
+        >
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-gradient-to-br from-[#4f8bf7] to-[#1d4ed8] text-white shadow-[0_6px_16px_rgba(37,99,235,.3)]">
+                <Layers className="h-[18px] w-[18px]" strokeWidth={2.2} />
               </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-[19px] font-bold tracking-[-.02em]">Model Portfolios</h2>
+                  <span className="rounded-full bg-brand px-2 py-[3px] text-[10px] font-bold tracking-[.04em] text-white">
+                    FLAGSHIP
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[12px] text-ink-3">
+                  Target allocations with rebalance, SIP &amp; bulk-trade tools
+                </p>
+              </div>
             </div>
             <Link
               href="/models"
-              className="flex items-center gap-1 text-[13px] font-medium text-brand"
+              className="flex h-[34px] items-center gap-1.5 rounded-[10px] bg-brand px-3.5 text-[13px] font-semibold text-white shadow-[0_6px_16px_rgba(37,99,235,.22)] hover:brightness-105"
             >
-              {modelMetrics.length > 0 ? "View all" : "New Model"}
-              <Plus className="h-3.5 w-3.5" />
+              {modelMetrics.length > 0 ? (
+                <>
+                  View all <ArrowRight className="h-[15px] w-[15px]" />
+                </>
+              ) : (
+                <>
+                  <Plus className="h-[15px] w-[15px]" /> New Model
+                </>
+              )}
             </Link>
           </div>
+
           {modelMetrics.length === 0 ? (
             <Link
               href="/models"
-              className="mb-[26px] flex items-center justify-center rounded-2xl border border-dashed border-line bg-card py-10 text-[13px] font-medium text-ink-3 shadow-card hover:text-ink"
+              className="flex items-center justify-center rounded-xl border border-dashed border-brand/30 bg-card/60 py-10 text-[13px] font-medium text-ink-3 hover:text-ink"
             >
               <Plus className="mr-2 h-4 w-4" /> Create your first model portfolio
             </Link>
           ) : (
-            <div className="mb-[26px] grid gap-[18px] sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-[18px] sm:grid-cols-2 lg:grid-cols-3">
               {modelMetrics.slice(0, 3).map((m) => {
                 const mUp = m.pnl >= 0;
                 return (
                   <Link
                     key={m.id}
                     href={`/models/${m.id}`}
-                    className="group rounded-2xl border border-line bg-card p-[22px] shadow-card transition hover:-translate-y-[3px] hover:border-brand hover:shadow-[0_12px_34px_rgba(13,18,28,.10)]"
+                    className="group rounded-xl border border-line bg-card p-[20px] shadow-card transition hover:-translate-y-[3px] hover:border-brand hover:shadow-[0_12px_34px_rgba(13,18,28,.12)]"
                   >
                     <div className="flex items-start justify-between gap-2.5">
                       <div>
@@ -1035,11 +1061,12 @@ export default function DashboardPage() {
                         {m.pnlPct.toFixed(2)}%
                       </span>
                     </div>
-                    <div className={`num mb-0.5 mt-2.5 text-[27px] font-bold tracking-[-.03em] ${blur("")}`}>
+                    <div className={`num money mb-0.5 mt-2.5 text-[27px] font-bold tracking-[-.03em] ${blur("")}`}>
                       Rs {formatPKR(m.total, { decimals: 0 })}
                     </div>
                     <div className={`text-[12px] text-ink-2 ${blur("")}`}>
-                      {mUp ? "Up" : "Down"} Rs {formatPKR(Math.abs(m.pnl), { decimals: 0 })}
+                      {mUp ? "Up" : "Down"}{" "}
+                      <span className="money">Rs {formatPKR(Math.abs(m.pnl), { decimals: 0 })}</span>
                     </div>
                     <div className="-mx-1 mt-3 h-11">
                       {m.trend.length >= 2 ? (
@@ -1072,7 +1099,7 @@ export default function DashboardPage() {
               })}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Holdings + movers */}
