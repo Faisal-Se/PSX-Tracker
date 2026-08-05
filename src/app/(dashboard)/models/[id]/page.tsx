@@ -2277,7 +2277,7 @@ export default function ModelDetailPage() {
       {/* Bulk Trade Dialog                  */}
       {/* ═══════════════════════════════════ */}
       <Dialog open={showBulkTrade} onOpenChange={setShowBulkTrade}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border border-line bg-card sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border border-line bg-card sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
               <ShoppingCart className="h-5 w-5 text-ink-3" />
@@ -2363,83 +2363,107 @@ export default function ModelDetailPage() {
                   return (
                     <div
                       key={trade.symbol}
-                      className="flex items-center gap-3 rounded-[10px] border border-line bg-card p-2.5"
+                      className="flex items-center gap-3 rounded-[12px] border border-line bg-card p-3"
                     >
+                      {/* Stock + computed total */}
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold">{trade.symbol}</p>
-                        <p className="text-[11px] text-ink-3">
-                          {price > 0 ? `@ Rs ${formatPKR(price)}` : "Price unavailable"}
-                          {qty > 0 && price > 0 && (
-                            <span className="num money ml-1.5 font-semibold text-ink">
-                              = Rs {formatPKR(total, { decimals: 0 })}
-                            </span>
-                          )}
-                        </p>
+                        <p className="text-[14px] font-bold">{trade.symbol}</p>
+                        {qty > 0 && price > 0 ? (
+                          <p className="num money mt-0.5 text-[12px] font-semibold text-ink-2">
+                            {qty.toLocaleString()} × Rs {formatPKR(price)} ={" "}
+                            <span className="text-ink">Rs {formatPKR(total, { decimals: 0 })}</span>
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-[11px] text-ink-3">Enter qty &amp; price</p>
+                        )}
                       </div>
-                      <select
-                        value={trade.type}
-                        onChange={(e) =>
-                          setBulkTrades((prev) =>
-                            prev.map((t) =>
-                              t.symbol === trade.symbol
-                                ? { ...t, type: e.target.value as "BUY" | "SELL" }
-                                : t
-                            )
-                          )
-                        }
-                        className="h-8 rounded-[10px] border border-line bg-canvas px-2 text-xs font-semibold outline-none focus:border-brand"
-                      >
-                        <option value="BUY">BUY</option>
-                        <option value="SELL">SELL</option>
-                      </select>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Qty"
-                        value={trade.quantity}
-                        onChange={(e) =>
-                          setBulkTrades((prev) =>
-                            prev.map((t) =>
-                              t.symbol === trade.symbol
-                                ? { ...t, quantity: e.target.value }
-                                : t
-                            )
-                          )
-                        }
-                        className="num h-8 w-[68px] rounded-[10px] border border-line bg-canvas text-center text-sm outline-none focus:border-brand"
-                      />
-                      <div className="relative">
-                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-ink-3">
-                          Rs
+
+                      {/* Type */}
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[9px] font-semibold uppercase tracking-[.05em] text-ink-3">
+                          Side
                         </span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="Price"
-                          title="Trade price (defaults to live market price)"
-                          value={trade.price}
+                        <select
+                          value={trade.type}
                           onChange={(e) =>
                             setBulkTrades((prev) =>
                               prev.map((t) =>
                                 t.symbol === trade.symbol
-                                  ? { ...t, price: e.target.value }
+                                  ? { ...t, type: e.target.value as "BUY" | "SELL" }
                                   : t
                               )
                             )
                           }
-                          className="num h-8 w-[84px] rounded-[10px] border border-line bg-canvas pl-6 pr-2 text-right text-sm outline-none focus:border-brand"
+                          className="h-9 rounded-[10px] border border-line bg-canvas px-2.5 text-[13px] font-semibold outline-none focus:border-brand"
+                        >
+                          <option value="BUY">BUY</option>
+                          <option value="SELL">SELL</option>
+                        </select>
+                      </label>
+
+                      {/* Quantity */}
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[9px] font-semibold uppercase tracking-[.05em] text-ink-3">
+                          Qty
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={trade.quantity}
+                          onChange={(e) =>
+                            setBulkTrades((prev) =>
+                              prev.map((t) =>
+                                t.symbol === trade.symbol
+                                  ? { ...t, quantity: e.target.value }
+                                  : t
+                              )
+                            )
+                          }
+                          className="num h-9 w-[84px] rounded-[10px] border border-line bg-canvas px-2.5 text-right text-[13px] outline-none focus:border-brand"
                         />
-                      </div>
+                      </label>
+
+                      {/* Price */}
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[9px] font-semibold uppercase tracking-[.05em] text-ink-3">
+                          Price
+                        </span>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-ink-3">
+                            Rs
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            title="Trade price (defaults to live market price)"
+                            value={trade.price}
+                            onChange={(e) =>
+                              setBulkTrades((prev) =>
+                                prev.map((t) =>
+                                  t.symbol === trade.symbol
+                                    ? { ...t, price: e.target.value }
+                                    : t
+                                )
+                              )
+                            }
+                            className="num h-9 w-[112px] rounded-[10px] border border-line bg-canvas pl-7 pr-2.5 text-right text-[13px] outline-none focus:border-brand"
+                          />
+                        </div>
+                      </label>
+
                       <button
                         onClick={() =>
                           setBulkTrades((prev) =>
                             prev.filter((t) => t.symbol !== trade.symbol)
                           )
                         }
-                        className="grid h-7 w-7 place-items-center rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-ink"
+                        title="Remove"
+                        className="mt-4 grid h-9 w-8 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-ink/[.04] hover:text-ink"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   );
