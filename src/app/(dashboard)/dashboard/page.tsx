@@ -129,6 +129,13 @@ const CASH_COLOR = "#CBD5E1";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "ALL"] as const;
 type Range = (typeof RANGES)[number];
+
+type Scope = "all" | "portfolio" | "models";
+const SCOPES: { value: Scope; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "portfolio", label: "Portfolio" },
+  { value: "models", label: "Models" },
+];
 const RANGE_DAYS: Record<Range, number> = {
   "1D": 2,
   "1W": 6,
@@ -199,6 +206,7 @@ export default function DashboardPage() {
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
   const [kseTrend, setKseTrend] = useState<number[]>([]);
   const [range, setRange] = useState<Range>("1M");
+  const [scope, setScope] = useState<Scope>("all");
   const [userName, setUserName] = useState<string>("");
 
   useEffect(() => {
@@ -285,8 +293,11 @@ export default function DashboardPage() {
   const uniqueSymbols = useMemo(() => {
     const set = new Set<string>();
     for (const p of portfolios) for (const h of p.holdings) set.add(h.symbol);
-    return Array.from(set).slice(0, 12);
-  }, [portfolios]);
+    for (const m of modelPortfolios)
+      for (const a of m.allocations)
+        if (a.symbol !== "CASH" && a.shares > 0) set.add(a.symbol);
+    return Array.from(set).slice(0, 16);
+  }, [portfolios, modelPortfolios]);
 
   useEffect(() => {
     if (uniqueSymbols.length === 0) return;
@@ -325,33 +336,61 @@ export default function DashboardPage() {
     [marketData]
   );
 
-  const totalInvested = portfolios.reduce(
-    (sum, p) => sum + p.holdings.reduce((s, h) => s + h.avgPrice * h.quantity, 0),
+  // Holdings + cash for the selected scope (All / Portfolio / Models). Model
+  // allocations are flattened into holding-shaped rows so every downstream calc
+  // (totals, donut, value series, holdings table) works off one source.
+  const scopedHoldings = useMemo(() => {
+    const rows: Holding[] = [];
+    if (scope === "all" || scope === "portfolio") {
+      for (const p of portfolios) rows.push(...p.holdings);
+    }
+    if (scope === "all" || scope === "models") {
+      for (const m of modelPortfolios) {
+        for (const a of m.allocations) {
+          if (a.symbol === "CASH" || a.shares <= 0) continue;
+          rows.push({
+            id: `${m.id}-${a.symbol}`,
+            symbol: a.symbol,
+            companyName: a.companyName,
+            quantity: a.shares,
+            avgPrice: a.avgPrice,
+          });
+        }
+      }
+    }
+    return rows;
+  }, [scope, portfolios, modelPortfolios]);
+
+  const scopedCash = useMemo(() => {
+    let cash = 0;
+    if (scope === "all" || scope === "portfolio")
+      cash += portfolios.reduce((s, p) => s + p.cashBalance, 0);
+    if (scope === "all" || scope === "models")
+      cash += modelPortfolios.reduce((s, m) => s + m.cashBalance, 0);
+    return cash;
+  }, [scope, portfolios, modelPortfolios]);
+
+  const totalInvested = scopedHoldings.reduce(
+    (s, h) => s + h.avgPrice * h.quantity,
     0
   );
-  const totalCurrentValue = portfolios.reduce(
-    (sum, p) =>
-      sum +
-      p.holdings.reduce((s, h) => {
-        const cp = priceMap.get(h.symbol) || h.avgPrice;
-        return s + cp * h.quantity;
-      }, 0),
-    0
-  );
-  const totalCash = portfolios.reduce((sum, p) => sum + p.cashBalance, 0);
+  const totalCurrentValue = scopedHoldings.reduce((s, h) => {
+    const cp = priceMap.get(h.symbol) || h.avgPrice;
+    return s + cp * h.quantity;
+  }, 0);
+  const totalCash = scopedCash;
   const totalValue = totalCurrentValue + totalCash;
   const totalPnL = totalCurrentValue - totalInvested;
   const totalPnLPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
 
-  // Today's P&L from live day-change of each holding.
+  // Today's P&L from live day-change of each scoped holding.
   const todayPnL = useMemo(() => {
     let sum = 0;
     const changeMap = new Map(marketData.map((s) => [s.symbol, s.change]));
-    for (const p of portfolios)
-      for (const h of p.holdings)
-        sum += (changeMap.get(h.symbol) || 0) * h.quantity;
+    for (const h of scopedHoldings)
+      sum += (changeMap.get(h.symbol) || 0) * h.quantity;
     return sum;
-  }, [portfolios, marketData]);
+  }, [scopedHoldings, marketData]);
   const todayPnLPct =
     totalCurrentValue > 0 ? (todayPnL / (totalCurrentValue - todayPnL)) * 100 : 0;
 
@@ -394,10 +433,8 @@ export default function DashboardPage() {
   // KSE-100 "open" ≈ previous close (current − change); index open isn't scraped.
   const kseOpen = kse100 ? kse100.current - kse100.change : 0;
 
-  const allHoldings = useMemo(
-    () => portfolios.flatMap((p) => p.holdings),
-    [portfolios]
-  );
+  // Scoped holdings drive the donut, value series, and holdings table.
+  const allHoldings = scopedHoldings;
 
   // Portfolio value-over-time series (weighted by shares + cash).
   const fullValueSeries = useMemo<{ date: string; value: number }[]>(() => {
@@ -761,6 +798,21 @@ export default function DashboardPage() {
                     {Math.abs(todayPnLPct).toFixed(2)}%)
                   </span>
                   <span className="text-[13px] text-ink-3">today</span>
+                </div>
+
+                {/* Scope toggle — All / Portfolio / Models */}
+                <div className="mt-3.5 inline-flex gap-1 rounded-[10px] bg-canvas p-1">
+                  {SCOPES.map((s) => (
+                    <button
+                      key={s.value}
+                      onClick={() => setScope(s.value)}
+                      className={`rounded-lg px-3 py-1 text-[12px] font-semibold transition-colors ${
+                        scope === s.value ? "bg-brand text-white" : "text-ink-2 hover:text-ink"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
