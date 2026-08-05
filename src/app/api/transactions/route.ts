@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/google-auth";
 import {
   getPortfolios,
   getPortfolio,
+  getModelPortfolios,
   updatePortfolio,
   generateId,
   type TransactionData,
@@ -21,13 +22,48 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const portfolioId = searchParams.get("portfolioId");
 
-  const portfolios = await getPortfolios();
+  const [portfolios, models] = await Promise.all([
+    getPortfolios(),
+    getModelPortfolios(),
+  ]);
 
-  const allTransactions: (TransactionData & { portfolioId: string })[] = [];
+  type Row = TransactionData & {
+    portfolioId: string;
+    portfolioName: string;
+    source: "portfolio" | "model";
+  };
+  const allTransactions: Row[] = [];
+
   for (const p of portfolios) {
     if (portfolioId && p.id !== portfolioId) continue;
     for (const t of p.transactions) {
-      allTransactions.push({ ...t, portfolioId: p.id });
+      allTransactions.push({
+        ...t,
+        portfolioId: p.id,
+        portfolioName: p.name,
+        source: "portfolio",
+      });
+    }
+  }
+
+  // Model-portfolio transactions (their own history) — synthesize portfolioId.
+  for (const m of models) {
+    if (portfolioId && m.id !== portfolioId) continue;
+    for (const t of m.transactions) {
+      allTransactions.push({
+        id: t.id,
+        type: t.type,
+        symbol: t.symbol,
+        companyName: t.companyName,
+        quantity: t.quantity,
+        price: t.price,
+        total: t.total,
+        realizedPnl: t.realizedPnl,
+        createdAt: t.createdAt,
+        portfolioId: m.id,
+        portfolioName: m.name,
+        source: "model",
+      });
     }
   }
 

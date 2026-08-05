@@ -15,6 +15,8 @@ interface Transaction {
   price: number;
   total: number;
   portfolioId: string;
+  portfolioName?: string;
+  source?: "portfolio" | "model";
   createdAt: string;
   realizedPnl?: number;
 }
@@ -52,27 +54,31 @@ function tint(symbol: string) {
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [models, setModels] = useState<Portfolio[]>([]);
   const [filterPortfolio, setFilterPortfolio] = useState("all");
   const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     const portfolioParam =
       filterPortfolio !== "all" ? `?portfolioId=${filterPortfolio}` : "";
-    const [txRes, portfolioRes] = await Promise.all([
+    const [txRes, portfolioRes, modelRes] = await Promise.all([
       fetch(`/api/transactions${portfolioParam}`),
       fetch("/api/portfolios"),
+      fetch("/api/model-portfolios"),
     ]);
 
     if (txRes.ok) setTransactions(await txRes.json());
     if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
+    if (modelRes.ok) {
+      const data = await modelRes.json();
+      setModels(Array.isArray(data) ? data : []);
+    }
     setInitialLoading(false);
   }, [filterPortfolio]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  const portfolioMap = new Map(portfolios.map((p) => [p.id, p.name]));
 
   // Realized P&L across the shown SELL transactions.
   const realizedTotal = transactions.reduce(
@@ -100,11 +106,24 @@ export default function TransactionsPage() {
               className="h-10 appearance-none rounded-[10px] border border-line bg-card pl-3.5 pr-9 text-[13px] font-medium shadow-card outline-none focus:border-brand"
             >
               <option value="all">All Portfolios</option>
-              {portfolios.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
+              {portfolios.length > 0 && (
+                <optgroup label="Personal">
+                  {portfolios.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {models.length > 0 && (
+                <optgroup label="Models">
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
           </div>
@@ -186,8 +205,13 @@ export default function TransactionsPage() {
                     </div>
                   </div>
                 </Link>
-                <span className="truncate text-[12.5px] text-ink-2">
-                  {portfolioMap.get(tx.portfolioId) || "—"}
+                <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-2">
+                  <span className="truncate">{tx.portfolioName || "—"}</span>
+                  {tx.source === "model" && (
+                    <span className="shrink-0 rounded bg-brand/10 px-1 py-[1px] text-[9px] font-bold uppercase text-brand">
+                      Model
+                    </span>
+                  )}
                 </span>
                 <span className="num text-right text-[12.5px]">
                   {tx.quantity.toLocaleString()}

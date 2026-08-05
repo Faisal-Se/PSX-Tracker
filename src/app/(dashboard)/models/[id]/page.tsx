@@ -152,7 +152,7 @@ export default function ModelDetailPage() {
   // Bulk trade
   const [showBulkTrade, setShowBulkTrade] = useState(false);
   const [bulkTrades, setBulkTrades] = useState<
-    { symbol: string; companyName: string; type: "BUY" | "SELL"; quantity: string }[]
+    { symbol: string; companyName: string; type: "BUY" | "SELL"; quantity: string; price: string }[]
   >([]);
   const [bulkTradeLoading, setBulkTradeLoading] = useState(false);
   const [bulkTradeError, setBulkTradeError] = useState("");
@@ -830,7 +830,13 @@ export default function ModelDetailPage() {
     if (bulkTrades.some((t) => t.symbol === stock.symbol)) return;
     setBulkTrades((prev) => [
       ...prev,
-      { symbol: stock.symbol, companyName: stock.company, type: "BUY", quantity: "" },
+      {
+        symbol: stock.symbol,
+        companyName: stock.company,
+        type: "BUY",
+        quantity: "",
+        price: stock.current > 0 ? String(stock.current) : "",
+      },
     ]);
     setStockQuery("");
     setStockResults([]);
@@ -839,9 +845,16 @@ export default function ModelDetailPage() {
 
   const handleBulkTradeAddHolding = (alloc: Allocation) => {
     if (bulkTrades.some((t) => t.symbol === alloc.symbol)) return;
+    const mkt = marketPrices[alloc.symbol] || alloc.avgPrice;
     setBulkTrades((prev) => [
       ...prev,
-      { symbol: alloc.symbol, companyName: alloc.companyName, type: "SELL", quantity: "" },
+      {
+        symbol: alloc.symbol,
+        companyName: alloc.companyName,
+        type: "SELL",
+        quantity: "",
+        price: mkt > 0 ? String(mkt) : "",
+      },
     ]);
   };
 
@@ -864,6 +877,7 @@ export default function ModelDetailPage() {
             companyName: t.companyName,
             type: t.type,
             quantity: parseInt(t.quantity),
+            price: parseFloat(t.price) > 0 ? parseFloat(t.price) : undefined,
           })),
         }),
       });
@@ -2339,7 +2353,10 @@ export default function ModelDetailPage() {
                   Trades ({bulkTrades.length})
                 </label>
                 {bulkTrades.map((trade) => {
-                  const price = marketPrices[trade.symbol] || 0;
+                  const price =
+                    parseFloat(trade.price) > 0
+                      ? parseFloat(trade.price)
+                      : marketPrices[trade.symbol] || 0;
                   const qty = parseInt(trade.quantity) || 0;
                   const total = qty * price;
 
@@ -2389,8 +2406,31 @@ export default function ModelDetailPage() {
                             )
                           )
                         }
-                        className="num h-8 w-20 rounded-[10px] border border-line bg-canvas text-center text-sm outline-none focus:border-brand"
+                        className="num h-8 w-[68px] rounded-[10px] border border-line bg-canvas text-center text-sm outline-none focus:border-brand"
                       />
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-ink-3">
+                          Rs
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Price"
+                          title="Trade price (defaults to live market price)"
+                          value={trade.price}
+                          onChange={(e) =>
+                            setBulkTrades((prev) =>
+                              prev.map((t) =>
+                                t.symbol === trade.symbol
+                                  ? { ...t, price: e.target.value }
+                                  : t
+                              )
+                            )
+                          }
+                          className="num h-8 w-[84px] rounded-[10px] border border-line bg-canvas pl-6 pr-2 text-right text-sm outline-none focus:border-brand"
+                        />
+                      </div>
                       <button
                         onClick={() =>
                           setBulkTrades((prev) =>
