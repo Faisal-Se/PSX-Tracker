@@ -51,7 +51,7 @@ export function BenchmarkChart({
   const cache = useRef<Record<string, HistPt[]>>({});
 
   const benchLabel = INDICES.find((i) => i.code === benchmark)?.label ?? benchmark;
-  const bench = indexHist[benchmark] ?? [];
+  const bench = useMemo(() => indexHist[benchmark] ?? [], [indexHist, benchmark]);
 
   useEffect(() => {
     if (cache.current[benchmark]) {

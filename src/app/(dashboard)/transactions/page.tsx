@@ -333,6 +333,29 @@ export default function TransactionsPage() {
           filtered.map((tx) => {
             const c = tint(tx.symbol);
             const badge = txBadge(tx.type);
+            const isCash = tx.type === "CASH_IN" || tx.type === "CASH_OUT";
+            const label = isCash ? "Cash" : tx.symbol;
+            const initials = isCash ? "Rs" : tx.symbol.slice(0, 2);
+            const stockInner = (
+              <>
+                <span
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-[12px] font-bold"
+                  style={
+                    isCash
+                      ? { background: "var(--color-line-soft)", color: "var(--color-ink-3)" }
+                      : { background: `${c}22`, color: c }
+                  }
+                >
+                  {initials}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold">{label}</div>
+                  <div className="text-[11px] text-ink-3">
+                    {format(new Date(tx.createdAt), "dd MMM yyyy")}
+                  </div>
+                </div>
+              </>
+            );
             return (
               <div
                 key={tx.id}
@@ -344,20 +367,13 @@ export default function TransactionsPage() {
                 >
                   {badge.label}
                 </span>
-                <Link href={`/stock/${tx.symbol}`} className="flex min-w-0 items-center gap-2.5">
-                  <span
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-[12px] font-bold"
-                    style={{ background: `${c}22`, color: c }}
-                  >
-                    {tx.symbol.slice(0, 2)}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-semibold">{tx.symbol}</div>
-                    <div className="text-[11px] text-ink-3">
-                      {format(new Date(tx.createdAt), "dd MMM yyyy")}
-                    </div>
-                  </div>
-                </Link>
+                {isCash ? (
+                  <div className="flex min-w-0 items-center gap-2.5">{stockInner}</div>
+                ) : (
+                  <Link href={`/stock/${tx.symbol}`} className="flex min-w-0 items-center gap-2.5">
+                    {stockInner}
+                  </Link>
+                )}
                 <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-2">
                   <span className="truncate">{tx.portfolioName || "—"}</span>
                   {tx.source === "model" && (
@@ -367,10 +383,14 @@ export default function TransactionsPage() {
                   )}
                 </span>
                 <span className="num text-right text-[12.5px]">
-                  {tx.quantity.toLocaleString()}
+                  {isCash ? <span className="text-ink-3">—</span> : tx.quantity.toLocaleString()}
                 </span>
                 <span className="num text-right text-[12.5px]">
-                  {formatPKR(tx.price, { decimals: 1 })}
+                  {isCash ? (
+                    <span className="text-ink-3">—</span>
+                  ) : (
+                    formatPKR(tx.price, { decimals: 1 })
+                  )}
                 </span>
                 <span className="num money text-right text-[12.5px] font-semibold">
                   Rs {formatPKR(tx.total, { decimals: 0 })}

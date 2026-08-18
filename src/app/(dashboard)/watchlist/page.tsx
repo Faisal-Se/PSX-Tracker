@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Star, ArrowLeftRight, X } from "lucide-react";
+import { Star, X } from "lucide-react";
 import Link from "next/link";
 import { StockSearch } from "@/components/StockSearch";
 import { TradeDialog } from "@/components/TradeDialog";

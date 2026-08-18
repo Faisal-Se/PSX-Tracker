@@ -141,9 +141,6 @@ export default function PortfolioPage() {
     if (portfolioRes.ok) {
       const data = await portfolioRes.json();
       setPortfolios(data);
-      if (!activeTab && data.length > 0) {
-        setActiveTab(data[0].id);
-      }
     }
     if (marketRes.ok) {
       const data = await marketRes.json();
@@ -159,6 +156,11 @@ export default function PortfolioPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Default the active tab to the first portfolio once loaded.
+  useEffect(() => {
+    if (!activeTab && portfolios.length > 0) setActiveTab(portfolios[0].id);
+  }, [activeTab, portfolios]);
 
   const handleCreatePortfolio = async () => {
     const res = await fetch("/api/portfolios", {
@@ -342,7 +344,6 @@ export default function PortfolioPage() {
       return sortDir === "desc" ? bv - av : av - bv;
     });
     return rows;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePortfolio, marketData, history, sortKey, sortDir]);
 
   // Allocation donut (holdings + cash)
@@ -359,7 +360,6 @@ export default function PortfolioPage() {
       slices.push({ name: "Cash", value: activePortfolio.cashBalance });
     const total = slices.reduce((s, x) => s + x.value, 0) || 1;
     return slices.map((s) => ({ ...s, pct: (s.value / total) * 100 }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePortfolio, marketData]);
 
   const holdingCount = activePortfolio?.holdings.length ?? 0;

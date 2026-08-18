@@ -6,18 +6,6 @@ import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { NavProgressionChart } from "@/components/NavProgressionChart";
 
-interface Transaction {
-  id: string;
-  type: string;
-  symbol: string;
-  companyName: string;
-  quantity: number;
-  price: number;
-  total: number;
-  createdAt: string;
-  portfolioId: string;
-}
-
 interface Holding {
   symbol: string;
   companyName: string;
@@ -103,7 +91,6 @@ function tint(symbol: string) {
 export default function PerformancePage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [scope, setScope] = useState<Scope>("all");
@@ -112,10 +99,9 @@ export default function PerformancePage() {
   const fetchData = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [portfolioRes, modelRes, txRes, marketRes] = await Promise.all([
+      const [portfolioRes, modelRes, marketRes] = await Promise.all([
         fetch("/api/portfolios"),
         fetch("/api/model-portfolios"),
-        fetch("/api/transactions"),
         fetch("/api/psx"),
       ]);
 
@@ -124,7 +110,6 @@ export default function PerformancePage() {
         const data = await modelRes.json();
         setModelPortfolios(Array.isArray(data) ? data : []);
       }
-      if (txRes.ok) setTransactions(await txRes.json());
       if (marketRes.ok) {
         const data = await marketRes.json();
         setMarketData(Array.isArray(data) ? data : []);
@@ -204,26 +189,6 @@ export default function PerformancePage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartHoldings]);
-
-  // Derived transactions based on the selected scope (models synthesize portfolioId)
-  const activeTransactions = useMemo<Transaction[]>(() => {
-    const modelTx: Transaction[] = modelPortfolios.flatMap((m) =>
-      (m.transactions ?? []).map((t) => ({
-        id: t.id ?? `${m.id}-${t.symbol}-${t.createdAt}`,
-        type: t.type,
-        symbol: t.symbol,
-        companyName: t.companyName,
-        quantity: t.quantity,
-        price: t.price,
-        total: t.total,
-        createdAt: t.createdAt,
-        portfolioId: m.id,
-      }))
-    );
-    if (scope === "personal") return transactions;
-    if (scope === "models") return modelTx;
-    return [...transactions, ...modelTx];
-  }, [scope, transactions, modelPortfolios]);
 
   // Calculate current portfolio metrics
   const totalInvested = activePortfolios.reduce(

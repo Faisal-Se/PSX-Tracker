@@ -138,7 +138,6 @@ export function TradeDialog({
     }
   };
 
-  const canSell = type === "SELL" && ownedQty > 0;
   const cantSellReason =
     type === "SELL" && ownedQty === 0
       ? "You don't own this stock in this portfolio"
