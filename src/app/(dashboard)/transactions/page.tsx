@@ -1,10 +1,62 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { ChevronDown } from "lucide-react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
 import { formatPKR } from "@/lib/market-status";
+
+type TypeFilter = "all" | "BUY" | "SELL" | "CASH_IN" | "CASH_OUT" | "SPLIT";
+type PeriodFilter = "all" | "fy" | "cy" | "custom";
+
+const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
+  { value: "all", label: "All types" },
+  { value: "BUY", label: "Buy" },
+  { value: "SELL", label: "Sell" },
+  { value: "CASH_IN", label: "Cash In" },
+  { value: "CASH_OUT", label: "Cash Out" },
+  { value: "SPLIT", label: "Split" },
+];
+
+const PERIOD_OPTIONS: { value: PeriodFilter; label: string }[] = [
+  { value: "all", label: "All time" },
+  { value: "fy", label: "This fiscal year" },
+  { value: "cy", label: "This calendar year" },
+  { value: "custom", label: "Custom range" },
+];
+
+/**
+ * Date range [from, to] in ms for the selected period, or null for "all time".
+ * Pakistan fiscal year runs 1 Jul → 30 Jun. Runs client-side only.
+ */
+function periodRange(
+  period: PeriodFilter,
+  from: string,
+  to: string
+): { from: number; to: number } | null {
+  if (period === "all") return null;
+  const now = new Date();
+  if (period === "cy") {
+    const y = now.getFullYear();
+    return {
+      from: new Date(y, 0, 1).getTime(),
+      to: new Date(y, 11, 31, 23, 59, 59, 999).getTime(),
+    };
+  }
+  if (period === "fy") {
+    const y = now.getFullYear();
+    const startYear = now.getMonth() >= 6 ? y : y - 1; // month 6 = July
+    return {
+      from: new Date(startYear, 6, 1).getTime(),
+      to: new Date(startYear + 1, 5, 30, 23, 59, 59, 999).getTime(),
+    };
+  }
+  // custom
+  return {
+    from: from ? new Date(`${from}T00:00:00`).getTime() : -Infinity,
+    to: to ? new Date(`${to}T23:59:59.999`).getTime() : Infinity,
+  };
+}
 
 interface Transaction {
   id: string;
@@ -56,6 +108,11 @@ export default function TransactionsPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [models, setModels] = useState<Portfolio[]>([]);
   const [filterPortfolio, setFilterPortfolio] = useState("all");
+  const [filterType, setFilterType] = useState<TypeFilter>("all");
+  const [filterPeriod, setFilterPeriod] = useState<PeriodFilter>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [filterSymbol, setFilterSymbol] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -80,54 +137,146 @@ export default function TransactionsPage() {
     fetchData();
   }, [fetchData]);
 
-  // Realized P&L across the shown SELL transactions.
-  const realizedTotal = transactions.reduce(
+  // Client-side filters: type, period (fiscal/calendar/custom), and stock symbol.
+  const filtered = useMemo(() => {
+    let rows = transactions;
+    if (filterType !== "all") rows = rows.filter((t) => t.type === filterType);
+    const q = filterSymbol.trim().toUpperCase();
+    if (q) rows = rows.filter((t) => t.symbol.toUpperCase().includes(q));
+    const range = periodRange(filterPeriod, customFrom, customTo);
+    if (range) {
+      rows = rows.filter((t) => {
+        const d = new Date(t.createdAt).getTime();
+        return d >= range.from && d <= range.to;
+      });
+    }
+    return rows;
+  }, [transactions, filterType, filterSymbol, filterPeriod, customFrom, customTo]);
+
+  const filtersActive =
+    filterType !== "all" ||
+    filterPeriod !== "all" ||
+    filterSymbol.trim() !== "";
+  const clearFilters = () => {
+    setFilterType("all");
+    setFilterPeriod("all");
+    setCustomFrom("");
+    setCustomTo("");
+    setFilterSymbol("");
+  };
+
+  // Realized P&L across the shown (filtered) SELL transactions.
+  const realizedTotal = filtered.reduce(
     (sum, t) => sum + (t.type === "SELL" ? t.realizedPnl ?? 0 : 0),
     0
   );
-  const sellCount = transactions.filter((t) => t.type === "SELL").length;
+  const sellCount = filtered.filter((t) => t.type === "SELL").length;
   const realizedUp = realizedTotal >= 0;
 
   return (
     <>
       {/* Header */}
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="mb-1 text-[13px] font-medium text-ink-3">
-            {transactions.length} {transactions.length === 1 ? "record" : "records"}
+            {filtered.length}
+            {filtersActive ? ` of ${transactions.length}` : ""}{" "}
+            {filtered.length === 1 ? "record" : "records"}
           </div>
           <h1 className="text-[26px] font-bold tracking-[-.03em]">Transactions</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative">
-            <select
-              value={filterPortfolio}
-              onChange={(e) => setFilterPortfolio(e.target.value)}
-              className="h-10 appearance-none rounded-[10px] border border-line bg-card pl-3.5 pr-9 text-[13px] font-medium shadow-card outline-none focus:border-brand"
-            >
-              <option value="all">All Portfolios</option>
-              {portfolios.length > 0 && (
-                <optgroup label="Personal">
-                  {portfolios.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {models.length > 0 && (
-                <optgroup label="Models">
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
+      </div>
+
+      {/* Filter bar */}
+      <div className="mb-[18px] flex flex-wrap items-center gap-2.5">
+        {/* Portfolio (server-filtered) */}
+        <FilterSelect
+          value={filterPortfolio}
+          onChange={setFilterPortfolio}
+        >
+          <option value="all">All Portfolios</option>
+          {portfolios.length > 0 && (
+            <optgroup label="Personal">
+              {portfolios.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {models.length > 0 && (
+            <optgroup label="Models">
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </FilterSelect>
+
+        {/* Type */}
+        <FilterSelect
+          value={filterType}
+          onChange={(v) => setFilterType(v as TypeFilter)}
+        >
+          {TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </FilterSelect>
+
+        {/* Period */}
+        <FilterSelect
+          value={filterPeriod}
+          onChange={(v) => setFilterPeriod(v as PeriodFilter)}
+        >
+          {PERIOD_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </FilterSelect>
+
+        {/* Custom date range */}
+        {filterPeriod === "custom" && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="num h-10 rounded-[10px] border border-line bg-card px-2.5 text-[13px] shadow-card outline-none focus:border-brand"
+            />
+            <span className="text-[12px] text-ink-3">to</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="num h-10 rounded-[10px] border border-line bg-card px-2.5 text-[13px] shadow-card outline-none focus:border-brand"
+            />
           </div>
-        </div>
+        )}
+
+        {/* Stock symbol search */}
+        <label className="relative flex min-w-[160px] flex-1 items-center sm:max-w-[220px]">
+          <Search className="absolute left-3 h-[15px] w-[15px] opacity-50" />
+          <input
+            value={filterSymbol}
+            onChange={(e) => setFilterSymbol(e.target.value)}
+            placeholder="Filter by stock…"
+            className="h-10 w-full rounded-[10px] border border-line bg-card pl-9 pr-3 text-[13px] shadow-card outline-none focus:border-brand"
+          />
+        </label>
+
+        {filtersActive && (
+          <button
+            onClick={clearFilters}
+            className="flex h-10 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-[13px] font-medium text-ink-2 shadow-card hover:bg-ink/[.04]"
+          >
+            <X className="h-[14px] w-[14px]" /> Clear
+          </button>
+        )}
       </div>
 
       {/* Realized P&L summary */}
@@ -169,15 +318,19 @@ export default function TransactionsPage() {
               ))}
             </div>
           ))
-        ) : transactions.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-sm font-medium text-ink-2">No transactions yet</p>
+            <p className="text-sm font-medium text-ink-2">
+              {transactions.length === 0 ? "No transactions yet" : "No matching transactions"}
+            </p>
             <p className="mt-1 text-xs text-ink-3">
-              Start trading from the Market or Portfolio page
+              {transactions.length === 0
+                ? "Start trading from the Market or Portfolio page"
+                : "Try adjusting or clearing your filters"}
             </p>
           </div>
         ) : (
-          transactions.map((tx) => {
+          filtered.map((tx) => {
             const c = tint(tx.symbol);
             const badge = txBadge(tx.type);
             return (
@@ -242,5 +395,29 @@ export default function TransactionsPage() {
         )}
       </section>
     </>
+  );
+}
+
+/** Styled native <select> with a chevron, used for the filter bar. */
+function FilterSelect({
+  value,
+  onChange,
+  children,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-10 appearance-none rounded-[10px] border border-line bg-card pl-3.5 pr-9 text-[13px] font-medium shadow-card outline-none focus:border-brand"
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
+    </div>
   );
 }
