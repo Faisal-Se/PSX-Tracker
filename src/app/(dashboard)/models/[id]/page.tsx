@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,7 @@ import {
   Search,
   RefreshCw,
   Split,
+  Calculator,
   DollarSign,
   Pencil,
   Minus,
@@ -1001,6 +1003,14 @@ export default function ModelDetailPage() {
               <Split className="h-[15px] w-[15px]" />
               Split
             </button>
+            <Link
+              href={`/models/${id}/buy-plan`}
+              className="flex h-[38px] items-center gap-2 rounded-[10px] border border-line bg-card px-3.5 text-[13px] font-medium shadow-card hover:bg-ink/[.04]"
+              title="Allocation calculator / buy plan"
+            >
+              <Calculator className="h-[15px] w-[15px]" />
+              Buy Plan
+            </Link>
           </div>
         </div>
       </div>
