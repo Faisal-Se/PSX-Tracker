@@ -18,8 +18,19 @@ export async function GET(req: Request) {
     );
   }
 
+  // Opt-in trim for callers that only draw a short sparkline. Omitted by
+  // default, because the NAV progression chart and BenchmarkChart both offer
+  // an "All" range and need the complete series.
+  const limitParam = searchParams.get("limit");
+  const limit = limitParam ? Number(limitParam) : null;
+
   try {
-    const history = await getStockHistory(symbol);
+    const full = await getStockHistory(symbol);
+    // getStockHistory() returns oldest-first, so the tail is the recent end.
+    const history =
+      limit !== null && Number.isFinite(limit) && limit > 0
+        ? full.slice(-Math.floor(limit))
+        : full;
     return NextResponse.json(history, {
       headers: {
         // getStockHistory() degrades to [] for a bad symbol or a failed fetch.

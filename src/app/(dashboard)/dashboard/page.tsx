@@ -136,6 +136,12 @@ const SCOPES: { value: Scope; label: string }[] = [
   { value: "portfolio", label: "Portfolio" },
   { value: "models", label: "Models" },
 ];
+/** Closes drawn in the KSE-100 header sparkline. */
+const KSE_TREND_POINTS = 40;
+/** Fetch a small margin over that, so zero-close bars can be dropped and
+ *  still leave a full sparkline. */
+const KSE_TREND_FETCH = 60;
+
 const RANGE_DAYS: Record<Range, number> = {
   "1D": 2,
   "1W": 6,
@@ -273,7 +279,9 @@ export default function DashboardPage() {
   // KSE-100 sparkline series (the index history is fetchable as a symbol).
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/psx/history?symbol=KSE100")
+    // Only the last 40 closes are drawn, so ask for a short window instead of
+    // the full ~1,240-bar series (131 KB -> ~6 KB).
+    fetch(`/api/psx/history?symbol=KSE100&limit=${KSE_TREND_FETCH}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d: HistoryPoint[]) => {
         if (cancelled || !Array.isArray(d)) return;
@@ -281,7 +289,7 @@ export default function DashboardPage() {
           d
             .map((p) => p.close)
             .filter((n) => n > 0)
-            .slice(-40)
+            .slice(-KSE_TREND_POINTS)
         );
       })
       .catch(() => {});
