@@ -37,6 +37,10 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { useVisiblePoll } from "@/lib/use-visible-poll";
+
+/** Live market data refresh cadence, while the tab is visible. */
+const POLL_INTERVAL_MS = 60000;
 
 /* ────────────────────────── types ────────────────────────── */
 
@@ -272,9 +276,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
   }, [fetchData]);
+
+  useVisiblePoll(fetchData, POLL_INTERVAL_MS);
 
   // KSE-100 sparkline series (the index history is fetchable as a symbol).
   useEffect(() => {

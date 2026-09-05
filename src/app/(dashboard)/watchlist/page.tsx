@@ -6,6 +6,10 @@ import Link from "next/link";
 import { StockSearch } from "@/components/StockSearch";
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
+import { useVisiblePoll } from "@/lib/use-visible-poll";
+
+/** Live market data refresh cadence, while the tab is visible. */
+const POLL_INTERVAL_MS = 60000;
 
 interface WatchlistItem {
   id: string;
@@ -69,9 +73,9 @@ export default function WatchlistPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
   }, [fetchData]);
+
+  useVisiblePoll(fetchData, POLL_INTERVAL_MS);
 
   const handleRemove = async (symbol: string) => {
     await fetch(`/api/watchlist?symbol=${encodeURIComponent(symbol)}`, {
