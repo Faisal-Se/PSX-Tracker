@@ -69,6 +69,8 @@ export async function POST(
     quantity: number;
     price: number;
     total: number;
+    /** SELL only: (price − avgCost) × qty, same formula as bulk-trade. */
+    realizedPnl?: number;
   }[] = [];
 
   const newAllocations: ModelAllocationData[] = [];
@@ -152,6 +154,7 @@ export async function POST(
         quantity: sellQty,
         price: sellPrice,
         total: proceeds,
+        realizedPnl: (sellPrice - currentAvgPrice) * sellQty,
       });
       newAllocations.push({
         id: existing?.id || generateId(),
@@ -194,6 +197,7 @@ export async function POST(
         quantity: existing.shares,
         price: sellPrice,
         total: proceeds,
+        realizedPnl: (sellPrice - existing.avgPrice) * existing.shares,
       });
     }
   }
@@ -239,6 +243,9 @@ export async function POST(
         price: trade.price,
         total: trade.total,
         createdAt: now,
+        ...(trade.realizedPnl !== undefined
+          ? { realizedPnl: trade.realizedPnl }
+          : {}),
       });
     }
     return m;
