@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowUpRight, ArrowDownRight, AlertTriangle } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+import { buyCost, sellProceeds } from "@/lib/fees";
+import { useFeeSettings } from "@/lib/use-fee-settings";
 
 interface Portfolio {
   id: string;
@@ -96,7 +98,15 @@ export function TradeDialog({
     if (portfolioId) fetchHoldings(portfolioId);
   }, [portfolioId, fetchHoldings]);
 
-  const total = (parseInt(quantity) || 0) * (parseFloat(price) || 0);
+  // Preview the trade exactly as the server will book it: all-in cost on a
+  // BUY, net proceeds on a SELL, per the user's fee settings.
+  const feeSettings = useFeeSettings();
+  const qtyNum = parseInt(quantity) || 0;
+  const priceNum = parseFloat(price) || 0;
+  const buy = buyCost(qtyNum, priceNum, feeSettings);
+  const sell = sellProceeds(qtyNum, priceNum, feeSettings);
+  const total = type === "BUY" ? buy.total : sell.net;
+  const fees = type === "BUY" ? buy.fees : sell.fees;
   const selectedPortfolio = portfolios.find((p) => p.id === portfolioId);
   const currentHolding = holdings.find((h) => h.symbol === symbol);
   const ownedQty = currentHolding?.quantity || 0;
@@ -287,8 +297,16 @@ export function TradeDialog({
 
           {/* Summary */}
           <div className="bg-muted/50 p-3.5 rounded-xl space-y-2">
+            {fees > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Fees</span>
+                <span className="font-tabular">PKR {formatPKR(fees)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Total</span>
+              <span className="text-muted-foreground">
+                {type === "BUY" ? "Total cost" : "Net proceeds"}
+              </span>
               <span className="font-bold font-tabular">
                 PKR {formatPKR(total)}
               </span>
@@ -305,10 +323,10 @@ export function TradeDialog({
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">P&L on this trade</span>
                 <span className={`font-tabular font-semibold ${
-                  (parseFloat(price) || 0) >= avgBuyPrice ? "text-emerald-600" : "text-red-500"
+                  sell.net >= avgBuyPrice * sellQty ? "text-emerald-600" : "text-red-500"
                 }`}>
-                  {(parseFloat(price) || 0) >= avgBuyPrice ? "+" : ""}
-                  PKR {formatPKR(((parseFloat(price) || 0) - avgBuyPrice) * sellQty, { decimals: 0 })}
+                  {sell.net >= avgBuyPrice * sellQty ? "+" : ""}
+                  PKR {formatPKR(sell.net - avgBuyPrice * sellQty, { decimals: 0 })}
                 </span>
               </div>
             )}

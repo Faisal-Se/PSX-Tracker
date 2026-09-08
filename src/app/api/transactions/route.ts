@@ -5,10 +5,12 @@ import {
   getPortfolio,
   getModelPortfolios,
   updatePortfolio,
+  getSettings,
   generateId,
   type TransactionData,
   type HoldingData,
 } from "@/lib/gdrive";
+import { buyCost, sellProceeds } from "@/lib/fees";
 
 /** Error whose message is safe to surface to the client as a 400. */
 class TradeError extends Error {}
@@ -59,6 +61,7 @@ export async function GET(req: Request) {
         price: t.price,
         total: t.total,
         realizedPnl: t.realizedPnl,
+        fees: t.fees,
         createdAt: t.createdAt,
         portfolioId: m.id,
         portfolioName: m.name,
@@ -108,7 +111,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Portfolio not found" }, { status: 404 });
   }
 
-  const total = quantity * price;
+  // Fees per the user's Settings (zero unless configured). Cash effect of the
+  // trade is the all-in cost on a BUY and the net proceeds on a SELL.
+  const { fees: feeSettings } = await getSettings();
+  const buy = buyCost(quantity, price, feeSettings);
+  const sell = sellProceeds(quantity, price, feeSettings);
+  const total = type === "BUY" ? buy.total : sell.net;
+  const fees = type === "BUY" ? buy.fees : sell.fees;
   const now = new Date().toISOString();
   let transaction: TransactionData;
 
@@ -131,7 +140,8 @@ export async function POST(req: Request) {
           portfolio.holdings[existingIdx] = {
             ...ex,
             quantity: newQty,
-            avgPrice: (ex.avgPrice * ex.quantity + price * quantity) / newQty,
+            // Cost basis includes fees, so avg matches the broker statement.
+            avgPrice: (ex.avgPrice * ex.quantity + buy.total) / newQty,
             updatedAt: now,
           };
         } else {
@@ -140,7 +150,7 @@ export async function POST(req: Request) {
             symbol,
             companyName: companyName || symbol,
             quantity,
-            avgPrice: price,
+            avgPrice: buy.effectivePrice,
             createdAt: now,
             updatedAt: now,
           };
@@ -158,9 +168,9 @@ export async function POST(req: Request) {
         else portfolio.holdings[existingIdx] = { ...ex, quantity: newQty, updatedAt: now };
       }
 
-      // Realized P&L on SELL = (sale price − avg cost) × qty.
+      // Realized P&L on SELL = net proceeds − avg cost × qty.
       const realizedPnl =
-        type === "SELL" ? (price - sellAvgPrice) * quantity : undefined;
+        type === "SELL" ? sell.net - sellAvgPrice * quantity : undefined;
 
       transaction = {
         id: generateId(),
@@ -173,6 +183,7 @@ export async function POST(req: Request) {
         portfolioId,
         createdAt: now,
         ...(realizedPnl !== undefined ? { realizedPnl } : {}),
+        ...(fees > 0 ? { fees } : {}),
       };
       portfolio.transactions.push(transaction);
       return portfolio;
