@@ -67,12 +67,14 @@ export async function GET(req: Request) {
     }
   }
 
-  // Sort by date desc, take 100
+  // Sort by date desc. Return the full history: the transactions page filters
+  // client-side and sums realized P&L over what it receives, so a row cap
+  // here silently dropped older sells from the total.
   allTransactions.sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  return NextResponse.json(allTransactions.slice(0, 100));
+  return NextResponse.json(allTransactions);
 }
 
 export async function POST(req: Request) {
