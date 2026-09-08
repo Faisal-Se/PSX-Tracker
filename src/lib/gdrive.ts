@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { getAuthenticatedClient } from "./google-auth";
 import { Readable } from "stream";
+import { type FeeSettings, ZERO_FEES, normalizeFeeSettings } from "./fees";
 
 // Each data type is stored as a separate JSON file in the user's Google Drive appDataFolder
 // Files: portfolios.json, watchlist.json, model-portfolios.json
@@ -42,8 +43,10 @@ export interface TransactionData {
   total: number;
   portfolioId: string;
   createdAt: string;
-  /** Realized gain/loss, set on SELL = (price − avgCost) × qty. */
+  /** Realized gain/loss on a SELL, net of fees. */
   realizedPnl?: number;
+  /** Brokerage + taxes + levies on this trade. `total` already includes it. */
+  fees?: number;
 }
 
 export interface WatchlistItem {
@@ -84,8 +87,10 @@ export interface ModelTransactionData {
   price: number;
   total: number;
   createdAt: string;
-  /** Realized gain/loss, set on SELL = (price − avgCost) × qty. */
+  /** Realized gain/loss on a SELL, net of fees. */
   realizedPnl?: number;
+  /** Brokerage + taxes + levies on this trade. `total` already includes it. */
+  fees?: number;
 }
 
 function generateId(): string {
@@ -394,4 +399,27 @@ export async function deleteModelPortfolio(id: string): Promise<boolean> {
     return filtered;
   });
   return deleted;
+}
+
+// ─── User settings ───
+
+export interface UserSettings {
+  fees: FeeSettings;
+  updatedAt?: string;
+}
+
+export async function getSettings(): Promise<UserSettings> {
+  const raw = await readFile<Partial<UserSettings>>("settings.json", {});
+  return { fees: normalizeFeeSettings(raw.fees), updatedAt: raw.updatedAt };
+}
+
+export async function updateSettings(
+  mutate: (current: UserSettings) => UserSettings
+): Promise<UserSettings> {
+  return mutateFile<UserSettings>(
+    "settings.json",
+    { fees: { ...ZERO_FEES } },
+    (cur) =>
+      mutate({ fees: normalizeFeeSettings(cur.fees), updatedAt: cur.updatedAt })
+  );
 }

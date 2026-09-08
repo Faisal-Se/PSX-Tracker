@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   LogOut,
+  Settings,
 } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import { useEffect, useState } from "react";
@@ -38,6 +39,7 @@ const moreItems = [
   { href: "/transactions", label: "Transactions" },
   { href: "/what-if", label: "What-If" },
   { href: "/import", label: "Import" },
+  { href: "/settings", label: "Settings" },
   { href: "/about", label: "About" },
 ];
 
@@ -222,6 +224,12 @@ export function TopNav() {
                   <p className="truncate text-xs text-ink-3">{user.email}</p>
                 </div>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => router.push("/settings")}
+                  className="cursor-pointer"
+                >
+                  <Settings className="mr-2 h-4 w-4" /> Settings
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleLogout}
                   className="cursor-pointer text-loss-strong focus:text-loss-strong"
