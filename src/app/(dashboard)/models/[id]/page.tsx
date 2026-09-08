@@ -605,10 +605,18 @@ export default function ModelDetailPage() {
     setRebalanceLoading(true);
     setRebalanceError("");
 
+    // Always send the price the user was shown. A blank field means "market
+    // price", but the server has its own market fetch that can differ from the
+    // one on this page, so the previewed "New avg" and the stored avgPrice
+    // would drift apart. Sending trade.marketPrice makes them identical by
+    // construction (SIP and bulk-trade already work this way).
     const customPrices = customPricesOverride ?? Object.fromEntries(
       rebalanceTrades
-        .filter((t) => t.price && parseFloat(t.price) > 0)
-        .map((t) => [t.symbol, parseFloat(t.price)])
+        .map((t) => {
+          const typed = parseFloat(t.price);
+          return [t.symbol, typed > 0 ? typed : t.marketPrice] as const;
+        })
+        .filter(([, price]) => price > 0)
     );
 
     try {
@@ -1876,7 +1884,7 @@ export default function ModelDetailPage() {
 
           <p className="-mt-1 text-xs text-ink-3">
             Enter the price at which you are buying/selling each stock. Leave empty to use
-            market price.
+            the market price shown.
           </p>
 
           <div className="space-y-3 pt-2">
