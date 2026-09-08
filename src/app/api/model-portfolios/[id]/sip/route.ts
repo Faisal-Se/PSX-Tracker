@@ -3,9 +3,11 @@ import { getCurrentUser } from "@/lib/google-auth";
 import {
   getModelPortfolio,
   updateModelPortfolio,
+  getSettings,
   generateId,
 } from "@/lib/gdrive";
 import { getMarketWatch } from "@/lib/psx";
+import { buyCost } from "@/lib/fees";
 
 /**
  * Atomic SIP: deposit cash and execute the buy plan in ONE Drive write so a
@@ -45,10 +47,11 @@ export async function POST(
 
   const marketData = await getMarketWatch();
   const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
+  const { fees: feeSettings } = await getSettings();
 
-  // Resolve + validate buy legs.
+  // Resolve + validate buy legs. `total` is the all-in cost including fees.
   let totalCost = 0;
-  const resolved: { symbol: string; companyName: string; quantity: number; price: number; total: number }[] = [];
+  const resolved: { symbol: string; companyName: string; quantity: number; price: number; total: number; fees: number }[] = [];
   for (const t of trades) {
     if (!Number.isFinite(t.quantity) || t.quantity <= 0) continue;
     const price = t.price && t.price > 0 ? t.price : priceMap.get(t.symbol) || 0;
@@ -58,9 +61,9 @@ export async function POST(
         { status: 400 }
       );
     }
-    const total = t.quantity * price;
+    const { total, fees } = buyCost(t.quantity, price, feeSettings);
     totalCost += total;
-    resolved.push({ symbol: t.symbol, companyName: t.companyName, quantity: t.quantity, price, total });
+    resolved.push({ symbol: t.symbol, companyName: t.companyName, quantity: t.quantity, price, total, fees });
   }
 
   // Deposit must cover the plan (the rest stays as cash).
@@ -99,6 +102,7 @@ export async function POST(
         price: trade.price,
         total: trade.total,
         createdAt: now,
+        ...(trade.fees > 0 ? { fees: trade.fees } : {}),
       });
       const idx = m.allocations.findIndex((a) => a.symbol === trade.symbol);
       if (idx >= 0) {
@@ -107,7 +111,7 @@ export async function POST(
         m.allocations[idx] = {
           ...ex,
           shares: newShares,
-          avgPrice: (ex.avgPrice * ex.shares + trade.price * trade.quantity) / newShares,
+          avgPrice: (ex.avgPrice * ex.shares + trade.total) / newShares,
           updatedAt: now,
         };
       } else {
@@ -117,7 +121,7 @@ export async function POST(
           companyName: trade.companyName,
           percentage: 0,
           shares: trade.quantity,
-          avgPrice: trade.price,
+          avgPrice: trade.total / trade.quantity,
           createdAt: now,
           updatedAt: now,
         });

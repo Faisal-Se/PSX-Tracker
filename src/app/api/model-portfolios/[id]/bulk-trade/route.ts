@@ -3,9 +3,11 @@ import { getCurrentUser } from "@/lib/google-auth";
 import {
   getModelPortfolio,
   updateModelPortfolio,
+  getSettings,
   generateId,
 } from "@/lib/gdrive";
 import { getMarketWatch } from "@/lib/psx";
+import { buyCost, sellProceeds } from "@/lib/fees";
 
 export async function POST(
   req: Request,
@@ -42,8 +44,10 @@ export async function POST(
 
   const marketData = await getMarketWatch();
   const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
+  const { fees: feeSettings } = await getSettings();
 
   let totalBuyCost = 0;
+  // `total` is the cash effect: all-in cost on a BUY, net proceeds on a SELL.
   const resolvedTrades: {
     symbol: string;
     companyName: string;
@@ -51,6 +55,7 @@ export async function POST(
     quantity: number;
     price: number;
     total: number;
+    fees: number;
   }[] = [];
 
   // Aggregate total sell quantity per symbol so two SELLs of the same stock
@@ -80,7 +85,13 @@ export async function POST(
       );
     }
 
-    const total = trade.quantity * price;
+    const { total, fees } =
+      trade.type === "BUY"
+        ? buyCost(trade.quantity, price, feeSettings)
+        : (() => {
+            const s = sellProceeds(trade.quantity, price, feeSettings);
+            return { total: s.net, fees: s.fees };
+          })();
 
     if (trade.type === "SELL") {
       sellTotals.set(
@@ -98,6 +109,7 @@ export async function POST(
       quantity: trade.quantity,
       price,
       total,
+      fees,
     });
   }
 
@@ -148,10 +160,9 @@ export async function POST(
         if (existingIdx >= 0) {
           const existing = m.allocations[existingIdx];
           const newShares = existing.shares + trade.quantity;
+          // Cost basis includes fees.
           const newAvg =
-            (existing.avgPrice * existing.shares +
-              trade.price * trade.quantity) /
-            newShares;
+            (existing.avgPrice * existing.shares + trade.total) / newShares;
           m.allocations[existingIdx] = {
             ...existing,
             shares: newShares,
@@ -165,7 +176,7 @@ export async function POST(
             companyName: trade.companyName,
             percentage: 0,
             shares: trade.quantity,
-            avgPrice: trade.price,
+            avgPrice: trade.total / trade.quantity,
             createdAt: now,
             updatedAt: now,
           });
@@ -198,8 +209,9 @@ export async function POST(
         total: trade.total,
         createdAt: now,
         ...(trade.type === "SELL"
-          ? { realizedPnl: (trade.price - sellAvg) * trade.quantity }
+          ? { realizedPnl: trade.total - sellAvg * trade.quantity }
           : {}),
+        ...(trade.fees > 0 ? { fees: trade.fees } : {}),
       });
     }
 

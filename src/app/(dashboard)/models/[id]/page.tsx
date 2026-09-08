@@ -40,6 +40,8 @@ import {
   Pie,
 } from "recharts";
 import { useSort } from "@/lib/use-sort";
+import { buyCost, sellProceeds, maxAffordableShares } from "@/lib/fees";
+import { useFeeSettings } from "@/lib/use-fee-settings";
 import { SortBar, SortHeader } from "@/components/SortHeader";
 
 interface Allocation {
@@ -280,6 +282,9 @@ export default function ModelDetailPage() {
     return () => clearTimeout(timer);
   }, [stockQuery, rebalanceAllocations]);
 
+  // Trading fees, so every preview matches what the server will book.
+  const feeSettings = useFeeSettings();
+
   // Column / list sorting. Hooks, so they sit above the early return below.
   type HoldingSortKey = "symbol" | "alloc" | "shares" | "avg" | "current" | "value" | "pnl";
   const holdingSort = useSort<HoldingSortKey>("alloc", ["symbol"]);
@@ -338,7 +343,7 @@ export default function ModelDetailPage() {
     const plan = weights
       .map((w) => {
         const targetAmount = amount * w.weight;
-        const shares = w.price > 0 ? Math.floor(targetAmount / w.price) : 0;
+        const shares = maxAffordableShares(targetAmount, w.price, feeSettings);
         return {
           symbol: w.symbol,
           companyName: w.companyName,
@@ -351,7 +356,7 @@ export default function ModelDetailPage() {
       .filter((t) => t.shares > 0);
 
     setSipPlan(plan);
-  }, [sipAmount, sipBasis, model, marketPrices]);
+  }, [sipAmount, sipBasis, model, marketPrices, feeSettings]);
 
   if (loading || !model) {
     return (
@@ -528,7 +533,7 @@ export default function ModelDetailPage() {
       };
       if (rebalanceMode === "shares" && stock.current > 0 && totalValue > 0) {
         const targetValue = (defaultPct / 100) * totalValue;
-        newAlloc.inputShares = Math.floor(targetValue / stock.current);
+        newAlloc.inputShares = maxAffordableShares(targetValue, stock.current, feeSettings);
       }
       return [...updated, newAlloc];
     });
@@ -564,7 +569,7 @@ export default function ModelDetailPage() {
         const pctChanged = Math.abs(alloc.percentage - originalPct) > 0.01;
         if (!pctChanged) continue; // unchanged stock — skip entirely
         if (mktPrice <= 0) continue;
-        targetShares = Math.floor(((alloc.percentage / 100) * totalValue) / mktPrice);
+        targetShares = maxAffordableShares((alloc.percentage / 100) * totalValue, mktPrice, feeSettings);
       }
 
       const diff = targetShares - currentShares;
@@ -647,7 +652,7 @@ export default function ModelDetailPage() {
             const existingShares = model.allocations.find((o) => o.symbol === a.symbol)?.shares ?? 0;
             const mktPrice = marketPrices[a.symbol] || 0;
             const exactShares = pctChanged && mktPrice > 0
-              ? Math.floor(((a.percentage / 100) * totalValue) / mktPrice)
+              ? maxAffordableShares((a.percentage / 100) * totalValue, mktPrice, feeSettings)
               : existingShares;
             return { symbol: a.symbol, companyName: a.companyName, percentage: a.percentage, exactShares };
           }),
@@ -933,7 +938,7 @@ export default function ModelDetailPage() {
       : key === "shares"
         ? p.shares
         : key === "cost"
-          ? p.shares * (parseFloat(p.price) || p.marketPrice)
+          ? buyCost(p.shares, parseFloat(p.price) || p.marketPrice, feeSettings).total
           : p.weight
   );
 
@@ -1813,7 +1818,7 @@ export default function ModelDetailPage() {
                           const originalPct = existing?.percentage ?? -1;
                           const pctChanged = Math.abs(alloc.percentage - originalPct) > 0.01;
                           targetShares = pctChanged && price > 0
-                            ? Math.floor(((alloc.percentage / 100) * totalValue) / price)
+                            ? maxAffordableShares((alloc.percentage / 100) * totalValue, price, feeSettings)
                             : currentShares;
                         }
                       }
@@ -1968,23 +1973,25 @@ export default function ModelDetailPage() {
                 trade.price && parseFloat(trade.price) > 0
                   ? parseFloat(trade.price)
                   : trade.marketPrice;
-              const totalCost = trade.shares * tradePrice;
+              // Same arithmetic as the rebalance route, fees included.
+              const buy = buyCost(trade.shares, tradePrice, feeSettings);
+              const sell = sellProceeds(trade.shares, tradePrice, feeSettings);
+              const tradeFeeAmt = trade.type === "BUY" ? buy.fees : sell.fees;
+              const totalCost = trade.type === "BUY" ? buy.total : sell.net;
               const pnl =
-                trade.type === "SELL"
-                  ? (tradePrice - trade.avgPrice) * trade.shares
-                  : 0;
+                trade.type === "SELL" ? sell.net - trade.avgPrice * trade.shares : 0;
               const newAvg =
                 trade.type === "BUY" && trade.avgPrice > 0
                   ? (() => {
                       const existing = model.allocations.find((a) => a.symbol === trade.symbol);
                       const existingShares = existing?.shares || 0;
                       return (
-                        (trade.avgPrice * existingShares + tradePrice * trade.shares) /
+                        (trade.avgPrice * existingShares + buy.total) /
                         (existingShares + trade.shares)
                       );
                     })()
                   : trade.type === "BUY"
-                    ? tradePrice
+                    ? buy.effectivePrice
                     : 0;
 
               return (
@@ -2052,6 +2059,11 @@ export default function ModelDetailPage() {
                     <div className="flex justify-between font-semibold">
                       <span className="text-ink-3">Total</span>
                       <span className="num money">Rs {formatPKR(totalCost, { decimals: 0 })}</span>
+                      {tradeFeeAmt > 0 && (
+                        <span className="num ml-1 text-[10.5px] text-ink-3">
+                          incl. Rs {formatPKR(tradeFeeAmt)} fees
+                        </span>
+                      )}
                     </div>
                     {trade.type === "SELL" && trade.avgPrice > 0 && (
                       <div className="flex justify-between border-t border-line pt-1 font-semibold">
@@ -2181,7 +2193,8 @@ export default function ModelDetailPage() {
             {sipPlan.length > 0 && (() => {
               const amount = parseFloat(sipAmount) || 0;
               const totalCost = sipPlan.reduce(
-                (sum, p) => sum + p.shares * (parseFloat(p.price) || p.marketPrice),
+                (sum, p) =>
+                  sum + buyCost(p.shares, parseFloat(p.price) || p.marketPrice, feeSettings).total,
                 0
               );
               const leftover = amount - totalCost;
@@ -2206,7 +2219,7 @@ export default function ModelDetailPage() {
                   <div className="space-y-1.5">
                     {sortedSipPlan.map((item) => {
                       const price = parseFloat(item.price) || item.marketPrice;
-                      const cost = item.shares * price;
+                      const cost = buyCost(item.shares, price, feeSettings).total;
                       return (
                         <div
                           key={item.symbol}
@@ -2301,7 +2314,7 @@ export default function ModelDetailPage() {
             <div className="space-y-2">
               {sortedSipPlan.map((item) => {
                 const price = parseFloat(item.price) || item.marketPrice;
-                const cost = item.shares * price;
+                const cost = buyCost(item.shares, price, feeSettings).total;
                 return (
                   <div
                     key={item.symbol}
@@ -2482,7 +2495,9 @@ export default function ModelDetailPage() {
                         ? t.type
                         : key === "qty"
                           ? q
-                          : q * px;
+                          : t.type === "BUY"
+                            ? buyCost(q, px, feeSettings).total
+                            : sellProceeds(q, px, feeSettings).net;
                   })
                   .map((trade) => {
                   const price =
@@ -2490,7 +2505,11 @@ export default function ModelDetailPage() {
                       ? parseFloat(trade.price)
                       : marketPrices[trade.symbol] || 0;
                   const qty = parseInt(trade.quantity) || 0;
-                  const total = qty * price;
+                  // Cash effect incl. fees, as the server books it.
+                  const total =
+                    trade.type === "BUY"
+                      ? buyCost(qty, price, feeSettings).total
+                      : sellProceeds(qty, price, feeSettings).net;
 
                   return (
                     <div

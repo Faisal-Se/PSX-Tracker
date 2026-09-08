@@ -15,6 +15,8 @@ import {
 import { formatPKR } from "@/lib/market-status";
 import { Sparkline } from "@/components/Sparkline";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { buyCost, maxAffordableShares } from "@/lib/fees";
+import { useFeeSettings } from "@/lib/use-fee-settings";
 
 /* Chart palette (allocation bars, NOT P&L) */
 const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#DB2777"];
@@ -75,6 +77,8 @@ export default function ModelsPage() {
   // Stock search
   const [stockQuery, setStockQuery] = useState("");
   const [stockResults, setStockResults] = useState<SearchStock[]>([]);
+  // Trading fees, so share estimates match what the server will buy.
+  const feeSettings = useFeeSettings();
   const [searchLoading, setSearchLoading] = useState(false);
 
   // Market prices for preview
@@ -257,7 +261,7 @@ export default function ModelsPage() {
       // In shares mode, compute initial shares from the default percentage
       if (allocMode === "shares" && cashAmount > 0 && stock.current > 0) {
         const allocAmount = (defaultPct / 100) * cashAmount;
-        newAlloc.inputShares = Math.floor(allocAmount / stock.current);
+        newAlloc.inputShares = maxAffordableShares(allocAmount, stock.current, feeSettings);
       }
       return [...updated, newAlloc];
     });
@@ -658,7 +662,7 @@ export default function ModelsPage() {
                               if (a.symbol === "CASH") return a;
                               const price = a.customPrice || marketPrices[a.symbol] || 0;
                               const allocAmount = (a.percentage / 100) * cashAmount;
-                              const estShares = price > 0 ? Math.floor(allocAmount / price) : 0;
+                              const estShares = maxAffordableShares(allocAmount, price, feeSettings);
                               return { ...a, inputShares: estShares };
                             })
                           );
@@ -714,10 +718,10 @@ export default function ModelsPage() {
                   const usePrice = alloc.customPrice || mktPrice;
                   const allocAmount = (alloc.percentage / 100) * cashAmount;
                   const estShares =
-                    alloc.symbol !== "CASH" && usePrice > 0
-                      ? Math.floor(allocAmount / usePrice)
+                    alloc.symbol !== "CASH"
+                      ? maxAffordableShares(allocAmount, usePrice, feeSettings)
                       : 0;
-                  const estCost = estShares * usePrice;
+                  const estCost = buyCost(estShares, usePrice, feeSettings).total;
 
                   return (
                     <div

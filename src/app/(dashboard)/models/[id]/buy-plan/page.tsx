@@ -14,6 +14,8 @@ import { formatPKR } from "@/lib/market-status";
 import { StockSearch } from "@/components/StockSearch";
 import { ChartSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { useSort } from "@/lib/use-sort";
+import { buyCost, sellProceeds, maxAffordableShares } from "@/lib/fees";
+import { useFeeSettings } from "@/lib/use-fee-settings";
 import { SortHeader } from "@/components/SortHeader";
 
 /* ────────────────────────── types ────────────────────────── */
@@ -166,19 +168,34 @@ export default function BuyPlanPage() {
 
   /* ── calculations ── */
   const amt = parseFloat(amount) || 0;
+  // Trading fees, so the plan's share counts and costs match what a trade
+  // would actually book.
+  const feeSettings = useFeeSettings();
 
   const computed = useMemo(() => {
     return rows.map((r) => {
       const weight = parseFloat(r.weight) || 0;
       const price = parseFloat(r.price) || 0;
       const targetAmount = amt * (weight / 100);
-      const targetShares = price > 0 ? Math.floor(targetAmount / price) : 0;
-      const cost = targetShares * price;
+      // The cash row has no fees; stock rows fit whole shares within budget
+      // including fees, and cost/deltaCost are the all-in cash effect.
+      const targetShares = r.isCash
+        ? price > 0
+          ? Math.floor(targetAmount / price)
+          : 0
+        : maxAffordableShares(targetAmount, price, feeSettings);
+      const cost = r.isCash
+        ? targetShares * price
+        : buyCost(targetShares, price, feeSettings).total;
       const delta = targetShares - r.currentShares; // + buy, − sell
-      const deltaCost = delta * price;
+      const deltaCost = r.isCash
+        ? delta * price
+        : delta > 0
+          ? buyCost(delta, price, feeSettings).total
+          : -sellProceeds(-delta, price, feeSettings).net;
       return { ...r, weight, price, targetShares, cost, delta, deltaCost };
     });
-  }, [rows, amt]);
+  }, [rows, amt, feeSettings]);
 
   const weightSum = computed.reduce((s, r) => s + r.weight, 0);
   const totalCost = computed.reduce((s, r) => s + r.cost, 0);

@@ -3,11 +3,13 @@ import { getCurrentUser } from "@/lib/google-auth";
 import {
   getModelPortfolios,
   createModelPortfolio,
+  getSettings,
   generateId,
   type ModelAllocationData,
   type ModelTransactionData,
 } from "@/lib/gdrive";
 import { getMarketWatch } from "@/lib/psx";
+import { buyCost, maxAffordableShares } from "@/lib/fees";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -101,6 +103,7 @@ export async function POST(req: Request) {
     priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
   }
 
+  const { fees: feeSettings } = await getSettings();
   const now = new Date().toISOString();
   const newAllocations: ModelAllocationData[] = [];
   const newTransactions: ModelTransactionData[] = [];
@@ -166,8 +169,9 @@ export async function POST(req: Request) {
     // Use exact shares if provided (shares mode), otherwise calculate from percentage
     const shares = alloc.exactShares != null
       ? alloc.exactShares
-      : Math.floor(((alloc.percentage / 100) * cashBalance) / price);
-    const cost = shares * price;
+      : maxAffordableShares((alloc.percentage / 100) * cashBalance, price, feeSettings);
+    // All-in cost; avgPrice carries the fees so it matches a broker statement.
+    const { total: cost, fees, effectivePrice } = buyCost(shares, price, feeSettings);
 
     newAllocations.push({
       id: generateId(),
@@ -175,7 +179,7 @@ export async function POST(req: Request) {
       companyName: alloc.companyName,
       percentage: alloc.percentage,
       shares,
-      avgPrice: shares > 0 ? price : 0,
+      avgPrice: shares > 0 ? effectivePrice : 0,
       createdAt: now,
       updatedAt: now,
     });
@@ -190,6 +194,7 @@ export async function POST(req: Request) {
         price,
         total: cost,
         createdAt: now,
+        ...(fees > 0 ? { fees } : {}),
       });
     }
 

@@ -3,10 +3,12 @@ import { getCurrentUser } from "@/lib/google-auth";
 import {
   getModelPortfolio,
   updateModelPortfolio,
+  getSettings,
   generateId,
   type ModelAllocationData,
 } from "@/lib/gdrive";
 import { getMarketWatch } from "@/lib/psx";
+import { buyCost, sellProceeds, maxAffordableShares } from "@/lib/fees";
 
 export async function POST(
   req: Request,
@@ -50,6 +52,7 @@ export async function POST(
   // Fetch current market prices
   const marketData = await getMarketWatch();
   const priceMap = new Map(marketData.map((s) => [s.symbol, s.current]));
+  const { fees: feeSettings } = await getSettings();
 
   // Calculate total portfolio value
   let totalValue = model.cashBalance;
@@ -69,8 +72,9 @@ export async function POST(
     quantity: number;
     price: number;
     total: number;
-    /** SELL only: (price − avgCost) × qty, same formula as bulk-trade. */
+    /** SELL only: net proceeds − avgCost × qty, same formula as bulk-trade. */
     realizedPnl?: number;
+    fees?: number;
   }[] = [];
 
   const newAllocations: ModelAllocationData[] = [];
@@ -115,7 +119,7 @@ export async function POST(
     // Use exact shares if provided, otherwise calculate from percentage
     const targetShares = alloc.exactShares != null
       ? alloc.exactShares
-      : Math.floor(((alloc.percentage / 100) * totalValue) / currentPrice);
+      : maxAffordableShares((alloc.percentage / 100) * totalValue, currentPrice, feeSettings);
     const existing = currentMap.get(alloc.symbol);
     const currentShares = existing?.shares || 0;
     const currentAvgPrice = existing?.avgPrice || 0;
@@ -125,21 +129,19 @@ export async function POST(
       const buyPrice = customPrices[alloc.symbol] && customPrices[alloc.symbol] > 0
         ? customPrices[alloc.symbol]
         : currentPrice;
-      const cost = diff * buyPrice;
-      cashDelta -= cost;
+      const buy = buyCost(diff, buyPrice, feeSettings);
+      cashDelta -= buy.total;
       trades.push({
         type: "BUY",
         symbol: alloc.symbol,
         companyName: alloc.companyName,
         quantity: diff,
         price: buyPrice,
-        total: cost,
+        total: buy.total,
+        fees: buy.fees,
       });
-      const newAvgPrice =
-        currentShares > 0
-          ? (currentAvgPrice * currentShares + buyPrice * diff) /
-            targetShares
-          : buyPrice;
+      // Cost basis includes fees. With no prior shares this is buy.effectivePrice.
+      const newAvgPrice = (currentAvgPrice * currentShares + buy.total) / targetShares;
       newAllocations.push({
         id: existing?.id || generateId(),
         symbol: alloc.symbol,
@@ -155,16 +157,17 @@ export async function POST(
       const sellPrice = customPrices[alloc.symbol] && customPrices[alloc.symbol] > 0
         ? customPrices[alloc.symbol]
         : currentPrice;
-      const proceeds = sellQty * sellPrice;
-      cashDelta += proceeds;
+      const sell = sellProceeds(sellQty, sellPrice, feeSettings);
+      cashDelta += sell.net;
       trades.push({
         type: "SELL",
         symbol: alloc.symbol,
         companyName: alloc.companyName,
         quantity: sellQty,
         price: sellPrice,
-        total: proceeds,
-        realizedPnl: (sellPrice - currentAvgPrice) * sellQty,
+        total: sell.net,
+        fees: sell.fees,
+        realizedPnl: sell.net - currentAvgPrice * sellQty,
       });
       // Sold out entirely → drop the row, as bulk-trade does, instead of
       // leaving a 0-share allocation behind.
@@ -204,16 +207,17 @@ export async function POST(
       const sellPrice = customPrices[existing.symbol] && customPrices[existing.symbol] > 0
         ? customPrices[existing.symbol]
         : priceMap.get(existing.symbol) || existing.avgPrice;
-      const proceeds = existing.shares * sellPrice;
-      cashDelta += proceeds;
+      const sell = sellProceeds(existing.shares, sellPrice, feeSettings);
+      cashDelta += sell.net;
       trades.push({
         type: "SELL",
         symbol: existing.symbol,
         companyName: existing.companyName,
         quantity: existing.shares,
         price: sellPrice,
-        total: proceeds,
-        realizedPnl: (sellPrice - existing.avgPrice) * existing.shares,
+        total: sell.net,
+        fees: sell.fees,
+        realizedPnl: sell.net - existing.avgPrice * existing.shares,
       });
     }
   }
@@ -264,6 +268,7 @@ export async function POST(
         ...(trade.realizedPnl !== undefined
           ? { realizedPnl: trade.realizedPnl }
           : {}),
+        ...(trade.fees ? { fees: trade.fees } : {}),
       });
     }
     return m;
