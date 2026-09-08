@@ -71,6 +71,7 @@ interface Transaction {
   source?: "portfolio" | "model";
   createdAt: string;
   realizedPnl?: number;
+  fees?: number;
 }
 
 interface Portfolio {
@@ -394,6 +395,11 @@ export default function TransactionsPage() {
                 </span>
                 <span className="num money text-right text-[12.5px] font-semibold">
                   Rs {formatPKR(tx.total, { decimals: 0 })}
+                  {tx.fees ? (
+                    <span className="block text-[10.5px] font-normal text-ink-3">
+                      incl. Rs {formatPKR(tx.fees)} fees
+                    </span>
+                  ) : null}
                 </span>
                 <span className="num money text-right text-[12.5px] font-semibold">
                   {tx.type === "SELL" && tx.realizedPnl !== undefined ? (
