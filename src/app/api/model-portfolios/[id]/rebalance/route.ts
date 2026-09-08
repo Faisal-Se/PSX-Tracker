@@ -166,17 +166,23 @@ export async function POST(
         total: proceeds,
         realizedPnl: (sellPrice - currentAvgPrice) * sellQty,
       });
-      newAllocations.push({
-        id: existing?.id || generateId(),
-        symbol: alloc.symbol,
-        companyName: alloc.companyName,
-        percentage: alloc.percentage,
-        shares: targetShares,
-        avgPrice: targetShares > 0 ? currentAvgPrice : 0,
-        createdAt: existing?.createdAt || now,
-        updatedAt: now,
-      });
-    } else {
+      // Sold out entirely → drop the row, as bulk-trade does, instead of
+      // leaving a 0-share allocation behind.
+      if (targetShares > 0) {
+        newAllocations.push({
+          id: existing?.id || generateId(),
+          symbol: alloc.symbol,
+          companyName: alloc.companyName,
+          percentage: alloc.percentage,
+          shares: targetShares,
+          avgPrice: currentAvgPrice,
+          createdAt: existing?.createdAt || now,
+          updatedAt: now,
+        });
+      }
+    } else if (currentShares > 0) {
+      // Unchanged and held. (A 0-share row — new stock too small to buy one
+      // share, or a leftover from before — is dropped rather than kept.)
       newAllocations.push({
         id: existing?.id || generateId(),
         symbol: alloc.symbol,
