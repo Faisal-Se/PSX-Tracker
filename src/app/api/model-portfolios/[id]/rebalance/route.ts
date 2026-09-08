@@ -218,8 +218,10 @@ export async function POST(
     }
   }
 
-  const newCashBalance = model.cashBalance + cashDelta;
-  if (newCashBalance < -0.01) {
+  // Round to the paisa so float noise can't leave a phantom −0.004, then
+  // reject any real shortfall outright rather than clamping it away.
+  const newCashBalance = Math.round((model.cashBalance + cashDelta) * 100) / 100;
+  if (newCashBalance < 0) {
     return NextResponse.json(
       {
         error: `Insufficient cash. Need PKR ${Math.abs(cashDelta).toFixed(0)} more. Add cash first.`,
@@ -229,7 +231,7 @@ export async function POST(
   }
 
   // Recalculate actual percentages based on real resulting values
-  const actualCash = Math.max(0, newCashBalance);
+  const actualCash = newCashBalance;
   let actualTotalValue = actualCash;
   for (const a of newAllocations) {
     if (a.symbol === "CASH") continue;
@@ -248,7 +250,7 @@ export async function POST(
 
   const updated = await updateModelPortfolio(id, (m) => {
     m.allocations = newAllocations;
-    m.cashBalance = Math.max(0, newCashBalance);
+    m.cashBalance = newCashBalance;
     for (const trade of trades) {
       m.transactions.push({
         id: generateId(),
