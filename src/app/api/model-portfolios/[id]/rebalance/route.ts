@@ -102,8 +102,18 @@ export async function POST(
       );
     }
 
+    if (
+      alloc.exactShares != null &&
+      (!Number.isInteger(alloc.exactShares) || alloc.exactShares < 0)
+    ) {
+      return NextResponse.json(
+        { error: `Shares for ${alloc.symbol} must be a non-negative whole number` },
+        { status: 400 }
+      );
+    }
+
     // Use exact shares if provided, otherwise calculate from percentage
-    const targetShares = alloc.exactShares != null && alloc.exactShares >= 0
+    const targetShares = alloc.exactShares != null
       ? alloc.exactShares
       : Math.floor(((alloc.percentage / 100) * totalValue) / currentPrice);
     const existing = currentMap.get(alloc.symbol);
