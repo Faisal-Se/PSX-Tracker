@@ -186,6 +186,18 @@ export async function POST(req: Request) {
     totalSpent += cost;
   }
 
+  // The 1% tolerance on the percentage total exists for share rounding, but
+  // in shares mode it also let a plan overspend by up to 1% and store a
+  // negative cash balance. Reject rather than go into overdraft.
+  if (totalSpent > cashBalance + 0.01) {
+    return NextResponse.json(
+      {
+        error: `Buy plan (PKR ${totalSpent.toFixed(0)}) exceeds starting cash (PKR ${Number(cashBalance).toFixed(0)}). Reduce shares or add cash.`,
+      },
+      { status: 400 }
+    );
+  }
+
   const actualCash = cashBalance - totalSpent;
   const actualTotal = actualCash + newAllocations
     .filter((a) => a.symbol !== "CASH")
