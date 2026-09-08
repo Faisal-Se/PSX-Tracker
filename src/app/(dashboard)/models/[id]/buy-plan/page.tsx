@@ -13,6 +13,8 @@ import {
 import { formatPKR } from "@/lib/market-status";
 import { StockSearch } from "@/components/StockSearch";
 import { ChartSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { useSort } from "@/lib/use-sort";
+import { SortHeader } from "@/components/SortHeader";
 
 /* ────────────────────────── types ────────────────────────── */
 
@@ -187,6 +189,29 @@ export default function BuyPlanPage() {
 
   const weightOk = Math.abs(weightSum - 100) < 0.5;
 
+  // Column sorting. The cash row stays pinned at the bottom.
+  type PlanSortKey =
+    | "symbol" | "weight" | "price" | "shares" | "cost" | "current" | "target" | "action";
+  const sort = useSort<PlanSortKey>("weight", ["symbol"]);
+  const sortedRows = sort.sortRows(
+    computed,
+    (r, key) =>
+      key === "symbol"
+        ? r.symbol
+        : key === "weight"
+          ? r.weight
+          : key === "price"
+            ? r.price
+            : key === "shares" || key === "target"
+              ? r.targetShares
+              : key === "cost"
+                ? r.cost
+                : key === "current"
+                  ? r.currentShares
+                  : r.deltaCost,
+    (r) => r.isCash
+  );
+
   if (loading) {
     return (
       <>
@@ -314,26 +339,38 @@ export default function BuyPlanPage() {
           <div
             className={`grid ${grid} items-center gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3`}
           >
-            <span>STOCK</span>
-            <span>WEIGHT %</span>
-            <span>PRICE (PKR)</span>
-            {mode === "new" ? (
-              <>
-                <span className="text-right">SHARES</span>
-                <span className="text-right">COST (PKR)</span>
-              </>
-            ) : (
-              <>
-                <span className="text-right">CURRENT</span>
-                <span className="text-right">TARGET</span>
-                <span className="text-right">ACTION</span>
-              </>
-            )}
+            {(
+              [
+                ["symbol", "STOCK", "left"],
+                ["weight", "WEIGHT %", "left"],
+                ["price", "PRICE (PKR)", "left"],
+                ...(mode === "new"
+                  ? [
+                      ["shares", "SHARES", "right"],
+                      ["cost", "COST (PKR)", "right"],
+                    ]
+                  : [
+                      ["current", "CURRENT", "right"],
+                      ["target", "TARGET", "right"],
+                      ["action", "ACTION", "right"],
+                    ]),
+              ] as [PlanSortKey, string, "left" | "right"][]
+            ).map(([key, label, align]) => (
+              <SortHeader
+                key={key}
+                label={label}
+                column={key}
+                align={align}
+                sortKey={sort.sortKey}
+                sortDir={sort.sortDir}
+                onToggle={sort.toggle}
+              />
+            ))}
             <span />
           </div>
 
           {/* rows */}
-          {computed.map((r) => {
+          {sortedRows.map((r) => {
             const c = tint(r.symbol);
             return (
               <div

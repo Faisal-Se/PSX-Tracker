@@ -39,6 +39,8 @@ import {
   PieChart as RechartsPie,
   Pie,
 } from "recharts";
+import { useSort } from "@/lib/use-sort";
+import { SortBar, SortHeader } from "@/components/SortHeader";
 
 interface Allocation {
   id: string;
@@ -277,6 +279,13 @@ export default function ModelDetailPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [stockQuery, rebalanceAllocations]);
+
+  // Column / list sorting. Hooks, so they sit above the early return below.
+  type HoldingSortKey = "symbol" | "alloc" | "shares" | "avg" | "current" | "value" | "pnl";
+  const holdingSort = useSort<HoldingSortKey>("alloc", ["symbol"]);
+  const rebalanceSort = useSort<"symbol" | "percentage" | "change">("percentage", ["symbol"]);
+  const sipSort = useSort<"symbol" | "shares" | "cost" | "weight">("weight", ["symbol"]);
+  const bulkSort = useSort<"symbol" | "type" | "qty" | "total">("symbol", ["symbol", "type"]);
 
   // Recompute SIP plan when amount/basis/model/prices change
   useEffect(() => {
@@ -918,6 +927,16 @@ export default function ModelDetailPage() {
   });
   const maxAbsPnl = Math.max(1, ...stockPnlData.map((d) => Math.abs(d.pnl)));
 
+  const sortedSipPlan = sipSort.sortRows(sipPlan, (p, key) =>
+    key === "symbol"
+      ? p.symbol
+      : key === "shares"
+        ? p.shares
+        : key === "cost"
+          ? p.shares * (parseFloat(p.price) || p.marketPrice)
+          : p.weight
+  );
+
   const pieData = [
     ...stockAllocations.map((a) => ({
       name: a.symbol,
@@ -1096,21 +1115,55 @@ export default function ModelDetailPage() {
           <div className="overflow-x-auto">
             <div className="min-w-[680px]">
               <div className="grid grid-cols-[1.9fr_.8fr_.8fr_.9fr_.9fr_1fr_.9fr_40px] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
-                <span>STOCK</span>
-                <span className="text-right">ALLOC</span>
-                <span className="text-right">SHARES</span>
-                <span className="text-right">AVG</span>
-                <span className="text-right">CURRENT</span>
-                <span className="text-right">VALUE</span>
-                <span className="text-right">P&amp;L</span>
+                {(
+                  [
+                    ["symbol", "STOCK", "left"],
+                    ["alloc", "ALLOC", "right"],
+                    ["shares", "SHARES", "right"],
+                    ["avg", "AVG", "right"],
+                    ["current", "CURRENT", "right"],
+                    ["value", "VALUE", "right"],
+                    ["pnl", "P&L", "right"],
+                  ] as [HoldingSortKey, string, "left" | "right"][]
+                ).map(([key, label, align]) => (
+                  <SortHeader
+                    key={key}
+                    label={label}
+                    column={key}
+                    align={align}
+                    sortKey={holdingSort.sortKey}
+                    sortDir={holdingSort.sortDir}
+                    onToggle={holdingSort.toggle}
+                  />
+                ))}
                 <span></span>
               </div>
-              {stockAllocations.map((alloc) => {
-                const currentPrice = marketPrices[alloc.symbol] || alloc.avgPrice;
-                const currentValue = alloc.shares * currentPrice;
-                const costBasis = alloc.shares * alloc.avgPrice;
-                const pnl = currentValue - costBasis;
-                const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+              {holdingSort
+                .sortRows(
+                  stockAllocations.map((alloc) => {
+                    const currentPrice = marketPrices[alloc.symbol] || alloc.avgPrice;
+                    const currentValue = alloc.shares * currentPrice;
+                    const costBasis = alloc.shares * alloc.avgPrice;
+                    const pnl = currentValue - costBasis;
+                    const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+                    return { alloc, currentPrice, currentValue, pnl, pnlPct };
+                  }),
+                  (r, key) =>
+                    key === "symbol"
+                      ? r.alloc.symbol
+                      : key === "alloc"
+                        ? livePct(r.alloc.symbol)
+                        : key === "shares"
+                          ? r.alloc.shares
+                          : key === "avg"
+                            ? r.alloc.avgPrice
+                            : key === "current"
+                              ? r.currentPrice
+                              : key === "value"
+                                ? r.currentValue
+                                : r.pnl
+                )
+                .map(({ alloc, currentPrice, currentValue, pnl, pnlPct }) => {
                 const up = pnl >= 0;
                 const c = tint(alloc.symbol);
                 return (
@@ -1731,29 +1784,51 @@ export default function ModelDetailPage() {
               </div>
 
               <div className="space-y-2">
-                {rebalanceAllocations.map((alloc) => {
-                  // Show what will change
-                  const existing = model.allocations.find(
-                    (a) => a.symbol === alloc.symbol
-                  );
-                  const currentShares = existing?.shares || 0;
-                  const price = marketPrices[alloc.symbol] || 0;
-                  // Determine target shares
-                  let targetShares = 0;
-                  if (alloc.symbol !== "CASH") {
-                    if (rebalanceMode === "shares" && alloc.inputShares != null) {
-                      targetShares = alloc.inputShares;
-                    } else {
-                      // Percent mode: only recalculate if user changed this stock's %
-                      const originalPct = existing?.percentage ?? -1;
-                      const pctChanged = Math.abs(alloc.percentage - originalPct) > 0.01;
-                      targetShares = pctChanged && price > 0
-                        ? Math.floor(((alloc.percentage / 100) * totalValue) / price)
-                        : currentShares;
-                    }
-                  }
-                  const diff = targetShares - currentShares;
-
+                <SortBar
+                  options={[
+                    { key: "symbol", label: "STOCK" },
+                    { key: "percentage", label: "ALLOC %" },
+                    { key: "change", label: "CHANGE" },
+                  ]}
+                  sortKey={rebalanceSort.sortKey}
+                  sortDir={rebalanceSort.sortDir}
+                  onToggle={rebalanceSort.toggle}
+                />
+                {rebalanceSort
+                  .sortRows(
+                    rebalanceAllocations.map((alloc) => {
+                      // Show what will change
+                      const existing = model.allocations.find(
+                        (a) => a.symbol === alloc.symbol
+                      );
+                      const currentShares = existing?.shares || 0;
+                      const price = marketPrices[alloc.symbol] || 0;
+                      // Determine target shares
+                      let targetShares = 0;
+                      if (alloc.symbol !== "CASH") {
+                        if (rebalanceMode === "shares" && alloc.inputShares != null) {
+                          targetShares = alloc.inputShares;
+                        } else {
+                          // Percent mode: only recalculate if user changed this stock's %
+                          const originalPct = existing?.percentage ?? -1;
+                          const pctChanged = Math.abs(alloc.percentage - originalPct) > 0.01;
+                          targetShares = pctChanged && price > 0
+                            ? Math.floor(((alloc.percentage / 100) * totalValue) / price)
+                            : currentShares;
+                        }
+                      }
+                      const diff = targetShares - currentShares;
+                      return { alloc, currentShares, price, targetShares, diff };
+                    }),
+                    (r, key) =>
+                      key === "symbol"
+                        ? r.alloc.symbol
+                        : key === "percentage"
+                          ? r.alloc.percentage
+                          : Math.abs(r.diff),
+                    (r) => r.alloc.symbol === "CASH"
+                  )
+                  .map(({ alloc, currentShares, price, targetShares, diff }) => {
                   return (
                     <div
                       key={alloc.symbol}
@@ -2112,11 +2187,24 @@ export default function ModelDetailPage() {
               const leftover = amount - totalCost;
               return (
                 <div className="space-y-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
-                    Plan
-                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
+                      Plan
+                    </label>
+                    <SortBar
+                      options={[
+                        { key: "symbol", label: "STOCK" },
+                        { key: "weight", label: "WEIGHT" },
+                        { key: "shares", label: "SHARES" },
+                        { key: "cost", label: "COST" },
+                      ]}
+                      sortKey={sipSort.sortKey}
+                      sortDir={sipSort.sortDir}
+                      onToggle={sipSort.toggle}
+                    />
+                  </div>
                   <div className="space-y-1.5">
-                    {sipPlan.map((item) => {
+                    {sortedSipPlan.map((item) => {
                       const price = parseFloat(item.price) || item.marketPrice;
                       const cost = item.shares * price;
                       return (
@@ -2211,7 +2299,7 @@ export default function ModelDetailPage() {
             </p>
 
             <div className="space-y-2">
-              {sipPlan.map((item, idx) => {
+              {sortedSipPlan.map((item) => {
                 const price = parseFloat(item.price) || item.marketPrice;
                 const cost = item.shares * price;
                 return (
@@ -2242,7 +2330,7 @@ export default function ModelDetailPage() {
                           onChange={(e) => {
                             const val = e.target.value;
                             setSipPlan((prev) =>
-                              prev.map((p, i) => (i === idx ? { ...p, price: val } : p))
+                              prev.map((p) => (p.symbol === item.symbol ? { ...p, price: val } : p))
                             );
                           }}
                           className="num h-7 w-24 rounded-[10px] border border-line bg-canvas text-center text-xs outline-none focus:border-brand"
@@ -2370,7 +2458,33 @@ export default function ModelDetailPage() {
                 <label className="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-3">
                   Trades ({bulkTrades.length})
                 </label>
-                {bulkTrades.map((trade) => {
+                <SortBar
+                  options={[
+                    { key: "symbol", label: "STOCK" },
+                    { key: "type", label: "SIDE" },
+                    { key: "qty", label: "QTY" },
+                    { key: "total", label: "TOTAL" },
+                  ]}
+                  sortKey={bulkSort.sortKey}
+                  sortDir={bulkSort.sortDir}
+                  onToggle={bulkSort.toggle}
+                />
+                {bulkSort
+                  .sortRows(bulkTrades, (t, key) => {
+                    const px =
+                      parseFloat(t.price) > 0
+                        ? parseFloat(t.price)
+                        : marketPrices[t.symbol] || 0;
+                    const q = parseInt(t.quantity) || 0;
+                    return key === "symbol"
+                      ? t.symbol
+                      : key === "type"
+                        ? t.type
+                        : key === "qty"
+                          ? q
+                          : q * px;
+                  })
+                  .map((trade) => {
                   const price =
                     parseFloat(trade.price) > 0
                       ? parseFloat(trade.price)

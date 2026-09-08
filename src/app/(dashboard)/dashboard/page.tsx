@@ -38,6 +38,8 @@ import {
   Cell,
 } from "recharts";
 import { useVisiblePoll } from "@/lib/use-visible-poll";
+import { useSort } from "@/lib/use-sort";
+import { SortHeader } from "@/components/SortHeader";
 
 /** Live market data refresh cadence, while the tab is visible. */
 const POLL_INTERVAL_MS = 60000;
@@ -506,7 +508,9 @@ export default function DashboardPage() {
 
   const holdingCount = allHoldings.length;
 
-  // Holdings rows.
+  // Holdings rows — top 8 by whichever column is selected.
+  type HoldingSortKey = "symbol" | "value" | "pnl";
+  const holdingSort = useSort<HoldingSortKey>("value", ["symbol"]);
   const holdingRows = useMemo(() => {
     const rows = allHoldings.map((h) => {
       const currentPrice = priceMap.get(h.symbol) || h.avgPrice;
@@ -528,9 +532,10 @@ export default function DashboardPage() {
         trend,
       };
     });
-    rows.sort((a, b) => b.value - a.value);
-    return rows.slice(0, 8);
-  }, [allHoldings, priceMap, companyMap, history]);
+    return holdingSort
+      .sortRows(rows, (r, key) => (key === "symbol" ? r.symbol : r[key]))
+      .slice(0, 8);
+  }, [allHoldings, priceMap, companyMap, history, holdingSort]);
 
   // Per-model metrics + trend.
   const modelMetrics = useMemo(() => {
@@ -1188,10 +1193,31 @@ export default function DashboardPage() {
               ) : (
                 <>
                   <div className="grid grid-cols-[2.3fr_1fr_1.1fr_1.1fr] border-b border-line px-[22px] pb-2 text-[11px] font-semibold tracking-[.03em] text-ink-3">
-                    <span>STOCK</span>
+                    <SortHeader
+                      label="STOCK"
+                      column="symbol"
+                      align="left"
+                      sortKey={holdingSort.sortKey}
+                      sortDir={holdingSort.sortDir}
+                      onToggle={holdingSort.toggle}
+                    />
                     <span className="text-right">TREND</span>
-                    <span className="text-right">VALUE</span>
-                    <span className="text-right">P&L</span>
+                    <SortHeader
+                      label="VALUE"
+                      column="value"
+                      align="right"
+                      sortKey={holdingSort.sortKey}
+                      sortDir={holdingSort.sortDir}
+                      onToggle={holdingSort.toggle}
+                    />
+                    <SortHeader
+                      label="P&L"
+                      column="pnl"
+                      align="right"
+                      sortKey={holdingSort.sortKey}
+                      sortDir={holdingSort.sortDir}
+                      onToggle={holdingSort.toggle}
+                    />
                   </div>
                   {holdingRows.map((h, idx) => {
                     const hUp = h.pnl >= 0;

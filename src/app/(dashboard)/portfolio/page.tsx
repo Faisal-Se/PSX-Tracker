@@ -41,6 +41,8 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { useSort } from "@/lib/use-sort";
+import { SortHeader } from "@/components/SortHeader";
 
 interface Holding {
   id: string;
@@ -76,7 +78,7 @@ interface HistoryPoint {
   volume: number;
 }
 
-type SortKey = "value" | "pnl" | "symbol";
+type SortKey = "symbol" | "quantity" | "avgPrice" | "currentPrice" | "value" | "pnl";
 
 /* Avatar tint palette (per ticker) — multi-series, never used for P&L. */
 const TINTS = [
@@ -128,8 +130,7 @@ export default function PortfolioPage() {
   const [editLoading, setEditLoading] = useState(false);
 
   // Holdings table sorting + price history (for sparklines)
-  const [sortKey, setSortKey] = useState<SortKey>("value");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const { sortKey, sortDir, toggle: toggleSort, sortRows } = useSort<SortKey>("value", ["symbol"]);
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
 
   const fetchData = useCallback(async () => {
@@ -294,15 +295,6 @@ export default function PortfolioPage() {
     }
   };
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-    } else {
-      setSortKey(key);
-      setSortDir(key === "symbol" ? "asc" : "desc");
-    }
-  };
-
   // ---- Derived data for the active portfolio ----
   const totalInvested = activePortfolio
     ? activePortfolio.holdings.reduce((s, h) => s + h.avgPrice * h.quantity, 0)
@@ -333,18 +325,8 @@ export default function PortfolioPage() {
         .slice(-20);
       return { ...h, currentPrice, value, pnl: hPnl, pnlPercent: hPnlPercent, trend };
     });
-    rows.sort((a, b) => {
-      if (sortKey === "symbol") {
-        return sortDir === "desc"
-          ? b.symbol.localeCompare(a.symbol)
-          : a.symbol.localeCompare(b.symbol);
-      }
-      const av = sortKey === "value" ? a.value : a.pnl;
-      const bv = sortKey === "value" ? b.value : b.pnl;
-      return sortDir === "desc" ? bv - av : av - bv;
-    });
-    return rows;
-  }, [activePortfolio, marketData, history, sortKey, sortDir]);
+    return sortRows(rows, (r, key) => (key === "symbol" ? r.symbol : r[key]));
+  }, [activePortfolio, marketData, history, sortRows]);
 
   // Allocation donut (holdings + cash)
   const allocationData = useMemo(() => {
@@ -680,27 +662,26 @@ export default function PortfolioPage() {
                   <>
                     {/* Column headers */}
                     <div className="grid grid-cols-[2.2fr_.9fr_1fr_1fr_1.1fr_1fr_84px] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
-                      <button
-                        onClick={() => toggleSort("symbol")}
-                        className="text-left hover:text-ink"
-                      >
-                        STOCK
-                      </button>
-                      <span className="text-right">QTY</span>
-                      <span className="text-right">AVG</span>
-                      <span className="text-right">CURRENT</span>
-                      <button
-                        onClick={() => toggleSort("value")}
-                        className="text-right hover:text-ink"
-                      >
-                        VALUE
-                      </button>
-                      <button
-                        onClick={() => toggleSort("pnl")}
-                        className="text-right hover:text-ink"
-                      >
-                        P&L
-                      </button>
+                      {(
+                        [
+                          ["symbol", "STOCK", "left"],
+                          ["quantity", "QTY", "right"],
+                          ["avgPrice", "AVG", "right"],
+                          ["currentPrice", "CURRENT", "right"],
+                          ["value", "VALUE", "right"],
+                          ["pnl", "P&L", "right"],
+                        ] as [SortKey, string, "left" | "right"][]
+                      ).map(([key, label, align]) => (
+                        <SortHeader
+                          key={key}
+                          label={label}
+                          column={key}
+                          align={align}
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onToggle={toggleSort}
+                        />
+                      ))}
                       <span />
                     </div>
 

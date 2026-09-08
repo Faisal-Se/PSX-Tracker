@@ -7,6 +7,8 @@ import { StockSearch } from "@/components/StockSearch";
 import { TradeDialog } from "@/components/TradeDialog";
 import { formatPKR } from "@/lib/market-status";
 import { useVisiblePoll } from "@/lib/use-visible-poll";
+import { useSort } from "@/lib/use-sort";
+import { SortHeader } from "@/components/SortHeader";
 
 /** Live market data refresh cadence, while the tab is visible. */
 const POLL_INTERVAL_MS = 60000;
@@ -41,8 +43,11 @@ function tint(symbol: string) {
   return TINTS[h % TINTS.length];
 }
 
+type WatchSortKey = "symbol" | "price" | "change" | "volume";
+
 export default function WatchlistPage() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const sort = useSort<WatchSortKey>("symbol", ["symbol"]);
   const [marketData, setMarketData] = useState<Map<string, MarketStock>>(
     new Map()
   );
@@ -135,10 +140,24 @@ export default function WatchlistPage() {
       {/* Table */}
       <section className="rounded-2xl border border-line bg-card pb-2 pt-[22px] shadow-card">
         <div className="grid grid-cols-[1.8fr_1.1fr_1fr_1.1fr_116px] gap-2 border-b border-line px-[22px] pb-2.5 text-[11px] font-semibold tracking-[.03em] text-ink-3">
-          <span>SYMBOL</span>
-          <span className="text-right">PRICE</span>
-          <span className="text-right">CHANGE</span>
-          <span className="text-right">VOLUME</span>
+          {(
+            [
+              ["symbol", "SYMBOL", "left"],
+              ["price", "PRICE", "right"],
+              ["change", "CHANGE", "right"],
+              ["volume", "VOLUME", "right"],
+            ] as [WatchSortKey, string, "left" | "right"][]
+          ).map(([key, label, align]) => (
+            <SortHeader
+              key={key}
+              label={label}
+              column={key}
+              align={align}
+              sortKey={sort.sortKey}
+              sortDir={sort.sortDir}
+              onToggle={sort.toggle}
+            />
+          ))}
           <span className="text-right">ACTIONS</span>
         </div>
 
@@ -162,7 +181,18 @@ export default function WatchlistPage() {
             </p>
           </div>
         ) : (
-          watchlist.map((item) => {
+          sort
+            .sortRows(watchlist, (w, key) => {
+              const s = marketData.get(w.symbol);
+              return key === "symbol"
+                ? w.symbol
+                : key === "price"
+                  ? s?.current ?? 0
+                  : key === "change"
+                    ? s?.changePercent ?? 0
+                    : s?.volume ?? 0;
+            })
+            .map((item) => {
             const stock = marketData.get(item.symbol);
             const c = tint(item.symbol);
             const sUp = stock ? stock.change >= 0 : true;
