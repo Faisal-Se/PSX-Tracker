@@ -112,6 +112,7 @@ export default function ModelDetailPage() {
   const [showAddCash, setShowAddCash] = useState(false);
   const [addCashAmount, setAddCashAmount] = useState("");
   const [addCashLoading, setAddCashLoading] = useState(false);
+  const [shortfallLoading, setShortfallLoading] = useState(false);
 
   // Withdraw cash dialog
   const [showWithdrawCash, setShowWithdrawCash] = useState(false);
@@ -542,10 +543,9 @@ export default function ModelDetailPage() {
     setStockResults([]);
   };
 
-  // Step 1: User clicks "Review Trades" — only show trades for stocks whose % actually changed
-  const handleRebalanceNext = () => {
-    if (Math.abs(rebalanceTotalPct - 100) > 1) return;
-
+  // The trades the current targets imply, at market prices. Shared by the
+  // shortfall notice and the Review step so the two can never disagree.
+  const buildRebalanceTrades = (): typeof rebalanceTrades => {
     // Build a map of original percentages
     const originalPctMap = new Map(
       model.allocations.map((a) => [a.symbol, a.percentage])
@@ -603,6 +603,74 @@ export default function ModelDetailPage() {
         });
       }
     }
+    return trades;
+  };
+
+  // Cash the plan needs beyond what the model holds, fees included, rounded
+  // up to the rupee. Shown — and topped up — before Review, instead of being
+  // discovered as a server error at the final step.
+  const rebalanceShortfall = (() => {
+    if (!showRebalance) return 0;
+    let cash = model.cashBalance;
+    for (const t of buildRebalanceTrades()) {
+      if (t.marketPrice <= 0) continue;
+      cash +=
+        t.type === "SELL"
+          ? sellProceeds(t.shares, t.marketPrice, feeSettings).net
+          : -buyCost(t.shares, t.marketPrice, feeSettings).total;
+    }
+    return cash < 0 ? Math.ceil(-cash) : 0;
+  })();
+
+  const handleRebalanceAddShortfall = async () => {
+    if (rebalanceShortfall <= 0) return;
+    setShortfallLoading(true);
+    setRebalanceError("");
+    try {
+      const res = await fetch(`/api/model-portfolios/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addCash: rebalanceShortfall }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRebalanceError(data.error || "Could not add cash");
+        return;
+      }
+      setModel(data);
+      // Shares mode derives each % from value ÷ total, and total just grew.
+      if (rebalanceMode === "shares") {
+        const newTotal = totalValue + rebalanceShortfall;
+        setRebalanceAllocations((prev) => {
+          let used = 0;
+          const stocks = prev.map((a) => {
+            if (a.symbol === "CASH") return a;
+            const price = marketPrices[a.symbol] || 0;
+            const pct =
+              price > 0 && newTotal > 0
+                ? Math.round((((a.inputShares ?? 0) * price) / newTotal) * 1000) / 10
+                : a.percentage;
+            used += pct;
+            return { ...a, percentage: pct };
+          });
+          return stocks.map((a) =>
+            a.symbol === "CASH"
+              ? { ...a, percentage: Math.max(0, Math.round((100 - used) * 10) / 10) }
+              : a
+          );
+        });
+      }
+    } catch {
+      setRebalanceError("Could not add cash");
+    } finally {
+      setShortfallLoading(false);
+    }
+  };
+
+  // Step 1: User clicks "Review Trades" — only show trades for stocks whose % actually changed
+  const handleRebalanceNext = () => {
+    if (Math.abs(rebalanceTotalPct - 100) > 1 || rebalanceShortfall > 0) return;
+    const trades = buildRebalanceTrades();
 
     if (trades.length === 0) {
       // No actual trades needed, just submit directly
@@ -1497,6 +1565,14 @@ export default function ModelDetailPage() {
                   Rs {formatPKR(model.cashBalance, { decimals: 0 })}
                 </span>
               </p>
+              {parseFloat(addCashAmount) > 0 && (
+                <p className="text-[11px] text-ink-3">
+                  New balance:{" "}
+                  <span className="num money font-semibold" style={{ color: "var(--color-gain)" }}>
+                    Rs {formatPKR(model.cashBalance + parseFloat(addCashAmount), { decimals: 0 })}
+                  </span>
+                </p>
+              )}
             </div>
             <button
               onClick={handleAddCash}
@@ -1540,6 +1616,15 @@ export default function ModelDetailPage() {
                   Rs {formatPKR(model.cashBalance, { decimals: 0 })}
                 </span>
               </p>
+              {parseFloat(withdrawCashAmount) > 0 &&
+                parseFloat(withdrawCashAmount) <= model.cashBalance && (
+                  <p className="text-[11px] text-ink-3">
+                    Balance after:{" "}
+                    <span className="num money font-semibold text-ink">
+                      Rs {formatPKR(model.cashBalance - parseFloat(withdrawCashAmount), { decimals: 0 })}
+                    </span>
+                  </p>
+                )}
               {parseFloat(withdrawCashAmount) > model.cashBalance && (
                 <p className="text-[11px] font-semibold" style={{ color: "var(--color-loss-strong)" }}>
                   Amount exceeds available cash balance
@@ -1922,6 +2007,31 @@ export default function ModelDetailPage() {
               </div>
             </div>
 
+            {rebalanceShortfall > 0 && (
+              <div
+                className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] px-3 py-2.5 text-[12.5px]"
+                style={{ color: "var(--color-loss-strong)", background: "var(--color-loss-50)" }}
+              >
+                <span>
+                  This plan needs{" "}
+                  <span className="num font-bold">
+                    Rs {formatPKR(rebalanceShortfall, { decimals: 0 })}
+                  </span>{" "}
+                  more cash than the model holds.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleRebalanceAddShortfall}
+                  disabled={shortfallLoading}
+                  className="rounded-lg bg-brand px-3 py-1.5 text-[12px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
+                >
+                  {shortfallLoading
+                    ? "Adding…"
+                    : `Add Rs ${formatPKR(rebalanceShortfall, { decimals: 0 })}`}
+                </button>
+              </div>
+            )}
+
             {rebalanceError && (
               <div
                 className="rounded-[10px] px-3 py-2 text-sm"
@@ -1940,7 +2050,11 @@ export default function ModelDetailPage() {
               </button>
               <button
                 onClick={handleRebalanceNext}
-                disabled={rebalanceLoading || Math.abs(rebalanceTotalPct - 100) > 1}
+                disabled={
+                  rebalanceLoading ||
+                  Math.abs(rebalanceTotalPct - 100) > 1 ||
+                  rebalanceShortfall > 0
+                }
                 className="flex-1 rounded-[10px] bg-brand py-2 text-[13px] font-semibold text-white hover:brightness-105 disabled:opacity-50"
               >
                 {rebalanceLoading ? "Rebalancing..." : "Review Trades"}

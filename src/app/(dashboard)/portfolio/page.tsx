@@ -867,6 +867,29 @@ export default function PortfolioPage() {
                     Rs {formatPKR(activePortfolio.cashBalance, { decimals: 0 })}
                   </span>
                 </p>
+                {(() => {
+                  const delta =
+                    (parseFloat(addCashAmount) || 0) - (parseFloat(removeCashAmount) || 0);
+                  if (delta === 0) return null;
+                  const next = activePortfolio.cashBalance + delta;
+                  const short = next < 0;
+                  return (
+                    <p className="text-xs text-ink-3">
+                      New balance:{" "}
+                      <span
+                        className="num money font-semibold"
+                        style={{ color: short ? "var(--color-loss-strong)" : "var(--color-gain)" }}
+                      >
+                        Rs {formatPKR(next, { decimals: 0 })}
+                      </span>
+                      {short && (
+                        <span className="ml-1.5 font-medium" style={{ color: "var(--color-loss-strong)" }}>
+                          exceeds available cash
+                        </span>
+                      )}
+                    </p>
+                  );
+                })()}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-ink-3">Add Cash</Label>
