@@ -8,6 +8,8 @@
  * depends on it.
  */
 
+import { createHash } from "node:crypto";
+
 export interface RegisteredUser {
   id: string;
   email: string;
@@ -59,14 +61,32 @@ async function pipeline(commands: Command[]): Promise<unknown[] | null> {
   }
 }
 
-/** Who may see the user list: the comma-separated ADMIN_EMAILS setting. */
+/**
+ * The owner's account, as the SHA-256 of the lower-cased address. The
+ * repository is public, so the address itself is not written here. Knowing it
+ * grants nothing anyway: access requires signing in to that Google account.
+ */
+const OWNER_EMAIL_HASHES = [
+  "12b3d9d4e9dab25e6b4f75455ef543062fc12c04864262194e3be8d5c6a738e5",
+];
+
+/**
+ * Who may see the user list: the owner, plus any addresses in the optional
+ * comma-separated ADMIN_EMAILS setting.
+ */
 export function isAdmin(email: string | null | undefined): boolean {
   if (!email) return false;
+  const address = email.trim().toLowerCase();
+  if (!address) return false;
+
+  const hash = createHash("sha256").update(address).digest("hex");
+  if (OWNER_EMAIL_HASHES.includes(hash)) return true;
+
   const allowed = (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  return allowed.includes(email.trim().toLowerCase());
+  return allowed.includes(address);
 }
 
 /**
