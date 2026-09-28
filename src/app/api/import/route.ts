@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/google-auth";
-import { getPortfolios, savePortfolios, generateId } from "@/lib/gdrive";
+import { updatePortfolio, generateId } from "@/lib/gdrive";
+
+/** Error whose message is safe to surface to the client as a 400. */
+class ImportError extends Error {}
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -28,44 +31,15 @@ export async function POST(req: Request) {
   }
 
   if (!trades || trades.length === 0) {
-    return NextResponse.json(
-      { error: "No trades to import" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "No trades to import" }, { status: 400 });
   }
 
-  const portfolios = await getPortfolios();
-  const pIdx = portfolios.findIndex((p) => p.id === portfolioId);
-
-  if (pIdx === -1) {
-    return NextResponse.json(
-      { error: "Portfolio not found" },
-      { status: 404 }
-    );
-  }
-
-  const portfolio = portfolios[pIdx];
-
-  // Validate trades
   for (const trade of trades) {
     if (!trade.symbol || !trade.quantity || !trade.price) {
       return NextResponse.json(
         { error: `Invalid trade data for ${trade.symbol || "unknown"}` },
         { status: 400 }
       );
-    }
-    if (trade.type === "SELL") {
-      const holding = portfolio.holdings.find(
-        (h) => h.symbol === trade.symbol
-      );
-      if (!holding || holding.quantity < trade.quantity) {
-        return NextResponse.json(
-          {
-            error: `Insufficient shares for ${trade.symbol}. Have ${holding?.quantity || 0}, trying to sell ${trade.quantity}`,
-          },
-          { status: 400 }
-        );
-      }
     }
   }
 
@@ -78,87 +52,110 @@ export async function POST(req: Request) {
     .reduce((sum, t) => sum + t.quantity * t.price, 0);
   const netCash = totalSellProceeds - totalBuyCost;
 
-  if (portfolio.cashBalance + netCash < 0) {
-    return NextResponse.json(
-      {
-        error: `Insufficient cash. Need PKR ${Math.abs(netCash).toFixed(0)}, have PKR ${portfolio.cashBalance.toFixed(0)}`,
-      },
-      { status: 400 }
-    );
-  }
-
   const now = new Date().toISOString();
 
-  // Execute all trades
-  for (const trade of trades) {
-    const total = trade.quantity * trade.price;
+  // Validate against the portfolio and apply the trades inside one guarded
+  // read-modify-write, so the file is only ever saved from a successful read.
+  let updated;
+  try {
+    updated = await updatePortfolio(portfolioId, (portfolio) => {
+      for (const trade of trades) {
+        if (trade.type !== "SELL") continue;
+        const holding = portfolio.holdings.find(
+          (h) => h.symbol === trade.symbol
+        );
+        if (!holding || holding.quantity < trade.quantity) {
+          throw new ImportError(
+            `Insufficient shares for ${trade.symbol}. Have ${holding?.quantity || 0}, trying to sell ${trade.quantity}`
+          );
+        }
+      }
+      if (portfolio.cashBalance + netCash < 0) {
+        throw new ImportError(
+          `Insufficient cash. Need PKR ${Math.abs(netCash).toFixed(0)}, have PKR ${portfolio.cashBalance.toFixed(0)}`
+        );
+      }
 
-    portfolio.transactions.push({
-      id: generateId(),
-      type: trade.type,
-      symbol: trade.symbol,
-      companyName: trade.companyName,
-      quantity: trade.quantity,
-      price: trade.price,
-      total,
-      portfolioId,
-      createdAt: now,
-    });
+      // Execute all trades
+      for (const trade of trades) {
+        const total = trade.quantity * trade.price;
 
-    const existingIdx = portfolio.holdings.findIndex(
-      (h) => h.symbol === trade.symbol
-    );
-
-    if (trade.type === "BUY") {
-      if (existingIdx >= 0) {
-        const existing = portfolio.holdings[existingIdx];
-        const newQty = existing.quantity + trade.quantity;
-        const newAvg =
-          (existing.avgPrice * existing.quantity +
-            trade.price * trade.quantity) /
-          newQty;
-        portfolio.holdings[existingIdx] = {
-          ...existing,
-          quantity: newQty,
-          avgPrice: newAvg,
-          updatedAt: now,
-        };
-      } else {
-        portfolio.holdings.push({
+        portfolio.transactions.push({
           id: generateId(),
+          type: trade.type,
           symbol: trade.symbol,
           companyName: trade.companyName,
           quantity: trade.quantity,
-          avgPrice: trade.price,
+          price: trade.price,
+          total,
+          portfolioId,
           createdAt: now,
-          updatedAt: now,
         });
-      }
-    } else {
-      if (existingIdx >= 0) {
-        const existing = portfolio.holdings[existingIdx];
-        const newQty = existing.quantity - trade.quantity;
-        if (newQty <= 0) {
-          portfolio.holdings.splice(existingIdx, 1);
+
+        const existingIdx = portfolio.holdings.findIndex(
+          (h) => h.symbol === trade.symbol
+        );
+
+        if (trade.type === "BUY") {
+          if (existingIdx >= 0) {
+            const existing = portfolio.holdings[existingIdx];
+            const newQty = existing.quantity + trade.quantity;
+            const newAvg =
+              (existing.avgPrice * existing.quantity +
+                trade.price * trade.quantity) /
+              newQty;
+            portfolio.holdings[existingIdx] = {
+              ...existing,
+              quantity: newQty,
+              avgPrice: newAvg,
+              updatedAt: now,
+            };
+          } else {
+            portfolio.holdings.push({
+              id: generateId(),
+              symbol: trade.symbol,
+              companyName: trade.companyName,
+              quantity: trade.quantity,
+              avgPrice: trade.price,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
         } else {
-          portfolio.holdings[existingIdx] = {
-            ...existing,
-            quantity: newQty,
-            updatedAt: now,
-          };
+          if (existingIdx >= 0) {
+            const existing = portfolio.holdings[existingIdx];
+            const newQty = existing.quantity - trade.quantity;
+            if (newQty <= 0) {
+              portfolio.holdings.splice(existingIdx, 1);
+            } else {
+              portfolio.holdings[existingIdx] = {
+                ...existing,
+                quantity: newQty,
+                updatedAt: now,
+              };
+            }
+          }
         }
       }
+
+      portfolio.cashBalance += netCash;
+      portfolio.updatedAt = now;
+      return portfolio;
+    });
+  } catch (err) {
+    if (err instanceof ImportError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    throw err;
   }
 
-  portfolio.cashBalance += netCash;
-  portfolio.updatedAt = now;
-  portfolios[pIdx] = portfolio;
-  await savePortfolios(portfolios);
+  if (!updated) {
+    return NextResponse.json({ error: "Portfolio not found" }, { status: 404 });
+  }
 
   return NextResponse.json({
     success: true,
     imported: trades.length,
-    newCashBalance: portfolio.cashBalance,
+    newCashBalance: updated.cashBalance,
   });
 }

@@ -154,58 +154,36 @@ async function readFile<T>(fileName: string, defaultValue: T): Promise<T> {
   }
 }
 
-async function writeFile<T>(fileName: string, data: T): Promise<void> {
-  const drive = await getDrive();
-  const found = await findFile(drive, fileName);
-  const media = {
-    mimeType: "application/json",
-    body: Readable.from([JSON.stringify(data)]),
-  };
-
-  if (found) {
-    await drive.files.update({ fileId: found.id, media });
-  } else {
-    await drive.files.create({
-      requestBody: { name: fileName, parents: ["appDataFolder"] },
-      media,
-    });
-  }
-}
-
 /**
  * Read-modify-write a Drive JSON file with optimistic concurrency. Reads the
  * file + its revision, applies `mutate`, and writes back guarded by
  * `If-Match: <revision>`. On a 412 (someone else wrote in between) it re-reads
  * and retries, so concurrent mutations serialize instead of clobbering.
+ *
+ * This is the only way data is written. There is deliberately no
+ * "save the whole file" helper: a caller that reads with readFile() (which
+ * returns the default on any failure) and then saves would wipe the file
+ * after a failed read.
  */
 async function mutateFile<T>(
   fileName: string,
   defaultValue: T,
   mutate: (current: T) => T,
-  attempt = 0,
-  /**
-   * When true, a file that exists but can't be read aborts the write instead
-   * of being treated as empty — so a transient Drive error can never replace
-   * accumulated data with a fresh default.
-   */
-  strictRead = false
+  attempt = 0
 ): Promise<T> {
   const drive = await getDrive();
   const found = await findFile(drive, fileName);
 
-  // Read current contents (or default for a brand-new file).
+  // Read current contents; the default is only for a file that doesn't exist
+  // yet. A file that exists but can't be read or parsed must abort the write:
+  // treating it as empty would save the default over the user's real data.
   let current = defaultValue;
   if (found) {
-    try {
-      const res = await drive.files.get(
-        { fileId: found.id, alt: "media" },
-        { responseType: "text" }
-      );
-      current = JSON.parse(res.data as string) as T;
-    } catch (err) {
-      if (strictRead) throw err;
-      current = defaultValue;
-    }
+    const res = await drive.files.get(
+      { fileId: found.id, alt: "media" },
+      { responseType: "text" }
+    );
+    current = JSON.parse(res.data as string) as T;
   }
 
   const next = mutate(current);
@@ -235,7 +213,7 @@ async function mutateFile<T>(
       (err as { response?: { status?: number } })?.response?.status;
     // 412 = precondition failed (revision changed). Retry with fresh read.
     if (status === 412 && attempt < 5) {
-      return mutateFile(fileName, defaultValue, mutate, attempt + 1, strictRead);
+      return mutateFile(fileName, defaultValue, mutate, attempt + 1);
     }
     throw err;
   }
@@ -245,12 +223,6 @@ async function mutateFile<T>(
 
 export async function getPortfolios(): Promise<PortfolioData[]> {
   return readFile<PortfolioData[]>("portfolios.json", []);
-}
-
-export async function savePortfolios(
-  portfolios: PortfolioData[]
-): Promise<void> {
-  await writeFile("portfolios.json", portfolios);
 }
 
 export async function getPortfolio(
@@ -315,10 +287,6 @@ export async function getWatchlist(): Promise<WatchlistItem[]> {
   return readFile<WatchlistItem[]>("watchlist.json", []);
 }
 
-export async function saveWatchlist(items: WatchlistItem[]): Promise<void> {
-  await writeFile("watchlist.json", items);
-}
-
 export async function addToWatchlist(
   symbol: string,
   companyName: string
@@ -351,12 +319,6 @@ export async function removeFromWatchlist(symbol: string): Promise<boolean> {
 
 export async function getModelPortfolios(): Promise<ModelPortfolioData[]> {
   return readFile<ModelPortfolioData[]>("model-portfolios.json", []);
-}
-
-export async function saveModelPortfolios(
-  models: ModelPortfolioData[]
-): Promise<void> {
-  await writeFile("model-portfolios.json", models);
 }
 
 export async function getModelPortfolio(
@@ -461,8 +423,6 @@ export async function updatePriceHistory(
   return mutateFile<PriceHistoryFile>(
     PRICE_HISTORY_FILE,
     emptyHistory(),
-    (cur) => mutate(normalizeHistory(cur)),
-    0,
-    true
+    (cur) => mutate(normalizeHistory(cur))
   );
 }
