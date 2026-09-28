@@ -7,6 +7,8 @@ interface User {
   name: string;
   email: string;
   picture?: string;
+  /** Set for the accounts allowed to see the user list. */
+  isAdmin?: boolean;
 }
 
 const HIDE_KEY = "psx-hide-balances";

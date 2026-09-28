@@ -13,6 +13,7 @@ import {
   X,
   LogOut,
   Settings,
+  Users,
 } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import { useEffect, useState } from "react";
@@ -230,6 +231,14 @@ export function TopNav() {
                 >
                   <Settings className="mr-2 h-4 w-4" /> Settings
                 </DropdownMenuItem>
+                {user.isAdmin && (
+                  <DropdownMenuItem
+                    onClick={() => router.push("/admin/users")}
+                    className="cursor-pointer"
+                  >
+                    <Users className="mr-2 h-4 w-4" /> Users
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={handleLogout}
                   className="cursor-pointer text-loss-strong focus:text-loss-strong"
@@ -268,6 +277,18 @@ export function TopNav() {
                   {item.label}
                 </Link>
               ))}
+              {user?.isAdmin && (
+                <Link
+                  href="/admin/users"
+                  className={`rounded-[9px] px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive("/admin/users")
+                      ? "bg-ink/[.04] text-ink"
+                      : "text-ink-2 hover:bg-ink/[.03]"
+                  }`}
+                >
+                  Users
+                </Link>
+              )}
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
               {mounted && (
