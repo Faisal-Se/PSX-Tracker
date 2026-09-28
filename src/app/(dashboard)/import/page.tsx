@@ -9,6 +9,8 @@ import {
   Plus,
 } from "lucide-react";
 import { formatPKR } from "@/lib/market-status";
+import { ZERO_FEES, buyCost, feesEnabled, sellProceeds } from "@/lib/fees";
+import { useFeeSettings } from "@/lib/use-fee-settings";
 
 interface Portfolio {
   id: string;
@@ -35,6 +37,20 @@ export default function ImportPage() {
     success: boolean;
     message: string;
   } | null>(null);
+
+  // Brokerage fees from Settings, applied to imported trades unless turned off.
+  const savedFees = useFeeSettings();
+  const hasFees = feesEnabled(savedFees);
+  const [addFees, setAddFees] = useState(true);
+  const fees = hasFees && addFees ? savedFees : ZERO_FEES;
+  /** Cash effect of one row: all-in cost on a buy, net proceeds on a sell. */
+  const rowTotal = (type: "BUY" | "SELL", quantity: number, price: number) =>
+    type === "BUY"
+      ? buyCost(quantity, price, fees)
+      : (() => {
+          const s = sellProceeds(quantity, price, fees);
+          return { total: s.net, fees: s.fees };
+        })();
 
   // Manual entry
   const [manualTrades, setManualTrades] = useState<
@@ -143,14 +159,21 @@ export default function ImportPage() {
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ portfolioId: selectedPortfolio, trades }),
+        body: JSON.stringify({
+          portfolioId: selectedPortfolio,
+          trades,
+          applyFees: hasFees && addFees,
+        }),
       });
 
       const data = await res.json();
       if (res.ok) {
         setImportResult({
           success: true,
-          message: `Successfully imported ${data.imported} trades.`,
+          message:
+            data.fees > 0
+              ? `Successfully imported ${data.imported} trades, including Rs ${formatPKR(data.fees)} in fees.`
+              : `Successfully imported ${data.imported} trades.`,
         });
         setParsedTrades([]);
         setCsvText("");
@@ -336,6 +359,7 @@ export default function ImportPage() {
                     <th className="px-3 py-2.5 text-left">Company</th>
                     <th className="px-3 py-2.5 text-right">Qty</th>
                     <th className="px-3 py-2.5 text-right">Price</th>
+                    {fees !== ZERO_FEES && <th className="px-3 py-2.5 text-right">Fees</th>}
                     <th className="px-3 py-2.5 text-right">Total</th>
                   </tr>
                 </thead>
@@ -368,8 +392,16 @@ export default function ImportPage() {
                       <td className="num px-3 py-2.5 text-right">
                         Rs {formatPKR(t.price)}
                       </td>
+                      {fees !== ZERO_FEES && (
+                        <td className="num px-3 py-2.5 text-right text-ink-3">
+                          {formatPKR(rowTotal(t.type, t.quantity, t.price).fees)}
+                        </td>
+                      )}
                       <td className="num px-3 py-2.5 text-right font-semibold">
-                        Rs {formatPKR(t.quantity * t.price, { decimals: 0 })}
+                        Rs{" "}
+                        {formatPKR(rowTotal(t.type, t.quantity, t.price).total, {
+                          decimals: 0,
+                        })}
                       </td>
                     </tr>
                   ))}
@@ -378,6 +410,28 @@ export default function ImportPage() {
             </div>
           )}
         </section>
+
+        {/* Fees */}
+        {hasFees && (
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-line bg-card px-[22px] py-4 shadow-card">
+            <input
+              type="checkbox"
+              checked={addFees}
+              onChange={(e) => setAddFees(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[var(--color-brand)]"
+            />
+            <span>
+              <span className="block text-[13.5px] font-semibold">
+                Add brokerage fees from Settings
+              </span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
+                Fees are added to the cost of each buy and taken off each sell, so the average
+                price matches a trade entered by hand. Turn this off if the prices in your file
+                already include your broker&apos;s charges.
+              </span>
+            </span>
+          </label>
+        )}
 
         {/* Step 3: Manual Entry */}
         <section className="rounded-2xl border border-line bg-card p-[22px] shadow-card">
