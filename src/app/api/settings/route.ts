@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/google-auth";
 import { getSettings, updateSettings } from "@/lib/gdrive";
 import { FEE_KEYS, FEE_LIMITS, type FeeSettings } from "@/lib/fees";
+import { mergeChoices, normalizeChoices } from "@/lib/saved-choices";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -41,8 +42,13 @@ export async function PATCH(req: Request) {
     next[k] = n;
   }
 
+  // View selections from this device; for each, the most recent choice wins.
+  const incoming = normalizeChoices(body?.choices);
+
   const updated = await updateSettings((cur) => ({
+    ...cur,
     fees: { ...cur.fees, ...next },
+    choices: mergeChoices(cur.choices, incoming),
     updatedAt: new Date().toISOString(),
   }));
   return NextResponse.json(updated);

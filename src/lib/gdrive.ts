@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { getAuthenticatedClient } from "./google-auth";
 import { Readable } from "stream";
 import { type FeeSettings, ZERO_FEES, normalizeFeeSettings } from "./fees";
+import { type SavedChoices, normalizeChoices } from "./saved-choices";
 import {
   type PriceHistoryFile,
   emptyHistory,
@@ -379,12 +380,21 @@ export async function deleteModelPortfolio(id: string): Promise<boolean> {
 
 export interface UserSettings {
   fees: FeeSettings;
+  /** View selections (chart range, benchmark, …) shared across devices. */
+  choices: SavedChoices;
   updatedAt?: string;
 }
 
+function normalizeSettings(raw: Partial<UserSettings> | null | undefined): UserSettings {
+  return {
+    fees: normalizeFeeSettings(raw?.fees),
+    choices: normalizeChoices(raw?.choices),
+    updatedAt: raw?.updatedAt,
+  };
+}
+
 export async function getSettings(): Promise<UserSettings> {
-  const raw = await readFile<Partial<UserSettings>>("settings.json", {});
-  return { fees: normalizeFeeSettings(raw.fees), updatedAt: raw.updatedAt };
+  return normalizeSettings(await readFile<Partial<UserSettings>>("settings.json", {}));
 }
 
 export async function updateSettings(
@@ -392,9 +402,8 @@ export async function updateSettings(
 ): Promise<UserSettings> {
   return mutateFile<UserSettings>(
     "settings.json",
-    { fees: { ...ZERO_FEES } },
-    (cur) =>
-      mutate({ fees: normalizeFeeSettings(cur.fees), updatedAt: cur.updatedAt })
+    { fees: { ...ZERO_FEES }, choices: {} },
+    (cur) => mutate(normalizeSettings(cur))
   );
 }
 
