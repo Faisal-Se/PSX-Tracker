@@ -5,6 +5,7 @@ import { Users, Search, Copy, Check, Download } from "lucide-react";
 import { useSort } from "@/lib/use-sort";
 import { SortHeader } from "@/components/SortHeader";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AnnouncementEditor } from "@/components/AnnouncementEditor";
 
 interface RegisteredUser {
   id: string;
@@ -155,6 +156,8 @@ export default function AdminUsersPage() {
         </div>
         <h1 className="text-[24px] font-bold tracking-[-.02em]">Users</h1>
       </div>
+
+      <AnnouncementEditor />
 
       {state === "error" ? (
         <p className="rounded-2xl border border-line bg-card px-[22px] py-10 text-center text-sm text-ink-2 shadow-card">

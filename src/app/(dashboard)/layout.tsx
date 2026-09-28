@@ -2,6 +2,7 @@
 
 import { TopNav } from "@/components/TopNav";
 import { Footer } from "@/components/Footer";
+import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { useStore } from "@/store/useStore";
 
 export default function DashboardLayout({
@@ -16,6 +17,7 @@ export default function DashboardLayout({
       data-hide-balances={balancesHidden ? "true" : "false"}
     >
       <TopNav />
+      <AnnouncementBanner />
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-16 pt-[22px]">
         {children}
       </main>
