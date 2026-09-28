@@ -20,7 +20,10 @@ export async function GET() {
 
   if (!registryConfigured()) {
     return NextResponse.json(
-      { error: "User storage is not connected to this project yet." },
+      {
+        error:
+          "User storage is not connected. The app looked for REDIS_URL, KV_REST_API_URL and UPSTASH_REDIS_REST_URL and found none. After connecting a store in Vercel, redeploy so the app picks up the new settings.",
+      },
       { status: 503, headers: PRIVATE }
     );
   }

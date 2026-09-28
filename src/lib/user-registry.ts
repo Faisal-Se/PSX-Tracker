@@ -2,13 +2,17 @@
  * The list of people who have signed in: name, email, first sign-in and last
  * active day. Nothing about portfolios, holdings or money is kept here.
  *
- * Stored in Upstash Redis through its REST API, using the connection settings
- * the Vercel integration adds to the project. Every function degrades to a
- * no-op when the store is not configured or not reachable, so sign-in never
- * depends on it.
+ * Stored in Redis, using whichever connection settings the Vercel storage
+ * integration added to the project:
+ *   - a Redis connection string (REDIS_URL) — the "Redis" product, or
+ *   - a REST endpoint and token (KV_REST_API_* / UPSTASH_REDIS_REST_*) —
+ *     "Upstash for Redis".
+ * Every function degrades to a no-op when no store is configured or it can't
+ * be reached, so sign-in never depends on it.
  */
 
 import { createHash } from "node:crypto";
+import { createClient } from "redis";
 
 export interface RegisteredUser {
   id: string;
@@ -31,8 +35,103 @@ function credentials(): { url: string; token: string } | null {
   return { url: url.replace(/\/+$/, ""), token };
 }
 
+/** A redis:// or rediss:// connection string, under any of its usual names. */
+function connectionString(): string | null {
+  const isRedisUrl = (v: string | undefined): v is string =>
+    !!v && /^rediss?:\/\//.test(v);
+  if (isRedisUrl(process.env.REDIS_URL)) return process.env.REDIS_URL;
+  if (isRedisUrl(process.env.KV_URL)) return process.env.KV_URL;
+  // Vercel lets a store be connected with a custom prefix, e.g. STORAGE_REDIS_URL.
+  for (const [name, value] of Object.entries(process.env)) {
+    if (/_REDIS_URL$/.test(name) && isRedisUrl(value)) return value;
+  }
+  return null;
+}
+
 export function registryConfigured(): boolean {
-  return credentials() !== null;
+  return credentials() !== null || connectionString() !== null;
+}
+
+// ─── Redis connection-string store ───
+
+function makeClient(url: string) {
+  return createClient({
+    url,
+    RESP: 2,
+    // Fail fast instead of queueing or retrying: the caller falls back.
+    disableOfflineQueue: true,
+    socket: { connectTimeout: REQUEST_TIMEOUT_MS, reconnectStrategy: false },
+  });
+}
+
+type Client = ReturnType<typeof makeClient>;
+let clientPromise: Promise<Client | null> | null = null;
+
+function discard(client: Client | null) {
+  try {
+    client?.destroy();
+  } catch {
+    // Already closed.
+  }
+}
+
+/** A connected client, reused across requests while it stays healthy. */
+async function getClient(): Promise<Client | null> {
+  const url = connectionString();
+  if (!url) return null;
+
+  if (clientPromise) {
+    const existing = await clientPromise;
+    if (existing?.isReady) return existing;
+    discard(existing);
+    clientPromise = null;
+  }
+
+  clientPromise = (async () => {
+    const client = makeClient(url);
+    client.on("error", () => {
+      // Surfaced through the failed command; nothing to do here.
+    });
+    try {
+      await client.connect();
+      return client;
+    } catch {
+      discard(client);
+      return null;
+    }
+  })();
+
+  const client = await clientPromise;
+  if (!client) clientPromise = null;
+  return client;
+}
+
+/** Run something against the client, giving up after the timeout. */
+async function withClient<T>(run: (client: Client) => Promise<T>): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), REQUEST_TIMEOUT_MS);
+    });
+    const work = (async () => {
+      const client = await getClient();
+      return client ? await run(client) : null;
+    })();
+    const result = await Promise.race([work, timeout]);
+    if (result === null) {
+      // Timed out or failed: don't reuse a connection in an unknown state.
+      work.catch(() => {});
+      const stale = clientPromise;
+      clientPromise = null;
+      stale?.then(discard).catch(() => {});
+    }
+    return result;
+  } catch {
+    clientPromise = null;
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 type Command = (string | number)[];
@@ -100,6 +199,24 @@ export async function recordUser(
 ): Promise<boolean> {
   if (!user.id || !user.email) return false;
   const stamp = now.toISOString();
+
+  if (!credentials() && connectionString()) {
+    const done = await withClient(async (client) => {
+      await client
+        .multi()
+        .hSetNX(userKey(user.id), "firstSeen", stamp)
+        .hSet(userKey(user.id), {
+          email: user.email,
+          name: user.name || "",
+          lastSeen: stamp,
+        })
+        .zAdd(USERS_INDEX, { score: now.getTime(), value: user.id })
+        .exec();
+      return true;
+    });
+    return done === true;
+  }
+
   const result = await pipeline([
     ["HSETNX", userKey(user.id), "firstSeen", stamp],
     ["HSET", userKey(user.id), "email", user.email, "name", user.name || "", "lastSeen", stamp],
@@ -113,6 +230,34 @@ export async function listUsers(): Promise<{
   total: number;
   users: RegisteredUser[];
 } | null> {
+  if (!credentials() && connectionString()) {
+    return withClient(async (client) => {
+      const total = Number(await client.zCard(USERS_INDEX)) || 0;
+      const ids = (await client.zRange(USERS_INDEX, 0, MAX_LISTED - 1, {
+        REV: true,
+      })) as string[];
+      if (ids.length === 0) return { total, users: [] };
+
+      const batch = client.multi();
+      for (const id of ids) batch.hGetAll(userKey(id));
+      const rows = (await batch.exec()) as unknown[];
+
+      const users: RegisteredUser[] = [];
+      rows.forEach((row, i) => {
+        const fields = (row ?? {}) as Record<string, string>;
+        if (!fields.email) return;
+        users.push({
+          id: ids[i],
+          email: String(fields.email),
+          name: String(fields.name || ""),
+          firstSeen: String(fields.firstSeen || fields.lastSeen || ""),
+          lastSeen: String(fields.lastSeen || ""),
+        });
+      });
+      return { total, users };
+    });
+  }
+
   const head = await pipeline([
     ["ZCARD", USERS_INDEX],
     ["ZRANGE", USERS_INDEX, 0, MAX_LISTED - 1, "REV"],
