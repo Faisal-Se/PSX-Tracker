@@ -29,14 +29,7 @@ export interface KSE100Data {
   timestamp: string;
 }
 
-export interface StockHistory {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
+
 
 let cachedMarketData: PSXStock[] | null = null;
 let cachedKSE100: KSE100Data | null = null;
@@ -259,58 +252,44 @@ function fallbackKSE100(): KSE100Data {
   };
 }
 
-export async function getStockHistory(
-  symbol: string
-): Promise<StockHistory[]> {
+export interface IndexQuote {
+  current: number;
+  change: number;
+}
+
+/**
+ * Every index on PSX's public indices page, plus the page's own "As of"
+ * stamp — which says which trading session the site is currently showing.
+ */
+export async function getIndices(): Promise<{
+  asOf: string | null;
+  indices: Record<string, IndexQuote>;
+}> {
   try {
-    const res = await fetch(
-      `https://dps.psx.com.pk/timeseries/eod/${encodeURIComponent(symbol)}`,
-      { next: { revalidate: 3600 } }
-    );
-    // PSX now serves this endpoint only to its own pages and answers 404 to
-    // everyone else. Until there is another source, history is simply empty.
-    if (!res.ok) return [];
-    const text = await res.text();
+    const res = await fetch("https://dps.psx.com.pk/indices", {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return { asOf: null, indices: {} };
+    const html = await res.text();
 
-    const json = JSON.parse(text);
-
-    // New API format: {status, message, data: [[timestamp, close, volume, open], ...]}
-    if (json.data && Array.isArray(json.data)) {
-      const history = json.data.map((item: number[]) => {
-        const d = new Date(item[0] * 1000);
-        const dateStr = d.toISOString().split("T")[0];
-        const close = item[1] || 0;
-        const open = item[3] || 0;
-        return {
-          date: dateStr,
-          open,
-          high: Math.max(open, close),
-          low: Math.min(open, close),
-          close,
-          volume: item[2] || 0,
-        };
-      });
-      // API returns newest-first, chart needs oldest-first
-      history.reverse();
-      return history;
+    const asOfMatch = html.match(/As of\s+([^<]+)</);
+    const indices: Record<string, IndexQuote> = {};
+    const rowRegex = /data-code="([A-Z0-9]+)"([\s\S]*?)<\/tr>/g;
+    let row;
+    while ((row = rowRegex.exec(html)) !== null) {
+      const values: number[] = [];
+      const orderRegex = /data-order="([^"]+)"/g;
+      let m;
+      while ((m = orderRegex.exec(row[2])) !== null) values.push(parseFloat(m[1]) || 0);
+      // Order: high, low, current, change, changePercent
+      if (values.length >= 5 && values[2] > 0) {
+        indices[row[1]] = { current: values[2], change: values[3] };
+      }
     }
-
-    // Legacy format: array of objects with named keys
-    if (Array.isArray(json)) {
-      return json.map((item: Record<string, string>) => ({
-        date: item.DATE || item.date || "",
-        open: parseFloat(item.OPEN || item.open) || 0,
-        high: parseFloat(item.HIGH || item.high) || 0,
-        low: parseFloat(item.LOW || item.low) || 0,
-        close: parseFloat(item.CLOSE || item.close) || 0,
-        volume: parseInt(item.VOLUME || item.volume) || 0,
-      }));
-    }
-
-    return [];
+    return { asOf: asOfMatch ? asOfMatch[1].trim() : null, indices };
   } catch (error) {
-    console.error(`Failed to fetch history for ${symbol}:`, error);
-    return [];
+    console.error("Failed to fetch indices:", error);
+    return { asOf: null, indices: {} };
   }
 }
 

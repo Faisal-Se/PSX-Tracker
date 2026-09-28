@@ -17,6 +17,7 @@ import { Sparkline } from "@/components/Sparkline";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { buyCost, maxAffordableShares } from "@/lib/fees";
 import { useFeeSettings } from "@/lib/use-fee-settings";
+import { fetchHistory } from "@/lib/history-client";
 
 /* Chart palette (allocation bars, NOT P&L) */
 const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#DB2777"];
@@ -135,21 +136,8 @@ export default function ModelsPage() {
     if (modelSymbols.length === 0) return;
     let cancelled = false;
     (async () => {
-      const results = await Promise.all(
-        modelSymbols.map(async (sym) => {
-          try {
-            const res = await fetch(`/api/psx/history?symbol=${encodeURIComponent(sym)}`);
-            if (!res.ok) return [sym, [] as HistoryPoint[]] as const;
-            const data = (await res.json()) as HistoryPoint[];
-            return [sym, Array.isArray(data) ? data : []] as const;
-          } catch {
-            return [sym, [] as HistoryPoint[]] as const;
-          }
-        })
-      );
+      const map = await fetchHistory(modelSymbols);
       if (cancelled) return;
-      const map: Record<string, HistoryPoint[]> = {};
-      for (const [sym, data] of results) map[sym] = data;
       setHistory(map);
     })();
     return () => {

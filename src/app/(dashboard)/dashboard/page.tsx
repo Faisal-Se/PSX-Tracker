@@ -40,6 +40,7 @@ import {
 import { useVisiblePoll } from "@/lib/use-visible-poll";
 import { useSort } from "@/lib/use-sort";
 import { SortHeader } from "@/components/SortHeader";
+import { fetchHistory } from "@/lib/history-client";
 
 /** Live market data refresh cadence, while the tab is visible. */
 const POLL_INTERVAL_MS = 60000;
@@ -285,20 +286,15 @@ export default function DashboardPage() {
   // KSE-100 sparkline series (the index history is fetchable as a symbol).
   useEffect(() => {
     let cancelled = false;
-    // Only the last 40 closes are drawn, so ask for a short window instead of
-    // the full ~1,240-bar series (131 KB -> ~6 KB).
-    fetch(`/api/psx/history?symbol=KSE100&limit=${KSE_TREND_FETCH}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d: HistoryPoint[]) => {
-        if (cancelled || !Array.isArray(d)) return;
-        setKseTrend(
-          d
-            .map((p) => p.close)
-            .filter((n) => n > 0)
-            .slice(-KSE_TREND_POINTS)
-        );
-      })
-      .catch(() => {});
+    // Only the last 40 closes are drawn, so ask for a short window.
+    fetchHistory(["KSE100"], { limit: KSE_TREND_FETCH }).then((map) => {
+      if (cancelled) return;
+      setKseTrend(
+        map.KSE100.map((p) => p.close)
+          .filter((n) => n > 0)
+          .slice(-KSE_TREND_POINTS)
+      );
+    });
     return () => {
       cancelled = true;
     };
@@ -317,23 +313,8 @@ export default function DashboardPage() {
     if (uniqueSymbols.length === 0) return;
     let cancelled = false;
     (async () => {
-      const results = await Promise.all(
-        uniqueSymbols.map(async (sym) => {
-          try {
-            const res = await fetch(
-              `/api/psx/history?symbol=${encodeURIComponent(sym)}`
-            );
-            if (!res.ok) return [sym, [] as HistoryPoint[]] as const;
-            const data = (await res.json()) as HistoryPoint[];
-            return [sym, Array.isArray(data) ? data : []] as const;
-          } catch {
-            return [sym, [] as HistoryPoint[]] as const;
-          }
-        })
-      );
+      const map = await fetchHistory(uniqueSymbols);
       if (cancelled) return;
-      const map: Record<string, HistoryPoint[]> = {};
-      for (const [sym, data] of results) map[sym] = data;
       setHistory(map);
     })();
     return () => {

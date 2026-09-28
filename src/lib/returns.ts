@@ -2,7 +2,7 @@
  * Return-series helpers for the NAV + benchmark charts.
  *
  * A "history map" is `Record<symbol, {date, close}[]>` (oldest→newest, as the
- * /api/psx/history endpoint returns once sorted). A holding is shares of a
+ * /api/history endpoint returns). A holding is shares of a
  * symbol. We build a daily portfolio NAV series from holdings × close, hold
  * cash constant across the window, then derive return %s.
  */

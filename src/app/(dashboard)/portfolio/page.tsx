@@ -43,6 +43,7 @@ import {
 } from "recharts";
 import { useSort } from "@/lib/use-sort";
 import { SortHeader } from "@/components/SortHeader";
+import { fetchHistory } from "@/lib/history-client";
 
 interface Holding {
   id: string;
@@ -209,26 +210,9 @@ export default function PortfolioPage() {
     (async () => {
       const missing = activeSymbols.filter((s) => !history[s]);
       if (missing.length === 0) return;
-      const results = await Promise.all(
-        missing.map(async (sym) => {
-          try {
-            const res = await fetch(
-              `/api/psx/history?symbol=${encodeURIComponent(sym)}`
-            );
-            if (!res.ok) return [sym, [] as HistoryPoint[]] as const;
-            const data = (await res.json()) as HistoryPoint[];
-            return [sym, Array.isArray(data) ? data : []] as const;
-          } catch {
-            return [sym, [] as HistoryPoint[]] as const;
-          }
-        })
-      );
+      const fetched = await fetchHistory(missing);
       if (cancelled) return;
-      setHistory((prev) => {
-        const next = { ...prev };
-        for (const [sym, data] of results) next[sym] = data;
-        return next;
-      });
+      setHistory((prev) => ({ ...prev, ...fetched }));
     })();
     return () => {
       cancelled = true;

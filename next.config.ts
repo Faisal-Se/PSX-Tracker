@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
       "/api/export",
       "/api/import",
       "/api/settings",
+      "/api/history",
     ];
     return [
       { source: "/models", headers: noStore },

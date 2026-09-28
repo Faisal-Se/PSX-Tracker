@@ -18,12 +18,13 @@ import {
   type HistPt,
 } from "@/lib/returns";
 import { ChartSkeleton } from "@/components/ui/skeleton";
+import { fetchHistory } from "@/lib/history-client";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "ALL"] as const;
 const BENCH_COLOR = "#f59e0b";
 const PORT_COLOR = "var(--color-gain)";
 
-/** Selectable benchmark indices (all fetchable via /api/psx/history). */
+/** Selectable benchmark indices (recorded alongside the user's stocks). */
 const INDICES = [
   { code: "KSE100", label: "KSE-100" },
   { code: "KMI30", label: "KMI-30" },
@@ -59,15 +60,14 @@ export function BenchmarkChart({
       return;
     }
     let cancelled = false;
-    fetch(`/api/psx/history?symbol=${benchmark}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d: { date: string; close: number }[]) => {
-        if (cancelled || !Array.isArray(d)) return;
-        const clean = d.filter((p) => p.close > 0).map((p) => ({ date: p.date, close: p.close }));
-        cache.current[benchmark] = clean;
-        setIndexHist((h) => ({ ...h, [benchmark]: clean }));
-      })
-      .catch(() => {});
+    fetchHistory([benchmark]).then((map) => {
+      if (cancelled) return;
+      const clean = map[benchmark]
+        .filter((p) => p.close > 0)
+        .map((p) => ({ date: p.date, close: p.close }));
+      cache.current[benchmark] = clean;
+      setIndexHist((h) => ({ ...h, [benchmark]: clean }));
+    });
     return () => {
       cancelled = true;
     };

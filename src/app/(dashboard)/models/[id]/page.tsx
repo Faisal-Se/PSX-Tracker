@@ -43,6 +43,7 @@ import { useSort } from "@/lib/use-sort";
 import { buyCost, sellProceeds, maxAffordableShares } from "@/lib/fees";
 import { useFeeSettings } from "@/lib/use-fee-settings";
 import { SortBar, SortHeader } from "@/components/SortHeader";
+import { fetchHistory } from "@/lib/history-client";
 
 interface Allocation {
   id: string;
@@ -229,25 +230,9 @@ export default function ModelDetailPage() {
     (async () => {
       const missing = symbols.filter((s) => !history[s]);
       if (missing.length === 0) return;
-      type Pt = { date: string; close: number };
-      const results = await Promise.all(
-        missing.map(async (sym): Promise<[string, Pt[]]> => {
-          try {
-            const res = await fetch(`/api/psx/history?symbol=${encodeURIComponent(sym)}`);
-            if (!res.ok) return [sym, []];
-            const data = await res.json();
-            return [sym, Array.isArray(data) ? (data as Pt[]) : []];
-          } catch {
-            return [sym, []];
-          }
-        })
-      );
+      const fetched = await fetchHistory(missing);
       if (cancelled) return;
-      setHistory((prev) => {
-        const next = { ...prev };
-        for (const [sym, data] of results) next[sym] = data;
-        return next;
-      });
+      setHistory((prev) => ({ ...prev, ...fetched }));
     })();
     return () => {
       cancelled = true;

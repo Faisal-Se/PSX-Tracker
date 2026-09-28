@@ -2,6 +2,11 @@ import { google } from "googleapis";
 import { getAuthenticatedClient } from "./google-auth";
 import { Readable } from "stream";
 import { type FeeSettings, ZERO_FEES, normalizeFeeSettings } from "./fees";
+import {
+  type PriceHistoryFile,
+  emptyHistory,
+  normalizeHistory,
+} from "./price-history";
 
 // Each data type is stored as a separate JSON file in the user's Google Drive appDataFolder
 // Files: portfolios.json, watchlist.json, model-portfolios.json
@@ -177,7 +182,13 @@ async function mutateFile<T>(
   fileName: string,
   defaultValue: T,
   mutate: (current: T) => T,
-  attempt = 0
+  attempt = 0,
+  /**
+   * When true, a file that exists but can't be read aborts the write instead
+   * of being treated as empty — so a transient Drive error can never replace
+   * accumulated data with a fresh default.
+   */
+  strictRead = false
 ): Promise<T> {
   const drive = await getDrive();
   const found = await findFile(drive, fileName);
@@ -191,7 +202,8 @@ async function mutateFile<T>(
         { responseType: "text" }
       );
       current = JSON.parse(res.data as string) as T;
-    } catch {
+    } catch (err) {
+      if (strictRead) throw err;
       current = defaultValue;
     }
   }
@@ -223,7 +235,7 @@ async function mutateFile<T>(
       (err as { response?: { status?: number } })?.response?.status;
     // 412 = precondition failed (revision changed). Retry with fresh read.
     if (status === 412 && attempt < 5) {
-      return mutateFile(fileName, defaultValue, mutate, attempt + 1);
+      return mutateFile(fileName, defaultValue, mutate, attempt + 1, strictRead);
     }
     throw err;
   }
@@ -421,5 +433,36 @@ export async function updateSettings(
     { fees: { ...ZERO_FEES } },
     (cur) =>
       mutate({ fees: normalizeFeeSettings(cur.fees), updatedAt: cur.updatedAt })
+  );
+}
+
+// ─── Self-recorded price history ───
+
+const PRICE_HISTORY_FILE = "price-history.json";
+
+/**
+ * The user's recorded price history. Unlike readFile(), a file that exists but
+ * fails to load throws: callers must not mistake an outage for "no history".
+ */
+export async function getPriceHistory(): Promise<PriceHistoryFile> {
+  const drive = await getDrive();
+  const found = await findFile(drive, PRICE_HISTORY_FILE);
+  if (!found) return emptyHistory();
+  const res = await drive.files.get(
+    { fileId: found.id, alt: "media" },
+    { responseType: "text" }
+  );
+  return normalizeHistory(JSON.parse(res.data as string));
+}
+
+export async function updatePriceHistory(
+  mutate: (current: PriceHistoryFile) => PriceHistoryFile
+): Promise<PriceHistoryFile> {
+  return mutateFile<PriceHistoryFile>(
+    PRICE_HISTORY_FILE,
+    emptyHistory(),
+    (cur) => mutate(normalizeHistory(cur)),
+    0,
+    true
   );
 }
