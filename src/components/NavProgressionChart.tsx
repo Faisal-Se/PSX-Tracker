@@ -72,6 +72,13 @@ export function NavProgressionChart({
   );
   const since = useMemo(() => recordingStart(history, heldSymbols), [history, heldSymbols]);
   const backfilled = useMemo(() => hasBackfill(history, heldSymbols), [history, heldSymbols]);
+  // Only worth saying while the app is relying on its own short record.
+  const shortHistory = useMemo(() => {
+    if (fullSeries.length === 0) return false;
+    const first = new Date(fullSeries[0].date).getTime();
+    const last = new Date(fullSeries[fullSeries.length - 1].date).getTime();
+    return last - first < 60 * 24 * 60 * 60 * 1000;
+  }, [fullSeries]);
   const axisLabel = useMemo(() => {
     const values = series.map((p) => p.value);
     return moneyAxisFormatter(Math.min(...values), Math.max(...values));
@@ -195,7 +202,7 @@ export function NavProgressionChart({
             </ResponsiveContainer>
           </div>
 
-          {since && (
+          {since && (backfilled || shortHistory) && (
             <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
               Daily history starts {fmtDate(since)}.
               {backfilled

@@ -297,6 +297,105 @@ export async function getIndices(): Promise<{
   }
 }
 
+// ─── PSX data feed (history) ───
+//
+// PSX's chart feed answers only requests that look like its own pages: they
+// carry a token embedded in every PSX page, plus browser-style headers. The
+// token rotates during the day, so it is read from a page, kept briefly, and
+// re-read once when a request is refused.
+//
+// This depends on PSX keeping that arrangement. Every caller must treat an
+// empty result as normal and fall back to the app's own recorded history.
+
+const FEED_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const TOKEN_PAGE = "https://dps.psx.com.pk/indices";
+const TOKEN_TTL_MS = 10 * 60 * 1000;
+
+let cachedToken: { value: string; at: number } | null = null;
+
+async function getFeedToken(forceRefresh = false): Promise<string | null> {
+  const now = Date.now();
+  if (!forceRefresh && cachedToken && now - cachedToken.at < TOKEN_TTL_MS) {
+    return cachedToken.value;
+  }
+  try {
+    const res = await fetch(TOKEN_PAGE, {
+      headers: { "User-Agent": FEED_USER_AGENT },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const match = (await res.text()).match(/"_k":"([^"]+)"/);
+    if (!match) return null;
+    cachedToken = { value: match[1], at: now };
+    return match[1];
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFeed(path: string): Promise<unknown | null> {
+  for (const forceRefresh of [false, true]) {
+    const token = await getFeedToken(forceRefresh);
+    if (!token) return null;
+    const res = await fetch(`https://dps.psx.com.pk${path}`, {
+      headers: {
+        "User-Agent": FEED_USER_AGENT,
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Req-Id": token,
+        Accept: "application/json, text/javascript, */*; q=0.01",
+        Referer: "https://dps.psx.com.pk/",
+      },
+      cache: "no-store",
+    });
+    if (res.ok) {
+      try {
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }
+    // Refused: the token may have rotated. Try once more with a fresh one.
+  }
+  return null;
+}
+
+export interface ClosePoint {
+  date: string;
+  close: number;
+}
+
+/**
+ * Daily closing prices for a stock or index from PSX's feed, oldest first.
+ * Returns [] whenever the feed is unavailable.
+ */
+export async function getStockHistory(symbol: string): Promise<ClosePoint[]> {
+  try {
+    const json = (await fetchFeed(
+      `/timeseries/eod/${encodeURIComponent(symbol)}`
+    )) as { data?: unknown } | null;
+    if (!json || !Array.isArray(json.data)) return [];
+
+    // Rows are [unix seconds, close, volume, open], newest first.
+    const byDate = new Map<string, number>();
+    for (const row of json.data as unknown[]) {
+      if (!Array.isArray(row)) continue;
+      const time = Number(row[0]);
+      const close = Number(row[1]);
+      if (!Number.isFinite(time) || !(close > 0)) continue;
+      // Timestamps mark the session in Pakistan time (UTC+5).
+      const date = new Date((time + 5 * 3600) * 1000).toISOString().slice(0, 10);
+      if (!byDate.has(date)) byDate.set(date, close);
+    }
+    return Array.from(byDate.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, close]) => ({ date, close }));
+  } catch (error) {
+    console.error(`Failed to fetch history for ${symbol}:`, error);
+    return [];
+  }
+}
+
 export async function getStockPrice(
   symbol: string
 ): Promise<PSXStock | null> {
