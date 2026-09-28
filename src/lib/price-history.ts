@@ -18,6 +18,12 @@ export interface PriceHistoryFile {
   provisionalDate: string | null;
   /** symbol → date → closing price */
   series: Record<string, Record<string, number>>;
+  /**
+   * symbol → date → price one year before a recorded session, worked out from
+   * the one-year change PSX still publishes. Kept apart from `series` because
+   * these are derived reference points, not prices the app observed.
+   */
+  yearAgo: Record<string, Record<string, number>>;
 }
 
 export interface HistoryPoint {
@@ -27,11 +33,15 @@ export interface HistoryPoint {
   low: number;
   close: number;
   volume: number;
+  /** True for a year-ago reference point rather than a recorded price. */
+  backfill?: boolean;
 }
 
 export interface Quote {
   current: number;
   previousClose: number;
+  /** Price one year ago, when PSX publishes a one-year change. */
+  yearAgoPrice?: number;
 }
 
 export interface Snapshot {
@@ -60,6 +70,7 @@ export function emptyHistory(): PriceHistoryFile {
     finalDate: null,
     provisionalDate: null,
     series: {},
+    yearAgo: {},
   };
 }
 
@@ -74,16 +85,22 @@ export function normalizeHistory(raw: unknown): PriceHistoryFile {
     out.finalDate = src.finalDate;
   if (typeof src.provisionalDate === "string" && DATE_RE.test(src.provisionalDate))
     out.provisionalDate = src.provisionalDate;
-  if (src.series && typeof src.series === "object") {
-    for (const [symbol, days] of Object.entries(src.series)) {
-      if (!days || typeof days !== "object") continue;
-      const clean: Record<string, number> = {};
-      for (const [date, close] of Object.entries(days)) {
-        if (DATE_RE.test(date) && typeof close === "number" && close > 0)
-          clean[date] = close;
-      }
-      out.series[symbol] = clean;
+  out.series = cleanSeries(src.series);
+  out.yearAgo = cleanSeries(src.yearAgo);
+  return out;
+}
+
+function cleanSeries(raw: unknown): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [symbol, days] of Object.entries(raw)) {
+    if (!days || typeof days !== "object") continue;
+    const clean: Record<string, number> = {};
+    for (const [date, close] of Object.entries(days)) {
+      if (DATE_RE.test(date) && typeof close === "number" && close > 0)
+        clean[date] = close;
     }
+    out[symbol] = clean;
   }
   return out;
 }
@@ -112,6 +129,16 @@ export function previousWeekday(date: string): string {
   let d = shiftDays(date, -1);
   while (isWeekend(d)) d = shiftDays(d, -1);
   return d;
+}
+
+/** The same calendar day one year earlier, moved back off a weekend. */
+export function oneYearBefore(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  // Feb 29 has no counterpart in the previous year.
+  const day = m === 2 && d === 29 ? 28 : d;
+  let out = `${y - 1}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  while (isWeekend(out)) out = shiftDays(out, -1);
+  return out;
 }
 
 export function nextWeekday(date: string): string {
@@ -165,6 +192,9 @@ export function isRecordingDue(
 ): boolean {
   if (requested.some((s) => !(s in file.series))) return true;
   if (!file.lastRecordedAt) return true;
+  // Written before year-ago reference points existed: add them now.
+  if (Object.keys(file.series).length > 0 && Object.keys(file.yearAgo).length === 0)
+    return true;
 
   // The last session is closed and recorded: nothing can change before the
   // next one opens.
@@ -189,6 +219,7 @@ export function applySnapshot(
   const next: PriceHistoryFile = {
     ...file,
     series: { ...file.series },
+    yearAgo: { ...file.yearAgo },
     lastRecordedAt: now.toISOString(),
   };
 
@@ -197,6 +228,7 @@ export function applySnapshot(
   const sessionAlreadyFinal = file.finalDate !== null && file.finalDate >= session;
   // The day before was recorded mid-session; its real close is now known.
   const upgradeDayBefore = file.provisionalDate === dayBefore;
+  const yearBefore = oneYearBefore(session);
 
   for (const symbol of symbols) {
     const days = { ...(next.series[symbol] ?? {}) };
@@ -211,6 +243,17 @@ export function applySnapshot(
     if (quote.previousClose > 0 && (days[dayBefore] === undefined || upgradeDayBefore)) {
       days[dayBefore] = quote.previousClose;
     }
+    // One reference point per session, a year back. Visiting daily therefore
+    // also fills in last year, one day at a time.
+    const old = { ...(next.yearAgo[symbol] ?? {}) };
+    next.yearAgo[symbol] = old;
+    if (
+      quote.yearAgoPrice &&
+      quote.yearAgoPrice > 0 &&
+      old[yearBefore] === undefined
+    ) {
+      old[yearBefore] = quote.yearAgoPrice;
+    }
   }
 
   if (snapshot.final) {
@@ -222,18 +265,36 @@ export function applySnapshot(
   return next;
 }
 
-/** One symbol's series as chart points, oldest first. */
+/**
+ * One symbol's series as chart points, oldest first. Year-ago reference
+ * points are merged in only when `yearAgo` is given, and are flagged; a
+ * recorded price always wins over a reference point for the same day.
+ */
 export function toPoints(
   days: Record<string, number> | undefined,
-  limit?: number
+  limit?: number,
+  yearAgo?: Record<string, number>
 ): HistoryPoint[] {
-  if (!days) return [];
-  const points = Object.keys(days)
+  const recorded = days ?? {};
+  const dates = new Set(Object.keys(recorded));
+  if (yearAgo) for (const d of Object.keys(yearAgo)) dates.add(d);
+
+  const points = Array.from(dates)
     .sort()
-    .map((date) => {
-      const close = days[date];
-      // Only the close is recorded; the other fields keep the chart shape.
-      return { date, open: close, high: close, low: close, close, volume: 0 };
+    .map((date): HistoryPoint => {
+      const observed = recorded[date];
+      const close = observed ?? yearAgo![date];
+      // Only the close is known; the other fields keep the chart shape.
+      const point: HistoryPoint = {
+        date,
+        open: close,
+        high: close,
+        low: close,
+        close,
+        volume: 0,
+      };
+      if (observed === undefined) point.backfill = true;
+      return point;
     });
   return limit && limit > 0 ? points.slice(-limit) : points;
 }

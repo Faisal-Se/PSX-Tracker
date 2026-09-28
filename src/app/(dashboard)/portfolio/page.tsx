@@ -43,7 +43,8 @@ import {
 } from "recharts";
 import { useSort } from "@/lib/use-sort";
 import { SortHeader } from "@/components/SortHeader";
-import { fetchHistory } from "@/lib/history-client";
+import { fetchHistory, type HistoryPoint } from "@/lib/history-client";
+import { recordedOnly } from "@/lib/returns";
 
 interface Holding {
   id: string;
@@ -70,14 +71,6 @@ interface MarketStock {
   changePercent: number;
 }
 
-interface HistoryPoint {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
 
 type SortKey = "symbol" | "quantity" | "avgPrice" | "currentPrice" | "value" | "pnl";
 
@@ -210,7 +203,7 @@ export default function PortfolioPage() {
     (async () => {
       const missing = activeSymbols.filter((s) => !history[s]);
       if (missing.length === 0) return;
-      const fetched = await fetchHistory(missing);
+      const fetched = await fetchHistory(missing, { backfill: true });
       if (cancelled) return;
       setHistory((prev) => ({ ...prev, ...fetched }));
     })();
@@ -303,7 +296,7 @@ export default function PortfolioPage() {
       const hPnl = (currentPrice - h.avgPrice) * h.quantity;
       const hPnlPercent =
         h.avgPrice > 0 ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100 : 0;
-      const trend = (history[h.symbol] || [])
+      const trend = recordedOnly(history[h.symbol])
         .map((p) => p.close)
         .filter((n) => n > 0)
         .slice(-20);

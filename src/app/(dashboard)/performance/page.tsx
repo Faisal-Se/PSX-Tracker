@@ -165,7 +165,7 @@ export default function PerformancePage() {
     (async () => {
       const missing = symbols.filter((s) => !history[s]);
       if (missing.length === 0) return;
-      const fetched = await fetchHistory(missing);
+      const fetched = await fetchHistory(missing, { backfill: true });
       if (cancelled) return;
       setHistory((prev) => ({ ...prev, ...fetched }));
     })();

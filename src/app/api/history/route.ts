@@ -54,8 +54,15 @@ async function record(
   if (stocks.length === 0) return file;
 
   const quotes: Record<string, Quote> = {};
-  for (const s of stocks)
-    quotes[s.symbol] = { current: s.current, previousClose: s.ldcp };
+  for (const s of stocks) {
+    // PSX publishes 0 when it has no one-year figure (e.g. a new listing).
+    const pct = s.yearChangePercent;
+    const yearAgoPrice =
+      pct !== 0 && pct > -100
+        ? Math.round((s.current / (1 + pct / 100)) * 100) / 100
+        : undefined;
+    quotes[s.symbol] = { current: s.current, previousClose: s.ldcp, yearAgoPrice };
+  }
   for (const [code, q] of Object.entries(indices))
     quotes[code] = { current: q.current, previousClose: q.current - q.change };
 
@@ -69,9 +76,11 @@ async function record(
 }
 
 /**
- * GET /api/history?symbols=KEL,OGDC,KSE100[&limit=60]
+ * GET /api/history?symbols=KEL,OGDC,KSE100[&limit=60][&backfill=1]
  *
- * Returns each symbol's recorded closing prices, oldest first. Reading also
+ * Returns each symbol's recorded closing prices, oldest first. With
+ * backfill=1 the year-ago reference points are included, flagged `backfill`.
+ * Reading also
  * records: when a fresh price is due, it is written before responding, so the
  * history grows simply by the app being used.
  */
@@ -96,6 +105,8 @@ export async function GET(req: Request) {
   const limitParam = Number(searchParams.get("limit"));
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.floor(limitParam) : undefined;
 
+  const withBackfill = searchParams.get("backfill") === "1";
+
   if (symbols.length === 0) {
     return NextResponse.json(
       { error: "symbols is required" },
@@ -116,7 +127,12 @@ export async function GET(req: Request) {
     }
 
     const body: Record<string, HistoryPoint[]> = {};
-    for (const symbol of symbols) body[symbol] = toPoints(file.series[symbol], limit);
+    for (const symbol of symbols)
+      body[symbol] = toPoints(
+        file.series[symbol],
+        limit,
+        withBackfill ? file.yearAgo[symbol] : undefined
+      );
     return NextResponse.json(body, { headers: PRIVATE });
   } catch (error) {
     console.error("Price history error:", error);

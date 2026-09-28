@@ -14,6 +14,9 @@ import {
   sliceRange,
   simpleReturnPct,
   indexReturnPct,
+  availableRanges,
+  effectiveRange,
+  percentAxisFormatter,
   type HoldingLike,
   type HistPt,
 } from "@/lib/returns";
@@ -46,7 +49,7 @@ export function BenchmarkChart({
   cash: number;
   history: Record<string, HistPt[]>;
 }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
+  const [selected, setRange] = useState<(typeof RANGES)[number]>("1M");
   const [benchmark, setBenchmark] = useState<IndexCode>("KSE100");
   const [indexHist, setIndexHist] = useState<Record<string, HistPt[]>>({});
   const cache = useRef<Record<string, HistPt[]>>({});
@@ -73,10 +76,16 @@ export function BenchmarkChart({
     };
   }, [benchmark]);
 
-  const fullNav = useMemo(
-    () => buildNavSeries(holdings, cash, history),
-    [holdings, cash, history]
-  );
+  // Compare only over days the index has a price for. There is no year-ago
+  // figure for an index, so an older portfolio point would be measured
+  // against an index that appears not to have moved.
+  const fullNav = useMemo(() => {
+    const nav = buildNavSeries(holdings, cash, history);
+    const indexStart = bench.length > 0 ? bench[0].date : null;
+    return indexStart ? nav.filter((p) => p.date >= indexStart) : nav;
+  }, [holdings, cash, history, bench]);
+  const available = useMemo(() => availableRanges(fullNav, RANGES), [fullNav]);
+  const range = effectiveRange(selected, RANGES, available);
 
   const { data, portFinal, benchFinal } = useMemo(() => {
     const nav = sliceRange(fullNav, range);
@@ -96,6 +105,11 @@ export function BenchmarkChart({
       benchFinal: idx[idx.length - 1]?.pct ?? 0,
     };
   }, [fullNav, range, bench]);
+
+  const axisLabel = useMemo(() => {
+    const values = data.flatMap((p) => (p.bench == null ? [p.portfolio] : [p.portfolio, p.bench]));
+    return percentAxisFormatter(Math.min(0, ...values), Math.max(0, ...values));
+  }, [data]);
 
   const delta = portFinal - benchFinal;
   const outperformed = delta >= 0;
@@ -134,17 +148,26 @@ export function BenchmarkChart({
 
       {/* range pills */}
       <div className="mb-4 flex flex-wrap gap-1">
-        {RANGES.map((r) => (
-          <button
-            key={r}
-            onClick={() => setRange(r)}
-            className={`rounded-lg px-3 py-1 text-[12px] font-semibold transition-colors ${
-              range === r ? "bg-card text-ink shadow-card" : "text-ink-3 hover:text-ink"
-            }`}
-          >
-            {r}
-          </button>
-        ))}
+        {RANGES.map((r) => {
+          const enabled = available.has(r);
+          return (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              disabled={!enabled}
+              title={enabled ? undefined : "No history this far back yet"}
+              className={`rounded-lg px-3 py-1 text-[12px] font-semibold transition-colors ${
+                range === r
+                  ? "bg-card text-ink shadow-card"
+                  : enabled
+                    ? "text-ink-3 hover:text-ink"
+                    : "cursor-not-allowed text-ink-3 opacity-35"
+              }`}
+            >
+              {r}
+            </button>
+          );
+        })}
       </div>
 
       {loading ? (
@@ -175,8 +198,8 @@ export function BenchmarkChart({
                   minTickGap={48}
                 />
                 <YAxis
-                  width={40}
-                  tickFormatter={(v) => `${v >= 0 ? "+" : ""}${Number(v).toFixed(0)}%`}
+                  width={54}
+                  tickFormatter={axisLabel}
                   tick={{ fill: "var(--color-ink-3)", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}

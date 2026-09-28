@@ -17,6 +17,8 @@ export interface PSXStock {
    */
   avgVolume: number;
   marketCap: number;
+  /** One-year price change %, not adjusted for payouts. 0 when unknown. */
+  yearChangePercent: number;
 }
 
 export interface KSE100Data {
@@ -130,6 +132,7 @@ function parseScreener(html: string): PSXStock[] {
       ldcp,
       avgVolume: Math.round(parseFloat(orders[8]) || 0),
       marketCap: parseFloat(orders[1]) || 0,
+      yearChangePercent: parseFloat(orders[4]) || 0,
     });
   }
 
@@ -183,6 +186,7 @@ export async function getQuote(symbol: string): Promise<PSXStock | null> {
       ldcp: stat("LDCP") || round2(current - change),
       avgVolume: listed?.avgVolume || 0,
       marketCap: listed?.marketCap || 0,
+      yearChangePercent: listed?.yearChangePercent || 0,
     };
   } catch (error) {
     console.error(`Failed to fetch quote for ${symbol}:`, error);

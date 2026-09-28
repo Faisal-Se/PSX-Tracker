@@ -40,7 +40,8 @@ import {
 import { useVisiblePoll } from "@/lib/use-visible-poll";
 import { useSort } from "@/lib/use-sort";
 import { SortHeader } from "@/components/SortHeader";
-import { fetchHistory } from "@/lib/history-client";
+import { fetchHistory, type HistoryPoint } from "@/lib/history-client";
+import { availableRanges, effectiveRange, recordedOnly, sliceRange } from "@/lib/returns";
 
 /** Live market data refresh cadence, while the tab is visible. */
 const POLL_INTERVAL_MS = 60000;
@@ -94,14 +95,6 @@ interface ModelPortfolio {
   }[];
 }
 
-interface HistoryPoint {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
 
 type WidgetId = "kse100" | "stats" | "models" | "holdings" | "gainers" | "losers";
 
@@ -148,15 +141,6 @@ const KSE_TREND_POINTS = 40;
 /** Fetch a small margin over that, so zero-close bars can be dropped and
  *  still leave a full sparkline. */
 const KSE_TREND_FETCH = 60;
-
-const RANGE_DAYS: Record<Range, number> = {
-  "1D": 2,
-  "1W": 6,
-  "1M": 22,
-  "3M": 66,
-  "1Y": 252,
-  ALL: Infinity,
-};
 
 function tint(symbol: string) {
   let h = 0;
@@ -218,7 +202,7 @@ export default function DashboardPage() {
   const balancesHidden = useStore((s) => s.balancesHidden);
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
   const [kseTrend, setKseTrend] = useState<number[]>([]);
-  const [range, setRange] = useState<Range>("1M");
+  const [selectedRange, setRange] = useState<Range>("1M");
   const [scope, setScope] = useState<Scope>("all");
   const [userName, setUserName] = useState<string>("");
 
@@ -313,7 +297,7 @@ export default function DashboardPage() {
     if (uniqueSymbols.length === 0) return;
     let cancelled = false;
     (async () => {
-      const map = await fetchHistory(uniqueSymbols);
+      const map = await fetchHistory(uniqueSymbols, { backfill: true });
       if (cancelled) return;
       setHistory(map);
     })();
@@ -467,10 +451,16 @@ export default function DashboardPage() {
     });
   }, [allHoldings, history, totalCash]);
 
-  const valueSeries = useMemo(() => {
-    const days = RANGE_DAYS[range];
-    return days === Infinity ? fullValueSeries : fullValueSeries.slice(-days);
-  }, [fullValueSeries, range]);
+  // Ranges are by calendar date, and those with nothing new to show are off.
+  const availableRangeSet = useMemo(
+    () => availableRanges(fullValueSeries, RANGES),
+    [fullValueSeries]
+  );
+  const range = effectiveRange(selectedRange, RANGES, availableRangeSet);
+  const valueSeries = useMemo(
+    () => sliceRange(fullValueSeries, range),
+    [fullValueSeries, range]
+  );
 
   // Allocation donut.
   const allocationData = useMemo(() => {
@@ -499,7 +489,7 @@ export default function DashboardPage() {
       const pnl = (currentPrice - h.avgPrice) * h.quantity;
       const pnlPercent =
         h.avgPrice > 0 ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100 : 0;
-      const trend = (history[h.symbol] || [])
+      const trend = recordedOnly(history[h.symbol])
         .map((p) => p.close)
         .filter((n) => n > 0)
         .slice(-20);
@@ -535,13 +525,14 @@ export default function DashboardPage() {
       const stockCount = stocks.filter((a) => a.shares > 0).length;
       const cashPct = total > 0 ? (m.cashBalance / total) * 100 : 0;
 
+      // Card sparkline: the recent trend, from recorded prices only.
       const dateSet = new Set<string>();
       for (const a of stocks)
-        for (const pt of history[a.symbol] || []) dateSet.add(pt.date);
+        for (const pt of recordedOnly(history[a.symbol])) dateSet.add(pt.date);
       const dates = Array.from(dateSet).sort().slice(-24);
       const sorted: Record<string, HistoryPoint[]> = {};
       for (const a of stocks)
-        sorted[a.symbol] = [...(history[a.symbol] || [])].sort((x, y) =>
+        sorted[a.symbol] = [...recordedOnly(history[a.symbol])].sort((x, y) =>
           x.date < y.date ? -1 : 1
         );
       const trend = dates.map((d) => {
@@ -814,17 +805,26 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
-                {RANGES.map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setRange(r)}
-                    className={`rounded-lg px-[11px] py-[5px] text-[12px] font-semibold transition-colors ${
-                      range === r ? "bg-brand text-white" : "text-ink-2 hover:text-ink"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
+                {RANGES.map((r) => {
+                  const enabled = availableRangeSet.has(r);
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => setRange(r)}
+                      disabled={!enabled}
+                      title={enabled ? undefined : "No history this far back yet"}
+                      className={`rounded-lg px-[11px] py-[5px] text-[12px] font-semibold transition-colors ${
+                        range === r
+                          ? "bg-brand text-white"
+                          : enabled
+                            ? "text-ink-2 hover:text-ink"
+                            : "cursor-not-allowed text-ink-3 opacity-35"
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div className="-mx-1.5 -mb-1 mt-3.5 h-[168px]">
@@ -849,7 +849,13 @@ export default function DashboardPage() {
                         color: "var(--color-ink)",
                         boxShadow: "var(--shadow-pop)",
                       }}
-                      labelFormatter={() => ""}
+                      labelFormatter={(d) =>
+                        new Date(String(d)).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "2-digit",
+                        })
+                      }
                       formatter={(v) => [`Rs ${formatPKR(Number(v), { decimals: 0 })}`, "Value"]}
                     />
                     <Area

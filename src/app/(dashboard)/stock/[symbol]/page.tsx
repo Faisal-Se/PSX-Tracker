@@ -75,7 +75,7 @@ export default function StockPage({
     const ticker = decodeURIComponent(symbol).toUpperCase();
     const [quoteRes, historyMap, portfolioRes] = await Promise.all([
       fetch(`/api/psx?action=quote&symbol=${encodeURIComponent(ticker)}`),
-      fetchHistory([ticker]),
+      fetchHistory([ticker], { backfill: true }),
       fetch("/api/portfolios"),
     ]);
 

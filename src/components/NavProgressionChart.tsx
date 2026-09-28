@@ -17,6 +17,11 @@ import {
   buildNavSeries,
   sliceRange,
   athInfo,
+  availableRanges,
+  effectiveRange,
+  hasBackfill,
+  moneyAxisFormatter,
+  recordingStart,
   type HoldingLike,
   type HistPt,
 } from "@/lib/returns";
@@ -49,13 +54,28 @@ export function NavProgressionChart({
   history: Record<string, HistPt[]>;
   title?: string;
 }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
+  const [selected, setRange] = useState<(typeof RANGES)[number]>("1M");
 
   const fullSeries = useMemo(
     () => buildNavSeries(holdings, cash, history),
     [holdings, cash, history]
   );
+  // Ranges with nothing new to show are switched off; if the chosen one is
+  // among them, fall back to the nearest range that has data.
+  const available = useMemo(() => availableRanges(fullSeries, RANGES), [fullSeries]);
+  const range = effectiveRange(selected, RANGES, available);
   const series = useMemo(() => sliceRange(fullSeries, range), [fullSeries, range]);
+
+  const heldSymbols = useMemo(
+    () => holdings.filter((h) => h.shares > 0).map((h) => h.symbol),
+    [holdings]
+  );
+  const since = useMemo(() => recordingStart(history, heldSymbols), [history, heldSymbols]);
+  const backfilled = useMemo(() => hasBackfill(history, heldSymbols), [history, heldSymbols]);
+  const axisLabel = useMemo(() => {
+    const values = series.map((p) => p.value);
+    return moneyAxisFormatter(Math.min(...values), Math.max(...values));
+  }, [series]);
 
   const { growthPct, ath } = useMemo(() => {
     if (series.length < 2) return { growthPct: 0, ath: athInfo(fullSeries) };
@@ -81,17 +101,26 @@ export function NavProgressionChart({
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-[16px] font-bold tracking-[-.02em]">{title}</h2>
         <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
-          {RANGES.map((r) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className={`rounded-lg px-[11px] py-[5px] text-[12px] font-semibold transition-colors ${
-                range === r ? "bg-card text-ink shadow-card" : "text-ink-3 hover:text-ink"
-              }`}
-            >
-              {r}
-            </button>
-          ))}
+          {RANGES.map((r) => {
+            const enabled = available.has(r);
+            return (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                disabled={!enabled}
+                title={enabled ? undefined : "No history this far back yet"}
+                className={`rounded-lg px-[11px] py-[5px] text-[12px] font-semibold transition-colors ${
+                  range === r
+                    ? "bg-card text-ink shadow-card"
+                    : enabled
+                      ? "text-ink-3 hover:text-ink"
+                      : "cursor-not-allowed text-ink-3 opacity-35"
+                }`}
+              >
+                {r}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -123,8 +152,8 @@ export function NavProgressionChart({
                   minTickGap={48}
                 />
                 <YAxis
-                  width={44}
-                  tickFormatter={compactK}
+                  width={58}
+                  tickFormatter={axisLabel}
                   tick={{ fill: "var(--color-ink-3)", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
@@ -165,6 +194,15 @@ export function NavProgressionChart({
               </AreaChart>
             </ResponsiveContainer>
           </div>
+
+          {since && (
+            <p className="mt-2 text-[11.5px] leading-snug text-ink-3">
+              Daily history starts {fmtDate(since)}.
+              {backfilled
+                ? " Older points are PSX\u2019s one-year reference prices, with a straight line between them."
+                : ""}
+            </p>
+          )}
 
           <div className="mt-4 flex items-end justify-between border-t border-line pt-4">
             <div>

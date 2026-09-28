@@ -10,6 +10,8 @@
 export interface HistPt {
   date: string;
   close: number;
+  /** A year-ago reference point rather than a recorded price. */
+  backfill?: boolean;
 }
 
 export interface HoldingLike {
@@ -70,22 +72,130 @@ export function buildNavSeries(
   });
 }
 
-const RANGE_DAYS: Record<string, number> = {
-  "1D": 2,
-  "1W": 6,
-  "1M": 22,
-  "3M": 66,
-  "6M": 132,
-  "1Y": 252,
-  "3Y": 756,
-  "5Y": 1260,
-  ALL: Infinity,
-  All: Infinity,
+/**
+ * Calendar days each range looks back from the latest point. The year-based
+ * ranges carry a few days of slack so a year-ago point that was moved off a
+ * weekend still falls inside its window.
+ */
+const RANGE_CALENDAR_DAYS: Record<string, number> = {
+  "1W": 7,
+  "1M": 31,
+  "3M": 92,
+  "6M": 183,
+  "1Y": 372,
+  "3Y": 1102,
+  "5Y": 1833,
 };
 
-export function sliceRange<T>(series: T[], range: string): T[] {
-  const days = RANGE_DAYS[range] ?? Infinity;
-  return days === Infinity ? series : series.slice(-days);
+function daysBefore(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The part of a dated series that falls inside a range, by calendar date.
+ * (History can have gaps, so "the last N points" is not "the last N days".)
+ */
+export function sliceRange<T extends { date: string }>(series: T[], range: string): T[] {
+  if (series.length === 0) return series;
+  const last = series[series.length - 1].date;
+
+  if (range === "1D") {
+    // The latest session against the one before it, weekend included.
+    const tail = series.slice(-2);
+    return tail.length === 2 && tail[0].date >= daysBefore(last, 7) ? tail : series.slice(-1);
+  }
+
+  const days = RANGE_CALENDAR_DAYS[range];
+  if (!days) return series; // ALL
+  const cutoff = daysBefore(last, days);
+  return series.filter((p) => p.date >= cutoff);
+}
+
+/**
+ * Which ranges have something to show. A range is switched off when it would
+ * draw fewer than two points, or exactly what a shorter range already draws.
+ * ALL stays on whenever there is anything to chart.
+ */
+export function availableRanges<T extends { date: string }>(
+  series: T[],
+  ranges: readonly string[]
+): Set<string> {
+  const on = new Set<string>();
+  let shown = 0;
+  for (const r of ranges) {
+    const count = sliceRange(series, r).length;
+    if (r === "ALL" || r === "All") {
+      if (count >= 2) on.add(r);
+    } else if (count >= 2 && count > shown) {
+      on.add(r);
+      shown = count;
+    }
+  }
+  return on;
+}
+
+/** The selected range if it has data, otherwise the nearest one that does. */
+export function effectiveRange<R extends string>(
+  selected: R,
+  ranges: readonly R[],
+  available: Set<string>
+): R {
+  if (available.has(selected)) return selected;
+  return ranges.find((r) => available.has(r)) ?? selected;
+}
+
+/** Recorded prices only — for sparklines, which show the recent trend. */
+export function recordedOnly<T extends { backfill?: boolean }>(points: T[] | undefined): T[] {
+  return (points ?? []).filter((p) => !p.backfill);
+}
+
+/** First day the app itself recorded a price for any of these symbols. */
+export function recordingStart(
+  history: Record<string, HistPt[]>,
+  symbols: string[]
+): string | null {
+  let first: string | null = null;
+  for (const s of symbols)
+    for (const p of history[s] || [])
+      if (!p.backfill && (first === null || p.date < first)) first = p.date;
+  return first;
+}
+
+/** True when any of these symbols has a year-ago reference point. */
+export function hasBackfill(history: Record<string, HistPt[]>, symbols: string[]): boolean {
+  return symbols.some((s) => (history[s] || []).some((p) => p.backfill));
+}
+
+/**
+ * Axis label for money that keeps neighbouring ticks distinct: a chart
+ * spanning a few hundred rupees shows 184.08K rather than 184K five times.
+ */
+export function moneyAxisFormatter(min: number, max: number): (n: number) => string {
+  const span = Math.abs(max - min);
+  const big = Math.max(Math.abs(min), Math.abs(max));
+  if (big >= 1e6) {
+    const d = span >= 5e5 ? 1 : span >= 5e4 ? 2 : 3;
+    return (n) => `${(n / 1e6).toFixed(d)}M`;
+  }
+  if (big >= 1e3) {
+    const d = span >= 5e3 ? 0 : span >= 500 ? 1 : 2;
+    return (n) => `${(n / 1e3).toFixed(d)}K`;
+  }
+  return (n) => String(Math.round(n));
+}
+
+/** Axis label for a percentage, with decimals when the moves are small. */
+export function percentAxisFormatter(min: number, max: number): (n: number) => string {
+  const span = Math.abs(max - min);
+  const d = span >= 4 ? 0 : span >= 0.4 ? 1 : 2;
+  return (n) => {
+    const text = Number(n).toFixed(d);
+    // Avoid "-0.00%".
+    const zero = Number(text) === 0;
+    return `${zero || Number(n) < 0 ? "" : "+"}${zero ? (0).toFixed(d) : text}%`;
+  };
 }
 
 /**
