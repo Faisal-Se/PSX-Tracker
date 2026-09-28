@@ -22,6 +22,7 @@ import {
 } from "@/lib/returns";
 import { ChartSkeleton } from "@/components/ui/skeleton";
 import { fetchHistory } from "@/lib/history-client";
+import { useSavedChoice } from "@/lib/use-saved-choice";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "ALL"] as const;
 const BENCH_COLOR = "#f59e0b";
@@ -33,6 +34,7 @@ const INDICES = [
   { code: "KMI30", label: "KMI-30" },
 ] as const;
 type IndexCode = (typeof INDICES)[number]["code"];
+const INDEX_CODES: readonly IndexCode[] = INDICES.map((i) => i.code);
 
 /**
  * Portfolio vs a PSX index — cumulative simple-return overlay, with a
@@ -49,8 +51,13 @@ export function BenchmarkChart({
   cash: number;
   history: Record<string, HistPt[]>;
 }) {
-  const [selected, setRange] = useState<(typeof RANGES)[number]>("1M");
-  const [benchmark, setBenchmark] = useState<IndexCode>("KSE100");
+  // Both choices are remembered across visits.
+  const [selected, setRange] = useSavedChoice("benchmark-range", RANGES, "1M");
+  const [benchmark, setBenchmark] = useSavedChoice<IndexCode>(
+    "benchmark-index",
+    INDEX_CODES,
+    "KSE100"
+  );
   const [indexHist, setIndexHist] = useState<Record<string, HistPt[]>>({});
   const cache = useRef<Record<string, HistPt[]>>({});
 

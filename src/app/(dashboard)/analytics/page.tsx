@@ -17,6 +17,7 @@ import {
 import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { sectorName } from "@/lib/sectors";
+import { useSavedChoice } from "@/lib/use-saved-choice";
 
 /* ────────────────────────── types ────────────────────────── */
 
@@ -57,6 +58,7 @@ interface ModelPortfolio {
 }
 
 type Scope = "all" | "personal" | "models";
+const SCOPE_VALUES: readonly Scope[] = ["all", "personal", "models"];
 
 /* ────────────────────────── helpers ────────────────────────── */
 
@@ -98,7 +100,8 @@ export default function AnalyticsPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
-  const [scope, setScope] = useState<Scope>("all");
+  // Remembered across visits.
+  const [scope, setScope] = useSavedChoice<Scope>("analytics-scope", SCOPE_VALUES, "all");
   const [loaded, setLoaded] = useState(false);
 
   const fetchData = useCallback(async () => {

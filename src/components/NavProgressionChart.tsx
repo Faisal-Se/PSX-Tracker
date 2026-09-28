@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -25,6 +25,7 @@ import {
   type HoldingLike,
   type HistPt,
 } from "@/lib/returns";
+import { useSavedChoice } from "@/lib/use-saved-choice";
 
 const RANGES = ["1M", "6M", "1Y", "ALL"] as const;
 
@@ -54,7 +55,8 @@ export function NavProgressionChart({
   history: Record<string, HistPt[]>;
   title?: string;
 }) {
-  const [selected, setRange] = useState<(typeof RANGES)[number]>("1M");
+  // Remembered across visits, and shared by every NAV chart.
+  const [selected, setRange] = useSavedChoice("nav-range", RANGES, "1M");
 
   const fullSeries = useMemo(
     () => buildNavSeries(holdings, cash, history),

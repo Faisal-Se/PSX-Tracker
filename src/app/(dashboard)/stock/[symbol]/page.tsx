@@ -17,6 +17,7 @@ import { formatPKR } from "@/lib/market-status";
 import { sectorName } from "@/lib/sectors";
 import { Skeleton, ChartSkeleton } from "@/components/ui/skeleton";
 import { fetchHistory } from "@/lib/history-client";
+import { useSavedChoice } from "@/lib/use-saved-choice";
 
 interface StockData {
   symbol: string;
@@ -47,6 +48,8 @@ interface Portfolio {
   cashBalance: number;
 }
 
+const PERIODS = ["1M", "3M", "6M", "1Y", "ALL"] as const;
+
 const TINTS = ["#2563EB", "#7C3AED", "#0D9488", "#DB2777", "#CA8A04", "#0891B2", "#16A34A", "#4F46E5"];
 function tint(symbol: string) {
   let h = 0;
@@ -65,9 +68,8 @@ export default function StockPage({
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [showTrade, setShowTrade] = useState(false);
-  const [period, setPeriod] = useState<"1M" | "3M" | "6M" | "1Y" | "ALL">(
-    "3M"
-  );
+  // Remembered across visits, for every stock.
+  const [period, setPeriod] = useSavedChoice("stock-period", PERIODS, "3M");
 
   const fetchData = useCallback(async () => {
     // The market list has no intraday open/high/low/volume any more, so ask
@@ -242,7 +244,7 @@ export default function StockPage({
             </span>
           </div>
           <div className="flex gap-1 rounded-[11px] bg-canvas p-1">
-            {(["1M", "3M", "6M", "1Y", "ALL"] as const).map((p) => (
+            {PERIODS.map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}

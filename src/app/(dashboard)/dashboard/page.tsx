@@ -42,6 +42,7 @@ import { useSort } from "@/lib/use-sort";
 import { SortHeader } from "@/components/SortHeader";
 import { fetchHistory, type HistoryPoint } from "@/lib/history-client";
 import { availableRanges, effectiveRange, recordedOnly, sliceRange } from "@/lib/returns";
+import { useSavedChoice } from "@/lib/use-saved-choice";
 
 /** Live market data refresh cadence, while the tab is visible. */
 const POLL_INTERVAL_MS = 60000;
@@ -128,9 +129,9 @@ const ALLOC_COLORS = ["#7C3AED", "#0D9488", "#2563EB", "#0891B2", "#CA8A04", "#D
 const CASH_COLOR = "#CBD5E1";
 
 const RANGES = ["1D", "1W", "1M", "3M", "1Y", "ALL"] as const;
-type Range = (typeof RANGES)[number];
 
 type Scope = "all" | "portfolio" | "models";
+const SCOPE_VALUES: readonly Scope[] = ["all", "portfolio", "models"];
 const SCOPES: { value: Scope; label: string }[] = [
   { value: "all", label: "All" },
   { value: "portfolio", label: "Portfolio" },
@@ -202,8 +203,9 @@ export default function DashboardPage() {
   const balancesHidden = useStore((s) => s.balancesHidden);
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
   const [kseTrend, setKseTrend] = useState<number[]>([]);
-  const [selectedRange, setRange] = useState<Range>("1M");
-  const [scope, setScope] = useState<Scope>("all");
+  // Remembered across visits.
+  const [selectedRange, setRange] = useSavedChoice("dashboard-range", RANGES, "1M");
+  const [scope, setScope] = useSavedChoice<Scope>("dashboard-scope", SCOPE_VALUES, "all");
   const [userName, setUserName] = useState<string>("");
 
   useEffect(() => {

@@ -6,6 +6,7 @@ import { formatPKR } from "@/lib/market-status";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { NavProgressionChart } from "@/components/NavProgressionChart";
 import { fetchHistory } from "@/lib/history-client";
+import { useSavedChoice } from "@/lib/use-saved-choice";
 
 interface Holding {
   symbol: string;
@@ -54,6 +55,7 @@ interface ModelPortfolio {
 }
 
 type Scope = "all" | "personal" | "models";
+const SCOPE_VALUES: readonly Scope[] = ["all", "personal", "models"];
 
 // Map a model portfolio into the page's Portfolio shape (excluding the CASH pseudo-row)
 function modelToPortfolio(m: ModelPortfolio): Portfolio {
@@ -94,7 +96,8 @@ export default function PerformancePage() {
   const [modelPortfolios, setModelPortfolios] = useState<ModelPortfolio[]>([]);
   const [marketData, setMarketData] = useState<MarketStock[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [scope, setScope] = useState<Scope>("all");
+  // Remembered across visits.
+  const [scope, setScope] = useSavedChoice<Scope>("performance-scope", SCOPE_VALUES, "all");
   const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
