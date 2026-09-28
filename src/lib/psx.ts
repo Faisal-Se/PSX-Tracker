@@ -10,6 +10,13 @@ export interface PSXStock {
   changePercent: number;
   volume: number;
   ldcp: number;
+  /**
+   * 30-day average daily volume. The market list only carries this, not
+   * today's volume — `open`, `high`, `low` and `volume` are 0 there and are
+   * filled in by getQuote() for a single symbol.
+   */
+  avgVolume: number;
+  marketCap: number;
 }
 
 export interface KSE100Data {
@@ -36,6 +43,14 @@ let cachedKSE100: KSE100Data | null = null;
 let cacheTimestamp = 0;
 const CACHE_DURATION = 60000; // 60 seconds
 
+/**
+ * All listed symbols with their current price.
+ *
+ * Source: the public Stock Screener page. PSX removed the /market-watch
+ * fragment this used to read (it now 404s for anything but PSX's own pages),
+ * so the list no longer includes intraday open/high/low/volume — see
+ * getQuote() for those.
+ */
 export async function getMarketWatch(): Promise<PSXStock[]> {
   const now = Date.now();
   if (cachedMarketData && now - cacheTimestamp < CACHE_DURATION) {
@@ -43,97 +58,143 @@ export async function getMarketWatch(): Promise<PSXStock[]> {
   }
 
   try {
-    const res = await fetch("https://dps.psx.com.pk/market-watch", {
+    const res = await fetch("https://dps.psx.com.pk/screener", {
       next: { revalidate: 60 },
     });
-    const html = await res.text();
-    const stocks = parseMarketWatch(html);
+    if (!res.ok) throw new Error(`screener responded ${res.status}`);
+    const stocks = parseScreener(await res.text());
+    // An empty parse means the page layout changed; keep serving the last
+    // good copy rather than replacing it with nothing.
+    if (stocks.length === 0) throw new Error("screener parsed to 0 rows");
     cachedMarketData = stocks;
     cacheTimestamp = now;
     return stocks;
   } catch (error) {
-    console.error("Failed to fetch market watch:", error);
+    console.error("Failed to fetch market data:", error);
     return cachedMarketData || [];
   }
 }
 
-// Parse HTML table from dps.psx.com.pk/market-watch
-// Row format: <tr>
-//   <td data-search="KEL" data-order="KEL"><a data-title="K-Electric Limited"><strong>KEL</strong></a></td>
-//   <td>0824</td>                          (sector code)
-//   <td>ALLSHR,KSE100,...</td>            (listed in)
-//   <td data-order="7.06">7.06</td>       (LDCP)
-//   <td data-order="7.06">7.06</td>       (Open)
-//   <td data-order="7.16">7.16</td>       (High)
-//   <td data-order="6.87">6.87</td>       (Low)
-//   <td data-order="6.93">6.93</td>       (Current)
-//   <td data-order="-0.13">...</td>       (Change)
-//   <td data-order="-1.84">...</td>       (Change %)
-//   <td data-order="56993072">...</td>    (Volume)
-function parseMarketWatch(html: string): PSXStock[] {
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+// Screener row:
+//   <td data-order="KEL"><a class="tbl__symbol" href="/company/KEL"
+//        data-title="K-Electric Limited"><strong>KEL</strong></a></td>
+//   <td>0824</td>                      (sector code)
+//   <td>ALLSHR,KSE100,...</td>         (listed in)
+//   then data-order cells, in order:
+//   market cap, price, change %, 1-year change %, P/E, dividend yield,
+//   free float, 30-day average volume
+function parseScreener(html: string): PSXStock[] {
   const stocks: PSXStock[] = [];
+  const tbody = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/);
+  if (!tbody) return stocks;
 
-  // Match each data row in tbody
-  const rowRegex = /<tbody[^>]*>([\s\S]*?)<\/tbody>/;
-  const tbodyMatch = html.match(rowRegex);
-  if (!tbodyMatch) return stocks;
-
-  const tbody = tbodyMatch[1];
-  const rows = tbody.split("</tr>");
-
-  for (const row of rows) {
-    // Extract symbol from data-search attribute
-    const symbolMatch = row.match(/data-search="([^"]+)"/);
+  for (const row of tbody[1].split("</tr>")) {
+    const symbolMatch = row.match(/href="\/company\/[^"]*"[^>]*>\s*<strong>([^<]+)<\/strong>/);
     if (!symbolMatch) continue;
+    const symbol = decodeEntities(symbolMatch[1].trim());
 
-    const symbol = symbolMatch[1];
-
-    // Extract company name from data-title attribute
     const companyMatch = row.match(/data-title="([^"]+)"/);
-    const company = companyMatch ? companyMatch[1] : symbol;
+    const company = companyMatch ? decodeEntities(companyMatch[1]) : symbol;
 
-    // Extract all data-order values in order
-    const dataOrders: string[] = [];
-    const orderRegex = /data-order="([^"]+)"/g;
-    let match;
-    while ((match = orderRegex.exec(row)) !== null) {
-      dataOrders.push(match[1]);
-    }
-
-    // data-order values: [symbol, sector(?), ldcp, open, high, low, current, change, changePercent, volume]
-    // First data-order is the symbol itself, skip it
-    // The sector td doesn't have data-order, so after symbol we get: ldcp, open, high, low, current, change, change%, volume
-    if (dataOrders.length < 9) continue;
-
-    const ldcp = parseFloat(dataOrders[1]) || 0;
-    const open = parseFloat(dataOrders[2]) || 0;
-    const high = parseFloat(dataOrders[3]) || 0;
-    const low = parseFloat(dataOrders[4]) || 0;
-    const current = parseFloat(dataOrders[5]) || 0;
-    const change = parseFloat(dataOrders[6]) || 0;
-    const changePercent = parseFloat(dataOrders[7]) || 0;
-    const volume = parseInt(dataOrders[8]) || 0;
-
-    // Extract sector code from second <td> (no data-order)
     const sectorMatch = row.match(/<\/td>\s*<td>(\d+)<\/td>/);
     const sector = sectorMatch ? sectorMatch[1] : "Other";
+
+    const orders: string[] = [];
+    const orderRegex = /data-order="([^"]*)"/g;
+    let m;
+    while ((m = orderRegex.exec(row)) !== null) orders.push(m[1]);
+    // [symbol, marketCap, price, change%, 1y%, pe, yield, freeFloat, avgVol]
+    if (orders.length < 9) continue;
+
+    const current = parseFloat(orders[2]) || 0;
+    if (current <= 0) continue;
+    const changePercent = parseFloat(orders[3]) || 0;
+    // The page gives the % move; recover yesterday's close and the rupee move.
+    const ldcp = round2(current / (1 + changePercent / 100));
 
     stocks.push({
       symbol,
       company,
       sector,
-      open,
-      high,
-      low,
+      open: 0,
+      high: 0,
+      low: 0,
       current,
-      change: parseFloat(change.toFixed(2)),
-      changePercent: parseFloat(changePercent.toFixed(2)),
-      volume,
+      change: round2(current - ldcp),
+      changePercent: round2(changePercent),
+      volume: 0,
       ldcp,
+      avgVolume: Math.round(parseFloat(orders[8]) || 0),
+      marketCap: parseFloat(orders[1]) || 0,
     });
   }
 
   return stocks;
+}
+
+/**
+ * Full quote for one symbol — today's open, high, low and volume — read from
+ * its public company page. Returns null when the symbol has no page.
+ */
+export async function getQuote(symbol: string): Promise<PSXStock | null> {
+  const listed = (await getMarketWatch()).find((s) => s.symbol === symbol) || null;
+
+  try {
+    const res = await fetch(
+      `https://dps.psx.com.pk/company/${encodeURIComponent(symbol)}`,
+      { next: { revalidate: 60 } }
+    );
+    if (!res.ok) return listed;
+    const html = await res.text();
+
+    // The first stats block is the regular market; futures tabs follow it.
+    const stat = (label: string): number => {
+      const m = html.match(
+        new RegExp(
+          `<div class="stats_label">${label}</div>\\s*<div class="stats_value">([^<]*)<`
+        )
+      );
+      return m ? parseFloat(m[1].replace(/,/g, "")) || 0 : 0;
+    };
+    const closeMatch = html.match(/class="quote__close">\s*Rs\.?\s*([\d,.]+)/);
+    const current = closeMatch ? parseFloat(closeMatch[1].replace(/,/g, "")) || 0 : 0;
+    if (current <= 0) return listed;
+
+    const changeMatch = html.match(/class="change__value">\s*(-?[\d,.]+)/);
+    const percentMatch = html.match(/class="change__percent">\s*\((-?[\d,.]+)%\)/);
+    const nameMatch = html.match(/class="quote__name">([^<]+)</);
+    const change = changeMatch ? parseFloat(changeMatch[1].replace(/,/g, "")) || 0 : 0;
+
+    return {
+      symbol,
+      company: nameMatch ? decodeEntities(nameMatch[1].trim()) : listed?.company || symbol,
+      sector: listed?.sector || "Other",
+      open: stat("Open"),
+      high: stat("High"),
+      low: stat("Low"),
+      current,
+      change,
+      changePercent: percentMatch ? parseFloat(percentMatch[1]) || 0 : 0,
+      volume: stat("Volume"),
+      ldcp: stat("LDCP") || round2(current - change),
+      avgVolume: listed?.avgVolume || 0,
+      marketCap: listed?.marketCap || 0,
+    };
+  } catch (error) {
+    console.error(`Failed to fetch quote for ${symbol}:`, error);
+    return listed;
+  }
 }
 
 export async function getKSE100(): Promise<KSE100Data> {
@@ -206,6 +267,9 @@ export async function getStockHistory(
       `https://dps.psx.com.pk/timeseries/eod/${encodeURIComponent(symbol)}`,
       { next: { revalidate: 3600 } }
     );
+    // PSX now serves this endpoint only to its own pages and answers 404 to
+    // everyone else. Until there is another source, history is simply empty.
+    if (!res.ok) return [];
     const text = await res.text();
 
     const json = JSON.parse(text);

@@ -23,6 +23,9 @@ interface MarketStock {
   changePercent: number;
   volume: number;
   ldcp: number;
+  /** 30-day average daily volume — the list no longer carries today's. */
+  avgVolume: number;
+  marketCap: number;
 }
 
 interface Portfolio {
@@ -99,7 +102,7 @@ export default function MarketPage() {
       let diff = 0;
       if (sortBy === "symbol") diff = a.symbol.localeCompare(b.symbol);
       else if (sortBy === "change") diff = a.changePercent - b.changePercent;
-      else diff = a.volume - b.volume;
+      else diff = a.avgVolume - b.avgVolume;
       return sortDir === "desc" ? -diff : diff;
     });
     return result;
@@ -119,7 +122,7 @@ export default function MarketPage() {
     [activeStocks]
   );
   const topVolume = useMemo(
-    () => [...activeStocks].sort((a, b) => b.volume - a.volume)[0],
+    () => [...activeStocks].sort((a, b) => b.avgVolume - a.avgVolume)[0],
     [activeStocks]
   );
 
@@ -143,7 +146,7 @@ export default function MarketPage() {
       <div className="mb-[18px] grid gap-[18px] sm:grid-cols-3">
         <QuickStat label="Top Gainer" stock={topGainers[0]} kind="change" />
         <QuickStat label="2nd Gainer" stock={topGainers[1]} kind="change" />
-        <QuickStat label="Highest Volume" stock={topVolume} kind="volume" />
+        <QuickStat label="Most Traded (30D)" stock={topVolume} kind="volume" />
       </div>
 
       {/* Toolbar */}
@@ -185,8 +188,8 @@ export default function MarketPage() {
             }}
             className="h-10 appearance-none rounded-[10px] border border-line bg-card pl-3.5 pr-9 text-[13px] font-medium shadow-card outline-none focus:border-brand"
           >
-            <option value="volume-desc">Sort: Volume (High)</option>
-            <option value="volume-asc">Sort: Volume (Low)</option>
+            <option value="volume-desc">Sort: Avg Volume (High)</option>
+            <option value="volume-asc">Sort: Avg Volume (Low)</option>
             <option value="change-desc">Sort: Gainers</option>
             <option value="change-asc">Sort: Losers</option>
             <option value="symbol-asc">Sort: Symbol (A-Z)</option>
@@ -203,8 +206,8 @@ export default function MarketPage() {
           <span>SECTOR</span>
           <span className="text-right">PRICE</span>
           <span className="text-right">CHANGE</span>
-          <span className="text-right">HIGH / LOW</span>
-          <span className="text-right">VOLUME</span>
+          <span className="text-right">MKT CAP</span>
+          <span className="text-right">AVG VOL (30D)</span>
           <span className="text-right">ACTIONS</span>
         </div>
 
@@ -259,10 +262,10 @@ export default function MarketPage() {
                   {s.changePercent.toFixed(2)}%
                 </span>
                 <span className="num text-right text-[11.5px] text-ink-3">
-                  {formatPKR(s.high, { decimals: 1 })} / {formatPKR(s.low, { decimals: 1 })}
+                  {s.marketCap > 0 ? formatPKR(s.marketCap, { compact: true }) : "—"}
                 </span>
                 <span className="num text-right text-[12px] text-ink-2">
-                  {formatPKR(s.volume, { compact: true })}
+                  {s.avgVolume > 0 ? formatPKR(s.avgVolume, { compact: true }) : "—"}
                 </span>
                 <div className="flex justify-end gap-1.5">
                   <button
@@ -353,7 +356,7 @@ function QuickStat({
             </span>
           ) : (
             <div className="num text-[12px] text-ink-3">
-              {formatPKR(stock.volume, { compact: true })} vol
+              {formatPKR(stock.avgVolume, { compact: true })} avg vol
             </div>
           )}
         </div>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getMarketWatch, getKSE100, searchStocks } from "@/lib/psx";
+import { getMarketWatch, getKSE100, getQuote, searchStocks } from "@/lib/psx";
 
 // Market data is public and identical for every visitor, so it is safe to let
 // the CDN serve it. Repeat callers stop at the edge instead of waking a
@@ -28,6 +28,22 @@ export async function GET(req: Request) {
     if (action === "search" && query) {
       const results = await searchStocks(query);
       return NextResponse.json(results.slice(0, 20), {
+        // No matches can also mean the market list failed to load.
+        headers: { "Cache-Control": results.length > 0 ? LIVE_CACHE : NO_CACHE },
+      });
+    }
+
+    // One symbol with today's open / high / low / volume.
+    const symbol = searchParams.get("symbol");
+    if (action === "quote" && symbol) {
+      const quote = await getQuote(symbol.toUpperCase());
+      if (!quote) {
+        return NextResponse.json(
+          { error: `Unknown symbol ${symbol}` },
+          { status: 404, headers: { "Cache-Control": NO_CACHE } }
+        );
+      }
+      return NextResponse.json(quote, {
         headers: { "Cache-Control": LIVE_CACHE },
       });
     }

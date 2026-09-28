@@ -26,6 +26,8 @@ interface MarketStock {
   change: number;
   changePercent: number;
   volume: number;
+  /** 30-day average daily volume — the list no longer carries today's. */
+  avgVolume: number;
   high: number;
   low: number;
 }
@@ -145,7 +147,7 @@ export default function WatchlistPage() {
               ["symbol", "SYMBOL", "left"],
               ["price", "PRICE", "right"],
               ["change", "CHANGE", "right"],
-              ["volume", "VOLUME", "right"],
+              ["volume", "AVG VOL (30D)", "right"],
             ] as [WatchSortKey, string, "left" | "right"][]
           ).map(([key, label, align]) => (
             <SortHeader
@@ -190,7 +192,7 @@ export default function WatchlistPage() {
                   ? s?.current ?? 0
                   : key === "change"
                     ? s?.changePercent ?? 0
-                    : s?.volume ?? 0;
+                    : s?.avgVolume ?? 0;
             })
             .map((item) => {
             const stock = marketData.get(item.symbol);
@@ -243,7 +245,9 @@ export default function WatchlistPage() {
                   <span className="text-right text-[12px] text-ink-3">—</span>
                 )}
                 <span className="num text-right text-[12px] text-ink-2">
-                  {stock ? formatPKR(stock.volume, { compact: true }) : "—"}
+                  {stock && stock.avgVolume > 0
+                    ? formatPKR(stock.avgVolume, { compact: true })
+                    : "—"}
                 </span>
                 <div className="flex justify-end gap-1.5">
                   <button

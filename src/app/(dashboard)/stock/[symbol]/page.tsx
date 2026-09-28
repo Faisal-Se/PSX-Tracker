@@ -60,6 +60,7 @@ export default function StockPage({
 }) {
   const { symbol } = use(params);
   const [stock, setStock] = useState<StockData | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [showTrade, setShowTrade] = useState(false);
@@ -68,22 +69,23 @@ export default function StockPage({
   );
 
   const fetchData = useCallback(async () => {
-    const [marketRes, historyRes, portfolioRes] = await Promise.all([
-      fetch("/api/psx"),
+    // The market list has no intraday open/high/low/volume any more, so ask
+    // for this symbol's own quote.
+    const [quoteRes, historyRes, portfolioRes] = await Promise.all([
+      fetch(`/api/psx?action=quote&symbol=${encodeURIComponent(decodeURIComponent(symbol))}`),
       fetch(`/api/psx/history?symbol=${encodeURIComponent(symbol)}`),
       fetch("/api/portfolios"),
     ]);
 
-    if (marketRes.ok) {
-      const data = await marketRes.json();
-      if (Array.isArray(data)) {
-        const found = data.find(
-          (s: StockData) => s.symbol === decodeURIComponent(symbol)
-        );
-        if (found) setStock(found);
-      }
+    if (quoteRes.ok) {
+      const data = (await quoteRes.json()) as StockData;
+      if (data && data.symbol) setStock(data);
     }
-    if (historyRes.ok) setHistory(await historyRes.json());
+    if (historyRes.ok) {
+      const data = await historyRes.json();
+      setHistory(Array.isArray(data) ? data : []);
+    }
+    setHistoryLoaded(true);
     if (portfolioRes.ok) setPortfolios(await portfolioRes.json());
   }, [symbol]);
 
@@ -332,6 +334,14 @@ export default function StockPage({
                 />
               </AreaChart>
             </ResponsiveContainer>
+          ) : historyLoaded ? (
+            <div className="flex h-full flex-col items-center justify-center gap-1.5 text-center">
+              <p className="text-sm font-medium text-ink-2">Price history is unavailable</p>
+              <p className="max-w-[340px] text-xs text-ink-3">
+                PSX has stopped providing historical prices to outside apps. Today&apos;s
+                quote below is still live.
+              </p>
+            </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3">
               <div className="h-10 w-10 animate-pulse rounded-xl bg-line-soft" />
